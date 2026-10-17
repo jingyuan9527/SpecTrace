@@ -1,0 +1,68 @@
+# ============================================================
+# SpecTrace 内置数据存储（MySQL + Redis）——叠加(override)文件
+#
+# 用法（必须与应用编排一起）：
+#   docker compose -f docker-compose.yml -f docker-compose.infra.yml up -d --build
+# 它会把应用指向容器内的 MySQL/Redis，并等待其健康后再启动应用。
+#
+# MySQL 首次启动（空数据卷）自动执行 sql/schema-mysql.sql 建库建表
+# ============================================================
+name: spectrace
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: spectrace-mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-spectrace}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-spectrace}
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./sql/schema-mysql.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-spectrace}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: spectrace-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # 覆盖应用侧连接信息，指向内置服务，并等待其就绪
+  backend:
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-spectrace}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-spectrace}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ""
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  agent:
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - backend
+      - redis
+
+volumes:
+  mysql-data:
+  redis-data:

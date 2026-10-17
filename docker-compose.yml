@@ -1,0 +1,73 @@
+# ============================================================
+# SpecTrace 应用编排（默认连接【外部】MySQL / Redis）
+#
+# 外部数据存储（默认）：docker compose up -d --build
+# 内置数据存储（自托管）：docker compose -f docker-compose.yml -f docker-compose.infra.yml up -d --build
+# 使用 CI 已发布镜像：docker compose pull && docker compose up -d
+# 需要采集 Agent 时追加 --profile agent
+#
+# 连接信息经 .env / 环境变量注入，见顶部说明与 .env.example
+# ============================================================
+name: spectrace
+
+services:
+  backend:
+    build: ./backend
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:-jingyuan9527}/spectrace-backend:${IMAGE_TAG:-latest}
+    container_name: spectrace-backend
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      # ---- 外部 MySQL ----
+      SPRING_DATASOURCE_URL: jdbc:mysql://${MYSQL_HOST:-host.docker.internal}:${MYSQL_PORT:-3306}/${MYSQL_DATABASE:-spectrace}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USERNAME:-root}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-spectrace}
+      # ---- 外部 Redis ----
+      SPRING_DATA_REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
+      SPRING_DATA_REDIS_PORT: ${REDIS_PORT:-6379}
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # ---- 应用密钥（生产务必修改）----
+      SPECTRACE_JWT_SECRET: ${JWT_SECRET:-change-me-spectrace-jwt-secret-please-use-32bytes-min}
+      SPECTRACE_AGENT_CALLBACK_TOKEN: ${AGENT_TOKEN:-spectrace-agent-callback-token}
+      SPECTRACE_UPLOAD_DIR: /data/uploads
+      TZ: Asia/Shanghai
+    # 让容器可通过 host.docker.internal 访问宿主机上的 MySQL / Redis（Linux 生效）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - uploads:/data/uploads
+    # 如需直连后端 / Swagger，可放开下面注释
+    # ports:
+    #   - "8080:8080"
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:-jingyuan9527}/spectrace-frontend:${IMAGE_TAG:-latest}
+    container_name: spectrace-web
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # 采集 Agent 较重（内置 Chromium），默认不启动：需 --profile agent
+  agent:
+    build: ./agent
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:-jingyuan9527}/spectrace-agent:${IMAGE_TAG:-latest}
+    container_name: spectrace-agent
+    profiles: ["agent"]
+    environment:
+      SPRINGBOOT_BASE_URL: http://backend:8080
+      AGENT_TOKEN: ${AGENT_TOKEN:-spectrace-agent-callback-token}
+      AGENT_TASK_MODE: redis
+      REDIS_URL: ${REDIS_URL:-redis://${REDIS_HOST:-host.docker.internal}:${REDIS_PORT:-6379}/0}
+      AGENT_QUEUE_KEY: spectrace:agent:task
+      TZ: Asia/Shanghai
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  uploads:

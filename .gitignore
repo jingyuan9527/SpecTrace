@@ -1,0 +1,32 @@
+# Java / Maven
+backend/target/
+*.class
+
+# Node
+frontend/node_modules/
+frontend/dist/
+npm-debug.log*
+
+# Python
+agent/__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 环境变量与本地文件
+.env
+agent/.env
+backend/uploads/
+uploads/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 运行日志
+*.log

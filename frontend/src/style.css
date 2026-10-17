@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+/* 对比表格截图区域：截图时移除阴影与圆角，保证画面干净 */
+.capture-area {
+  background: #ffffff;
+}
+
+.dark .capture-area {
+  background: #1f2937;
+}

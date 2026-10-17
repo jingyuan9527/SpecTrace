@@ -1,0 +1,6 @@
+# AgentScope 手机参数采集 Agent 运行环境
+agentscope>=2.0.0
+httpx>=0.27.0
+redis>=5.0.0
+playwright>=1.44.0
+python-dotenv>=1.0.1
