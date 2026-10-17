@@ -35,8 +35,9 @@ SpecTrace/
 ├── sql/             MySQL 生产库建表脚本
 ├── docs/            SpringBoot ↔ AgentScope 交互接口（OpenAPI）
 ├── .github/workflows/docker-publish.yml   构建并推送镜像到 GHCR
-├── docker-compose.yml       应用编排（后端 + 前端 + 可选 Agent，连接外部 MySQL/Redis）
-├── docker-compose.infra.yml 内置 MySQL/Redis（叠加文件）
+├── docker-compose.yml       应用编排（默认拉取 GHCR 镜像，连接外部 MySQL/Redis）
+├── docker-compose.build.yml 源码构建覆盖文件
+├── docker-compose.infra.yml 内置 MySQL/Redis 叠加文件
 └── .env.example             部署环境变量样例
 ```
 
@@ -90,60 +91,53 @@ python main.py              # 常驻消费
 
 ## 生产部署
 
-### 方式一：Docker Compose（推荐）
+### 方式一：Docker Compose
 
-编排拆成两份文件，按数据存储来源选择：
+编排由一份主文件 + 两份可选覆盖文件组成：
 
 | 文件 | 内容 |
 | --- | --- |
-| `docker-compose.yml` | 应用：`backend`(8080 内网) + `frontend`(Nginx，宿主机 `${HTTP_PORT:-80}`) + 可选 `agent` |
-| `docker-compose.infra.yml` | 内置数据存储：`mysql` + `redis`（叠加文件，需与上面一起用） |
+| `docker-compose.yml` | 应用：`backend`(8080 内网) + `frontend`(Nginx，宿主机 `${HTTP_PORT:-80}`) + 可选 `agent`；默认拉取 GHCR 镜像 |
+| `docker-compose.build.yml` | 覆盖文件：为各服务补充 `build` 上下文（改为从源码构建） |
+| `docker-compose.infra.yml` | 叠加文件：内置 `mysql` + `redis`（默认连外部库，无需此文件） |
 
 ```bash
 cp .env.example .env      # 按需修改；生产务必改 JWT_SECRET / AGENT_TOKEN / 数据库密码
 ```
 
-**A. 外部 MySQL / Redis（默认，推荐云数据库 / 已有实例）**
+**A. 使用 GHCR 镜像部署（推荐，服务器无需源码）**
 
 ```bash
-# 先对目标库执行 sql/schema-mysql.sql 建库建表
-docker compose up -d --build            # 从源码构建镜像再启动
-# 或使用 CI 已发布的镜像：
-docker compose pull && docker compose up -d
+# 外部 MySQL / Redis（默认）：先对目标库执行 sql/schema-mysql.sql 建库建表
+docker compose up -d
+
+# 内置 MySQL / Redis（首次启动自动建库建表）
+docker compose -f docker-compose.yml -f docker-compose.infra.yml up -d
 ```
 
-- `.env` 中配置 `MYSQL_HOST/PORT/DATABASE/USERNAME/PASSWORD` 与 `REDIS_HOST/PORT/PASSWORD`
-- 默认取 `host.docker.internal`（即宿主机），远程库直接填 IP / 域名；Linux 通过 `extra_hosts: host-gateway` 支持
-- 应用会自动重启直到数据库可连
+- 镜像：`ghcr.io/jingyuan9527/spectrace-{backend,frontend,agent}`，版本由 `.env` 的 `IMAGE_TAG` 控制（默认 `latest`）
+- `.env` 配置 `MYSQL_HOST/PORT/DATABASE/USERNAME/PASSWORD` 与 `REDIS_HOST/PORT/PASSWORD`；默认 `host.docker.internal`（宿主机），远程库填 IP / 域名（Linux 由 `extra_hosts: host-gateway` 支持）
+- 公共镜像可直接拉取；若包为私有，先登录：`echo <PAT> | docker login ghcr.io -u <用户名> --password-stdin`（PAT 需 `read:packages`）
 
-**B. 内置 MySQL / Redis（自托管，一键全栈）**
+**B. 从源码构建（有源码 / 需改代码）**
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.infra.yml up -d --build
-# 想用 CI 镜像则：docker compose -f docker-compose.yml -f docker-compose.infra.yml pull && ... up -d
+# 外部库
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+# 内置库
+docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.infra.yml up -d --build
 ```
-
-- 内置模式下 MySQL 首次启动（空数据卷）自动执行 `sql/schema-mysql.sql` 建库建表，应用会等待其健康后再启动
-
-**C. 使用 CI 构建的镜像（不落地源码）**
-
-```bash
-# 仅需 docker-compose.yml（+ 可选 infra 文件）与 .env
-docker compose pull && docker compose up -d
-```
-
-- 镜像：`ghcr.io/jingyuan9527/spectrace-{backend,frontend,agent}`，版本由 `.env` 中 `IMAGE_TAG` 控制（默认 `latest`）
-- 公共镜像可直接 pull；若仓库包为私有，先登录：`echo <PAT> | docker login ghcr.io -u <用户名> --password-stdin`（PAT 需 `read:packages`）
 
 **通用说明**
 
 - 访问 `http://<服务器IP>:<HTTP_PORT>`，后台 `/#/admin/login`（`admin / admin123`，登录后请立即改密）
 - 采集 Agent 体积较大（内置 Chromium），默认不启动；需要时追加 `--profile agent`
+- 可先 `pull` 更新镜像再启动：如 `docker compose pull && docker compose up -d`
 - 常用操作：`docker compose logs -f backend`、`docker compose down`（加 `-v` 可连同数据卷一起删除）
 - AI 连接/模型在后台「AI 配置」页面维护，无需改环境变量
 - 如需直连后端或 Swagger，放开 `docker-compose.yml` 中 backend 的 `ports` 注释
 
-> 注意：内置库模式下 `./sql/schema-mysql.sql` 仅在 MySQL 空数据卷时执行；后续结构变更需手动迁移或重建数据卷。外部库需自行保证表结构。
+> 注意：内置库模式下 `./sql/schema-mysql.sql` 仅在 MySQL 空数据卷时执行；后续结构变更需手动迁移或重建数据卷。外部库需自行执行 `sql/schema-mysql.sql` 保证表结构。
 
 ### 方式二：传统部署
 

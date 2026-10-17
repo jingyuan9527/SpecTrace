@@ -1,18 +1,17 @@
 # ============================================================
-# SpecTrace 应用编排（默认连接【外部】MySQL / Redis）
+# SpecTrace 应用编排（默认拉取 GHCR 镜像，连接【外部】MySQL / Redis）
 #
-# 外部数据存储（默认）：docker compose up -d --build
-# 内置数据存储（自托管）：docker compose -f docker-compose.yml -f docker-compose.infra.yml up -d --build
-# 使用 CI 已发布镜像：docker compose pull && docker compose up -d
+# 纯镜像 · 外部库：docker compose up -d
+# 纯镜像 · 内置库：docker compose -f docker-compose.yml -f docker-compose.infra.yml up -d
+# 源码构建（追加覆盖）：docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 # 需要采集 Agent 时追加 --profile agent
 #
-# 连接信息经 .env / 环境变量注入，见顶部说明与 .env.example
+# 镜像名与连接信息经 .env / 环境变量注入，见 .env.example
 # ============================================================
 name: spectrace
 
 services:
   backend:
-    build: ./backend
     image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:-jingyuan9527}/spectrace-backend:${IMAGE_TAG:-latest}
     container_name: spectrace-backend
     environment:
@@ -41,7 +40,6 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
     image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:-jingyuan9527}/spectrace-frontend:${IMAGE_TAG:-latest}
     container_name: spectrace-web
     ports:
@@ -52,7 +50,6 @@ services:
 
   # 采集 Agent 较重（内置 Chromium），默认不启动：需 --profile agent
   agent:
-    build: ./agent
     image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:-jingyuan9527}/spectrace-agent:${IMAGE_TAG:-latest}
     container_name: spectrace-agent
     profiles: ["agent"]
