@@ -31,6 +31,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 构建 arm64 需要 QEMU（PR 只构建 amd64，可跳过）
+      - name: Set up QEMU
+        if: github.event_name != 'pull_request'
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -60,6 +65,8 @@ jobs:
         with:
           context: ./${{ matrix.component }}
           file: ./${{ matrix.component }}/Dockerfile
+          # PR 仅校验 amd64；发布时构建 amd64 + arm64 多架构镜像
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

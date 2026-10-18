@@ -71,6 +71,7 @@ npm run dev
 
 ```bash
 cd agent
+python -m venv .venv && . .venv/bin/activate   # 需 Python 3.11+（AgentScope 2.0 要求）
 pip install -r requirements.txt
 playwright install chromium
 cp .env.example .env        # 一般只需确认 SPRINGBOOT_BASE_URL / AGENT_TOKEN
@@ -154,6 +155,7 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compo
 
 - **触发**：推送到 `main`、打 `v*` tag、手动 `workflow_dispatch`；Pull Request 仅构建校验、不推送
 - **产物**：`ghcr.io/jingyuan9527/spectrace-backend`、`spectrace-frontend`、`spectrace-agent`
+- **架构**：发布时构建 `linux/amd64` + `linux/arm64` 多架构镜像（`docker pull` 自动匹配），PR 仅校验 `linux/amd64`
 - **标签**：分支名、tag、`{{version}}` / `{{major}}.{{minor}}`、`sha-<短哈希>`、默认分支的 `latest`
 - **权限**：使用内置 `GITHUB_TOKEN`（`packages: write`）登录 GHCR，无需额外 Secrets
 - **缓存**：Buildx `type=gha` 分层缓存，加速重复构建
@@ -185,4 +187,4 @@ strategy:
 
 - 后端：Java 21 / Spring Boot 3.3 / MyBatis-Plus，统一响应体 `R<T>`，全局异常处理 `GlobalExceptionHandler`
 - 前端：`npm run build` 验证构建；`npm run typecheck` 做类型检查
-- Agent：Python 3.10+ / AgentScope 2.0
+- Agent：Python 3.11+ / AgentScope 2.0

@@ -1,5 +1,5 @@
-# ---- 构建阶段 ----
-FROM node:20-alpine AS build
+# ---- 构建阶段（在构建机原生架构执行，产物为静态文件，避免跨架构模拟构建）----
+FROM --platform=$BUILDPLATFORM node:20-alpine AS build
 WORKDIR /app
 
 COPY package*.json ./
