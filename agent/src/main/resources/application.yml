@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: spectrace-agent
+  main:
+    # 采集 Agent 是常驻消费进程，不需要 HTTP 容器
+    web-application-type: none
+    banner-mode: off
+
+# ---- 采集 Agent 运行参数（全部可用同名环境变量覆盖）----
+spectrace:
+  agent:
+    # SpringBoot 业务后端地址
+    backend-url: ${SPRINGBOOT_BASE_URL:http://localhost:8080}
+    # 与后端 spectrace.agent.callback-token 保持一致
+    token: ${AGENT_TOKEN:spectrace-agent-callback-token}
+    # HarnessAgent 工作区目录（persona/AGENTS.md 及运行期会话日志的落盘位置）
+    workspace: ${AGENTSCOPE_WORKSPACE:.agentscope/workspace}
+    # 任务获取方式：redis（生产，BLPOP 消费 Redis List） / http（本地，轮询 HTTP 接口）
+    task-mode: ${AGENT_TASK_MODE:http}
+    redis-url: ${REDIS_URL:redis://127.0.0.1:6379/0}
+    queue-key: ${AGENT_QUEUE_KEY:spectrace:agent:task}
+    poll-interval-seconds: ${POLL_INTERVAL_SECONDS:5}
+    # 大模型：正常由后台「AI 配置」下发，此处仅作后端不可用时的回退
+    dashscope-api-key: ${DASHSCOPE_API_KEY:}
+    dashscope-model: ${DASHSCOPE_MODEL:qwen-max}
+    # 搜索：留空使用 DuckDuckGo 免 key 抓取，填入则使用 Serper
+    serper-api-key: ${SERPER_API_KEY:}
+    search-result-limit: ${SEARCH_RESULT_LIMIT:5}
+    # 抓取风控：每次请求间隔（秒）与单任务最长耗时
+    crawl-interval-seconds: ${CRAWL_INTERVAL_SECONDS:2}
+    task-timeout-seconds: ${TASK_TIMEOUT_SECONDS:180}
+
+logging:
+  level:
+    root: info
+    com.spectrace: info
+    io.agentscope: warn

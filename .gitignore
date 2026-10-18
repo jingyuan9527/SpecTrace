@@ -1,17 +1,16 @@
 # Java / Maven
 backend/target/
+agent/target/
 *.class
+
+# AgentScope 工作区与运行期数据
+.agentscope/
+.agentscope-runtime/
 
 # Node
 frontend/node_modules/
 frontend/dist/
 npm-debug.log*
-
-# Python
-agent/__pycache__/
-*.pyc
-.venv/
-venv/
 
 # 环境变量与本地文件
 .env

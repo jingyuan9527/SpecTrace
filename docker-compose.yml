@@ -48,7 +48,7 @@ services:
       - backend
     restart: unless-stopped
 
-  # 采集 Agent 较重（内置 Chromium），默认不启动：需 --profile agent
+  # 采集 Agent 默认不启动：需 --profile agent
   agent:
     image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:-jingyuan9527}/spectrace-agent:${IMAGE_TAG:-latest}
     container_name: spectrace-agent

@@ -1,7 +1,0 @@
-# AgentScope 手机参数采集 Agent 运行环境（需 Python >= 3.11）
-agentscope>=2.0.0
-httpx>=0.27.0
-redis>=5.0.0
-# 与 Dockerfile 基础镜像 playwright/python:v1.63.0-noble 保持一致
-playwright==1.63.0
-python-dotenv>=1.0.1

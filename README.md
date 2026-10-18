@@ -31,7 +31,7 @@
 SpecTrace/
 ├── backend/         SpringBoot 3.3 + MyBatis-Plus 业务后端（默认 H2 内存库启动）+ Dockerfile
 ├── frontend/        Vue3 + Element Plus + TailwindCSS + ECharts + html2canvas + Dockerfile/nginx.conf
-├── agent/           AgentScope 2.0 手机参数采集 Agent（Python）+ Dockerfile
+├── agent/           AgentScope Java 2.0 采集 Agent（Harness 模式 · Spring Boot / Maven）+ Dockerfile
 ├── sql/             MySQL 生产库建表脚本
 ├── docs/            SpringBoot ↔ AgentScope 交互接口（OpenAPI）
 ├── .github/workflows/docker-publish.yml   构建并推送镜像到 GHCR
@@ -67,17 +67,18 @@ npm run dev
 - 访客端：`/#/` 首页、`/#/devices` 机型库、`/#/compare` 对比、`/#/history` 参数历史
 - 管理后台：`/#/admin/login`
 
-### 3. AgentScope 采集 Agent
+### 3. AgentScope 采集 Agent（Java）
+
+基于 **AgentScope Java 2.0 Harness 模式**（`HarnessAgent` + `Toolkit`）的 Spring Boot 应用：persona / 输出规约写在**工作区 `AGENTS.md`**（Harness 的「智能体定义事实来源」，可运行期编辑、无需改码），自定义工具 `web_search` / `fetch_page`（Jsoup 抽取正文）。需 **JDK 17+（推荐 21）与 Maven 3.9+**，首次运行自动下载依赖。
 
 ```bash
 cd agent
-python -m venv .venv && . .venv/bin/activate   # 需 Python 3.11+（AgentScope 2.0 要求）
-pip install -r requirements.txt
-playwright install chromium
 cp .env.example .env        # 一般只需确认 SPRINGBOOT_BASE_URL / AGENT_TOKEN
-python main.py --once       # 处理一个任务（联调）
-python main.py              # 常驻消费
+mvn spring-boot:run                                          # 常驻消费
+mvn spring-boot:run -Dspring-boot.run.arguments=--once       # 只处理一个任务（联调）
 ```
+
+> 工作区目录由 `AGENTSCOPE_WORKSPACE` 控制（默认 `.agentscope/workspace`）；首次启动会把内置 persona 写入其下的 `AGENTS.md`，之后可直接编辑。
 
 > AI 连接（服务商 / 接口地址 / API Key）与模型在后台「AI 配置」页面维护：保存连接后可**拉取远端模型**、一次导入多个模型并设默认。创建抓取任务时也可单独选择模型，未选则用默认模型。Agent 每个任务执行前会拉取对应模型参数，**改完即生效、无需重启 Agent**。`.env` 中的 `DASHSCOPE_*` 仅在后端不可用时作为回退。
 
@@ -132,7 +133,7 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compo
 **通用说明**
 
 - 访问 `http://<服务器IP>:<HTTP_PORT>`，后台 `/#/admin/login`（`admin / admin123`，登录后请立即改密）
-- 采集 Agent 体积较大（内置 Chromium），默认不启动；需要时追加 `--profile agent`
+- 采集 Agent 默认不启动；需要时追加 `--profile agent`
 - 可先 `pull` 更新镜像再启动：如 `docker compose pull && docker compose up -d`
 - 常用操作：`docker compose logs -f backend`、`docker compose down`（加 `-v` 可连同数据卷一起删除）
 - AI 连接/模型在后台「AI 配置」页面维护，无需改环境变量
@@ -187,4 +188,4 @@ strategy:
 
 - 后端：Java 21 / Spring Boot 3.3 / MyBatis-Plus，统一响应体 `R<T>`，全局异常处理 `GlobalExceptionHandler`
 - 前端：`npm run build` 验证构建；`npm run typecheck` 做类型检查
-- Agent：Python 3.11+ / AgentScope 2.0
+- Agent：Java 21 / Spring Boot 3.3 / AgentScope Java 2.0（Harness 模式，Maven 构建）
