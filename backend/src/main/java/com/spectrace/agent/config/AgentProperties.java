@@ -4,31 +4,22 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * 采集 Agent 运行时配置，字段与资源文件中的环境变量一一对应。
+ * 内嵌采集 Agent 的运行时配置。
+ *
+ * <p>以 {@code spectrace.agent} 前缀绑定；队列相关配置（queue / queue-key）由业务侧维护，
+ * 此处只关注采集本身。字段均可由同名环境变量覆盖。
  */
 @Data
 @ConfigurationProperties(prefix = "spectrace.agent")
 public class AgentProperties {
 
-    /** SpringBoot 业务后端地址 */
-    private String backendUrl = "http://localhost:8080";
+    /** 是否启用内嵌采集 Agent（随应用启动常驻消费任务） */
+    private boolean enabled = true;
 
-    /** 与后端 spectrace.agent.callback-token 保持一致 */
-    private String token = "spectrace-agent-callback-token";
-
-    /** HarnessAgent 工作区目录 */
+    /** HarnessAgent 工作区目录（persona 与运行期会话数据的落盘位置） */
     private String workspace = ".agentscope/workspace";
 
-    /** 任务获取方式：http | redis */
-    private String taskMode = "http";
-
-    /** Redis 连接串，形如 redis://[:password@]host:port/db */
-    private String redisUrl = "redis://127.0.0.1:6379/0";
-
-    /** 任务队列键 */
-    private String queueKey = "spectrace:agent:task";
-
-    /** 轮询间隔（秒） */
+    /** 阻塞等待任务的超时（秒），超时无任务则空转一轮 */
     private int pollIntervalSeconds = 5;
 
     /** 回退用 DashScope API Key（后台未配置 AI 连接时生效） */

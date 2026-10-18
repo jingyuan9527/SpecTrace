@@ -65,17 +65,7 @@ public class AgentTaskService {
         return taskMapper.selectPage(new Page<>(current, size), query);
     }
 
-    /** AgentScope 通过 HTTP 拉取下一个任务（无 Redis 时的降级通道）。 */
-    public AgentTaskPayload pullNext() {
-        AgentTaskPayload payload = taskQueue.poll();
-        if (payload == null) {
-            return null;
-        }
-        updateStatus(payload.getTaskId(), TaskStatus.RUNNING, null);
-        return payload;
-    }
-
-    /** 标记任务为抓取中（AgentScope 消费 Redis 队列后调用，便于后台展示进度）。 */
+    /** 标记任务为抓取中（内嵌 Agent 开始执行时调用，便于后台展示进度）。 */
     public void markRunning(Long taskId) {
         updateStatus(taskId, TaskStatus.RUNNING, null);
     }

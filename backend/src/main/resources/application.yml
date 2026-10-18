@@ -36,12 +36,26 @@ spectrace:
   jwt:
     secret: "spectrace-dev-secret-key-please-change-in-production-0123456789"
     expire-seconds: 86400
+  # ---- 内嵌采集 Agent（AgentScope Java 2.0 · Harness 模式，与后端同进程）----
   agent:
-    # AgentScope 回传数据时需携带的内部令牌，避免回调接口被外部滥用
-    callback-token: "spectrace-agent-callback-token"
+    # 是否随应用启动常驻消费抓取任务
+    enabled: ${SPECTRACE_AGENT_ENABLED:true}
     # 队列实现：memory(本地开发) / redis(生产)
     queue: memory
     queue-key: "spectrace:agent:task"
+    # HarnessAgent 工作区（persona/AGENTS.md 及运行期会话数据的落盘位置）
+    workspace: ${AGENTSCOPE_WORKSPACE:.agentscope/workspace}
+    # 阻塞等待任务的超时（秒）
+    poll-interval-seconds: ${POLL_INTERVAL_SECONDS:5}
+    # 大模型：正常由后台「AI 配置」下发，此处仅作兜底
+    dashscope-api-key: ${DASHSCOPE_API_KEY:}
+    dashscope-model: ${DASHSCOPE_MODEL:qwen-max}
+    # 搜索：留空使用 DuckDuckGo 免 key 抓取，填入则使用 Serper
+    serper-api-key: ${SERPER_API_KEY:}
+    search-result-limit: ${SEARCH_RESULT_LIMIT:5}
+    # 抓取风控：每次请求间隔（秒）与单任务最长耗时
+    crawl-interval-seconds: ${CRAWL_INTERVAL_SECONDS:2}
+    task-timeout-seconds: ${TASK_TIMEOUT_SECONDS:180}
 
 springdoc:
   swagger-ui:
@@ -50,6 +64,7 @@ springdoc:
 logging:
   level:
     com.spectrace: debug
+    io.agentscope: warn
 
 ---
 # 本地开发：H2 内存库，无需安装 MySQL / Redis

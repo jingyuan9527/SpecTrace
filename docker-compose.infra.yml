@@ -56,13 +56,6 @@ services:
       redis:
         condition: service_healthy
 
-  agent:
-    environment:
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      - backend
-      - redis
-
 volumes:
   mysql-data:
   redis-data:

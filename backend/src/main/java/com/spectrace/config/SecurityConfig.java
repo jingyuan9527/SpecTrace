@@ -20,11 +20,10 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    /** 访客可直接访问的业务接口 / Agent 回调 / 接口文档 */
+    /** 访客可直接访问的业务接口 / 接口文档 */
     private static final String[] PUBLIC_PATHS = {
             "/api/auth/login",
             "/api/public/**",
-            "/api/agent/**",
             "/v3/api-docs/**",
             "/swagger-ui/**",
             "/swagger-ui.html",

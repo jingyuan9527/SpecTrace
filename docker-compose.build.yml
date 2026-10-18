@@ -14,5 +14,3 @@ services:
     build: ./backend
   frontend:
     build: ./frontend
-  agent:
-    build: ./agent

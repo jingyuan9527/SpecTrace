@@ -3,11 +3,11 @@ package com.spectrace.agent.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.spectrace.agent.config.AgentProperties;
-import com.spectrace.agent.dto.AgentCallbackRequest;
-import com.spectrace.agent.dto.AgentTaskPayload;
-import com.spectrace.agent.dto.ParamDef;
-import com.spectrace.agent.dto.ResolvedModel;
 import com.spectrace.agent.tool.CollectTools;
+import com.spectrace.dto.AgentCallbackRequest;
+import com.spectrace.dto.AgentTaskPayload;
+import com.spectrace.dto.ResolvedModel;
+import com.spectrace.entity.ParamDef;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
@@ -32,7 +32,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 手机参数采集 Agent（AgentScope Java 2.0 · Harness 模式）。
+ * 手机参数采集 Agent（AgentScope Java 2.0 · Harness 模式），内嵌于业务后端同进程运行。
  *
  * <p>基于 {@link HarnessAgent}：persona/输出规约来自工作区 {@code AGENTS.md}，
  * 自定义工具经 {@link Toolkit} 注入。链路：搜索 → 抓取网页 → LLM 结构化抽取 → 校验/附来源 → 输出 JSON。
@@ -47,7 +47,7 @@ public class CollectService {
     private final ObjectMapper objectMapper;
 
     /**
-     * 执行一次采集，返回可回传后端的结构化结果（对齐 {@code /api/agent/callback} 请求体）。
+     * 执行一次采集，返回可写入待审核库的结构化结果。
      */
     public AgentCallbackRequest collect(AgentTaskPayload payload, List<ParamDef> schemaDefs,
                                         ResolvedModel aiConfig) {
@@ -209,7 +209,7 @@ public class CollectService {
         return b.contains("/compatible-mode") || b.endsWith("/v1") || b.contains("/v1/");
     }
 
-    /** 把后端返回的参数定义转成给 LLM 的 Schema 说明。 */
+    /** 把后台的参数定义转成给 LLM 的 Schema 说明。 */
     private String schemaPrompt(List<ParamDef> schemaDefs) {
         StringBuilder sb = new StringBuilder("参数 Schema（param_key | 名称 | 类型 | 单位 | 枚举）：");
         for (ParamDef d : schemaDefs) {

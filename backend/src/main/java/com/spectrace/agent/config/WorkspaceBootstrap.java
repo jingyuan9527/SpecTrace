@@ -35,9 +35,9 @@ public class WorkspaceBootstrap {
             try (InputStream in = new ClassPathResource(PERSONA_FILE).getInputStream()) {
                 Files.copy(in, persona);
             }
-            log.info("工作区已初始化：{}（写入内置 {}）", workspace.toAbsolutePath(), PERSONA_FILE);
+            log.info("采集工作区已初始化：{}（写入内置 {}）", workspace.toAbsolutePath(), PERSONA_FILE);
         } else {
-            log.info("工作区已就绪：{}", workspace.toAbsolutePath());
+            log.info("采集工作区已就绪：{}", workspace.toAbsolutePath());
         }
     }
 }

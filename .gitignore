@@ -1,6 +1,5 @@
 # Java / Maven
 backend/target/
-agent/target/
 *.class
 
 # AgentScope 工作区与运行期数据
@@ -14,7 +13,6 @@ npm-debug.log*
 
 # 环境变量与本地文件
 .env
-agent/.env
 backend/uploads/
 uploads/
 

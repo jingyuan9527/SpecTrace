@@ -25,8 +25,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 三个组件分别构建：后端 / 前端 / 采集 Agent
-        component: [ backend, frontend, agent ]
+        # 两个组件分别构建：后端（含内嵌采集 Agent）/ 前端
+        component: [ backend, frontend ]
     steps:
       - name: Checkout
         uses: actions/checkout@v4

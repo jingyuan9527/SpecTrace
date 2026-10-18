@@ -10,6 +10,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+
 /**
  * Redis List 队列实现，SpringBoot 生产任务、AgentScope 消费任务。
  */
@@ -34,8 +36,8 @@ public class RedisTaskQueue implements TaskQueue {
 
     @Override
     @SneakyThrows
-    public AgentTaskPayload poll() {
-        String json = redisTemplate.opsForList().leftPop(queueKey);
+    public AgentTaskPayload poll(Duration timeout) {
+        String json = redisTemplate.opsForList().leftPop(queueKey, timeout);
         return json == null ? null : objectMapper.readValue(json, AgentTaskPayload.class);
     }
 }
