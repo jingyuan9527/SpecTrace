@@ -25,8 +25,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 两个组件分别构建：后端（含内嵌采集 Agent）/ 前端
-        component: [ backend, frontend ]
+        include:
+          # 后端（含内嵌采集 Agent）
+          - component: backend
+            context: ./backend
+            file: ./backend/Dockerfile
+          # 前端（Nginx 托管静态资源）
+          - component: frontend
+            context: ./frontend
+            file: ./frontend/Dockerfile
+          # 前后端一体化单镜像（上下文为仓库根目录）
+          - component: app
+            context: .
+            file: ./Dockerfile.allinone
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,8 +74,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: ./${{ matrix.component }}
-          file: ./${{ matrix.component }}/Dockerfile
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
           # PR 仅校验 amd64；发布时构建 amd64 + arm64 多架构镜像
           platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
           push: ${{ github.event_name != 'pull_request' }}

@@ -1,0 +1,24 @@
+# 一体化镜像构建上下文 = 仓库根目录，这里排除无关文件以加速构建
+.git
+.github
+
+# 依赖与构建产物（容器内会重新构建）
+**/node_modules
+**/target
+**/dist
+
+# 采集工作区与运行期数据
+.agentscope
+.agentscope-runtime
+uploads
+backend/uploads
+
+# 本地环境与日志
+.env
+*.log
+
+# IDE
+.idea
+.vscode
+*.iml
+.DS_Store

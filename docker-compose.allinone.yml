@@ -1,0 +1,25 @@
+# ============================================================
+# 前后端一体化模式覆盖文件：后端镜像已内含前端 SPA，单容器提供站点 + API
+# 需叠加在主编排 docker-compose.yml 之上（独立的 frontend 服务自动停用）。
+#
+# 拉取镜像：
+#   docker compose -f docker-compose.yml -f docker-compose.allinone.yml up -d
+# 内置库：
+#   docker compose -f docker-compose.yml -f docker-compose.allinone.yml -f docker-compose.infra.yml up -d
+# 源码构建：
+#   docker compose -f docker-compose.yml -f docker-compose.allinone.yml -f docker-compose.allinone.build.yml up -d --build
+#
+# 访问 http://<服务器IP>:${HTTP_PORT:-80}
+# ============================================================
+name: spectrace
+
+services:
+  backend:
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:-jingyuan9527}/spectrace-app:${IMAGE_TAG:-latest}
+    container_name: spectrace-app
+    ports:
+      - "${HTTP_PORT:-80}:8080"
+
+  # 一体化模式已把前端打进后端镜像，独立前端容器无需启动（如误启可用 --profile frontend）
+  frontend:
+    profiles: ["frontend"]

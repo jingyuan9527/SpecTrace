@@ -20,8 +20,11 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    /** 访客可直接访问的业务接口 / 接口文档 */
+    /** 访客可直接访问的业务接口 / 接口文档 / 前端静态资源（一体化镜像由后端托管 SPA） */
     private static final String[] PUBLIC_PATHS = {
+            "/",
+            "/index.html",
+            "/assets/**",
             "/api/auth/login",
             "/api/public/**",
             "/v3/api-docs/**",

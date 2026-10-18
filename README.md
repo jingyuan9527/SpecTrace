@@ -5,7 +5,7 @@
 面向数码爱好者的手机参数数据库：收录多品牌机型参数，支持**多机型横向对比**、**单参数跨代历史演变**、**对比结果一键截图分享**；数据来源为管理员手动录入 + 内嵌 AgentScope AI Agent 自动抓取（抓取结果必须人工审核后入库）。
 
 > 仓库地址：<https://github.com/jingyuan9527/SpecTrace>
-> 容器镜像：`ghcr.io/jingyuan9527/spectrace-{backend,frontend}`
+> 容器镜像：`ghcr.io/jingyuan9527/spectrace-{backend,frontend}`，以及前后端一体化镜像 `ghcr.io/jingyuan9527/spectrace-app`
 
 ## 架构
 
@@ -29,10 +29,13 @@ SpecTrace/
 ├── backend/         SpringBoot 3.3 + MyBatis-Plus + 内嵌采集 Agent（默认 H2 内存库启动）+ Dockerfile
 ├── frontend/        Vue3 + Element Plus + TailwindCSS + ECharts + html2canvas + Dockerfile/nginx.conf
 ├── sql/             MySQL 生产库建表脚本
-├── .github/workflows/docker-publish.yml   构建并推送镜像到 GHCR
+├── .github/workflows/docker-publish.yml   构建并推送镜像到 GHCR（backend / frontend / app）
+├── Dockerfile.allinone      前后端一体化单镜像（构建上下文 = 仓库根目录）
 ├── docker-compose.yml       应用编排（默认拉取 GHCR 镜像，连接外部 MySQL/Redis）
 ├── docker-compose.build.yml 源码构建覆盖文件
 ├── docker-compose.infra.yml 内置 MySQL/Redis 叠加文件
+├── docker-compose.allinone.yml        一体化模式覆盖文件（后端镜像内含前端）
+├── docker-compose.allinone.build.yml  一体化模式源码构建覆盖文件
 └── .env.example             部署环境变量样例
 ```
 
@@ -149,24 +152,68 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compo
    - `prod` 段 `spectrace.agent.queue=redis`，任务走 Redis List 队列；如需关闭采集：`SPECTRACE_AGENT_ENABLED=false`
 3. 前端 `cd frontend && npm run build`，将 `dist/` 交由 Nginx 托管并反向代理 `/api`、`/uploads`（可参考 `frontend/nginx.conf`）
 
+### 方式三：前后端一体化单镜像（可选）
+
+把前端构建产物并入后端 Jar 的 `static`，**一个镜像 / 一个进程**同时提供站点与 API（含内嵌采集 Agent），前端与接口同源，无需 Nginx，也无需反向代理。
+
+**A. 直接 docker build / run**
+
+```bash
+docker build -f Dockerfile.allinone -t ghcr.io/jingyuan9527/spectrace-app:latest .
+
+docker run -d --name spectrace-app -p 80:8080 \
+  -e SPRING_DATASOURCE_URL='jdbc:mysql://<mysql-host>:3306/spectrace?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true' \
+  -e SPRING_DATASOURCE_USERNAME=root \
+  -e SPRING_DATASOURCE_PASSWORD=*** \
+  -e SPRING_DATA_REDIS_HOST=<redis-host> \
+  -e SPECTRACE_JWT_SECRET=*** \
+  -e SPECTRACE_UPLOAD_DIR=/data/uploads \
+  -v spectrace-uploads:/data/uploads \
+  ghcr.io/jingyuan9527/spectrace-app:latest
+```
+
+**B. 使用 Compose 覆盖文件**（复用主编排的数据库/密钥环境变量）
+
+```bash
+# 拉取一体化镜像 · 外部库
+docker compose -f docker-compose.yml -f docker-compose.allinone.yml up -d
+# 拉取一体化镜像 · 内置库
+docker compose -f docker-compose.yml -f docker-compose.allinone.yml -f docker-compose.infra.yml up -d
+# 源码构建一体化镜像
+docker compose -f docker-compose.yml -f docker-compose.allinone.yml -f docker-compose.allinone.build.yml up -d --build
+```
+
+访问 `http://<服务器IP>:<HTTP_PORT>`；登录、上传等行为与方式一一致。
+
+> 构建上下文必须是**仓库根目录**（需同时读取 `frontend/` 与 `backend/`），根目录 `.dockerignore` 已排除 `node_modules`、`target` 等无关文件。
+
 ## CI/CD（GitHub Actions）
 
 工作流：`.github/workflows/docker-publish.yml`
 
 - **触发**：推送到 `main`、打 `v*` tag、手动 `workflow_dispatch`；Pull Request 仅构建校验、不推送
-- **产物**：`ghcr.io/jingyuan9527/spectrace-backend`（含采集 Agent）、`spectrace-frontend`
+- **产物**：`ghcr.io/jingyuan9527/spectrace-backend`（含采集 Agent）、`spectrace-frontend`、`spectrace-app`（前后端一体化）
 - **架构**：发布时构建 `linux/amd64` + `linux/arm64` 多架构镜像（`docker pull` 自动匹配），PR 仅校验 `linux/amd64`
 - **标签**：分支名、tag、`{{version}}` / `{{major}}.{{minor}}`、`sha-<短哈希>`、默认分支的 `latest`
 - **权限**：使用内置 `GITHUB_TOKEN`（`packages: write`）登录 GHCR，无需额外 Secrets
 - **缓存**：Buildx `type=gha` 分层缓存，加速重复构建
 - **注意**：镜像**不含** MySQL / Redis，运行时通过环境变量连接外部实例；首次推送后可在仓库 Packages 页把包的可见性设为 Public（否则部署端需先 `docker login ghcr.io`）
 
-新增组件只需扩展矩阵：
+新增组件只需扩展矩阵（`include` 形式，便于为每个镜像指定构建上下文与 Dockerfile）：
 
 ```yaml
 strategy:
   matrix:
-    component: [ backend, frontend ]
+    include:
+      - component: backend
+        context: ./backend
+        file: ./backend/Dockerfile
+      - component: frontend
+        context: ./frontend
+        file: ./frontend/Dockerfile
+      - component: app
+        context: .
+        file: ./Dockerfile.allinone
 ```
 
 ## 关键设计

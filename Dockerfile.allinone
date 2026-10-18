@@ -1,0 +1,42 @@
+# ============================================================
+# 前后端一体化镜像：单个 Jar 同时提供前端 SPA 与后端 API（含内嵌采集 Agent）
+#
+# 构建上下文必须是【仓库根目录】：
+#   docker build -f Dockerfile.allinone -t spectrace-app .
+#
+# 运行（前端与 API 同源，无需 Nginx）：
+#   docker run -d -p 80:8080 \
+#     -e SPRING_DATASOURCE_URL='jdbc:mysql://<host>:3306/spectrace?serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true' \
+#     -e SPRING_DATASOURCE_USERNAME=root -e SPRING_DATASOURCE_PASSWORD=*** \
+#     -e SPRING_DATA_REDIS_HOST=<redis-host> -e SPECTRACE_JWT_SECRET=*** \
+#     spectrace-app
+# ============================================================
+
+# ---- 1. 构建前端 ----
+FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend
+WORKDIR /ui
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
+
+# ---- 2. 构建后端（把前端产物并入 static，产出内含 SPA 的 Jar）----
+FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-21 AS backend
+WORKDIR /build
+COPY backend/pom.xml .
+RUN mvn -B -q dependency:go-offline
+COPY backend/src ./src
+# 前端静态文件并入后端 classpath:static，随 Jar 一起分发
+COPY --from=frontend /ui/dist ./src/main/resources/static
+RUN mvn -B -q clean package -DskipTests
+
+# ---- 3. 运行阶段 ----
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+ENV TZ=Asia/Shanghai
+ENV SPRING_PROFILES_ACTIVE=prod
+
+COPY --from=backend /build/target/spectrace-backend-1.0.0.jar app.jar
+
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
