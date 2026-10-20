@@ -1,13 +1,13 @@
 # ============================================================
-# 前后端一体化镜像：单个 Jar 同时提供前端 SPA 与后端 API（含内嵌采集 Agent）
+# SpecTrace 单镜像（前后端一体）：一个 Jar 同时提供前端 SPA、API 与内嵌采集 Agent
 #
-# 构建上下文必须是【仓库根目录】：
-#   docker build -f Dockerfile.allinone -t spectrace-app .
+# 构建上下文必须是【仓库根目录】（需同时读取 frontend/ 与 backend/）：
+#   docker build -t spectrace-app .
 #
-# 运行（前端与 API 同源，无需 Nginx，SQLite 单文件随卷持久化）：
+# 运行（数据目录挂载到宿主机，SQLite 与上传文件都落在这里）：
 #   docker run -d -p 80:8080 \
 #     -e SPECTRACE_JWT_SECRET=*** \
-#     -v spectrace-data:/data \
+#     -v /opt/spectrace/data:/data \
 #     spectrace-app
 # ============================================================
 
@@ -19,13 +19,13 @@ RUN npm ci
 COPY frontend/ .
 RUN npm run build
 
-# ---- 2. 构建后端（把前端产物并入 static，产出内含 SPA 的 Jar）----
+# ---- 2. 构建后端，并把前端产物并入 static（最终随 SPA 打进 Jar）----
 FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-21 AS backend
 WORKDIR /build
 COPY backend/pom.xml .
 RUN mvn -B -q dependency:go-offline
 COPY backend/src ./src
-# 前端静态文件并入后端 classpath:static，随 Jar 一起分发
+# 前端静态文件落到 classpath:static，与 Jar 一起发布
 COPY --from=frontend /ui/dist ./src/main/resources/static
 RUN mvn -B -q clean package -DskipTests
 

@@ -1,21 +1,21 @@
 # ============================================================
-# SpecTrace 应用编排（默认拉取 GHCR 镜像）
+# SpecTrace 编排：单镜像部署（前端 SPA 已打进后端 Jar），一个容器同时提供站点与 API
 #
-# 数据库为 SQLite，数据落在宿主机挂载目录（默认 ./data，可用 SPECTRACE_DATA_DIR 指定），无需 MySQL / Redis。
 # 纯镜像：docker compose up -d
 # 源码构建（追加覆盖）：docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 #
-# 采集 Agent 已内嵌在后端同进程，无需单独服务；默认使用内存队列。
+# 数据不落 Docker 卷：宿主机目录（默认 ./data，可用 SPECTRACE_DATA_DIR 指定）挂载到容器 /data。
+# 采集 Agent 内嵌同进程，默认使用内存队列，无需 MySQL / Redis。
 # 镜像名与应用密钥经 .env / 环境变量注入，见 .env.example
 # ============================================================
 name: spectrace
 
 services:
-  backend:
-    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:-jingyuan9527}/spectrace-backend:${IMAGE_TAG:-latest}
-    container_name: spectrace-backend
+  app:
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:-jingyuan9527}/spectrace-app:${IMAGE_TAG:-latest}
+    container_name: spectrace-app
     environment:
-      # ---- SQLite（单文件，落在宿主机挂载目录内）----
+      # ---- 数据（SQLite 与上传文件都落在宿主机挂载目录内）----
       SPECTRACE_DB_PATH: /data/spectrace.db
       SPECTRACE_UPLOAD_DIR: /data/uploads
       # ---- 应用密钥（生产务必修改）----
@@ -25,19 +25,10 @@ services:
       # 任务队列：memory（默认，无需外部服务）/ redis（可选，多实例部署）
       SPECTRACE_AGENT_QUEUE: ${SPECTRACE_AGENT_QUEUE:-memory}
       TZ: Asia/Shanghai
+    ports:
+      # 站点与 API 同源，一个端口即可
+      - "${HTTP_PORT:-80}:8080"
     volumes:
       # 数据目录由用户自行管理：宿主机目录挂载到容器 /data，DB 与上传文件都在其中
       - ${SPECTRACE_DATA_DIR:-./data}:/data
-    # 如需直连后端 / Swagger，可放开下面注释
-    # ports:
-    #   - "8080:8080"
-    restart: unless-stopped
-
-  frontend:
-    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:-jingyuan9527}/spectrace-frontend:${IMAGE_TAG:-latest}
-    container_name: spectrace-web
-    ports:
-      - "${HTTP_PORT:-80}:80"
-    depends_on:
-      - backend
     restart: unless-stopped

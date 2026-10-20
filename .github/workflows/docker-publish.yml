@@ -1,7 +1,6 @@
-name: Build & Publish Docker Images
+name: Build & Publish Docker Image
 
-# 触发：推送到 main、打 tag（v*）、或手动触发
-# PR 只做构建校验，不推送镜像
+# 推送到 main、打 tag（v*）、手动触发时构建并推送；PR 只做构建校验，不推送
 on:
   push:
     branches: [ main ]
@@ -10,39 +9,23 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-# GHCR 推送需要 packages:write
+# 推送 GHCR 需要 packages:write
 permissions:
   contents: read
   packages: write
 
 env:
   REGISTRY: ghcr.io
+  IMAGE_NAME: spectrace-app
 
 jobs:
   build:
-    name: build ${{ matrix.component }}
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # 后端（含内嵌采集 Agent）
-          - component: backend
-            context: ./backend
-            file: ./backend/Dockerfile
-          # 前端（Nginx 托管静态资源）
-          - component: frontend
-            context: ./frontend
-            file: ./frontend/Dockerfile
-          # 前后端一体化单镜像（上下文为仓库根目录）
-          - component: app
-            context: .
-            file: ./Dockerfile.allinone
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 构建 arm64 需要 QEMU（PR 只构建 amd64，可跳过）
+      # 发布 arm64 需要 QEMU；PR 只构建 amd64
       - name: Set up QEMU
         if: github.event_name != 'pull_request'
         uses: docker/setup-qemu-action@v3
@@ -62,7 +45,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/spectrace-${{ matrix.component }}
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
             type=ref,event=tag
@@ -74,12 +57,12 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.file }}
+          context: .
+          file: ./Dockerfile
           # PR 仅校验 amd64；发布时构建 amd64 + arm64 多架构镜像
           platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.component }}
-          cache-to: type=gha,scope=${{ matrix.component }},mode=max
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,scope=app,mode=max

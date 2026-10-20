@@ -1,15 +1,16 @@
 # ============================================================
-# SpecTrace 源码构建覆盖文件（为各服务补充 build 上下文）
+# SpecTrace 源码构建覆盖文件：为主编排的 app 服务补充 build 配置
 #
-# 用法（与主编排叠加）：
+# 用法（同目录下叠加）：
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 #
-# 构建产物会以 docker-compose.yml 中定义的 image 名称打标签。
+# 构建上下文为【仓库根目录】，使用根目录 Dockerfile（前后端一体单镜像）。
+# 镜像名与标签仍由 docker-compose.yml 中的 image 决定。
 # ============================================================
 name: spectrace
 
 services:
-  backend:
-    build: ./backend
-  frontend:
-    build: ./frontend
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile

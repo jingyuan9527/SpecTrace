@@ -26,15 +26,13 @@
 
 ```
 SpecTrace/
-├── backend/         SpringBoot 3.3 + MyBatis-Plus + 内嵌采集 Agent（SQLite 单文件库）+ Dockerfile
-├── frontend/        Vue3 + Element Plus + TailwindCSS + ECharts + html2canvas + Dockerfile/nginx.conf
+├── backend/         SpringBoot 3.3 + MyBatis-Plus + 内嵌采集 Agent（SQLite 单文件库）
+├── frontend/        Vue3 + Element Plus + TailwindCSS + ECharts + html2canvas
 ├── sql/             旧版 MySQL 建表脚本（仅迁移参考，当前应用不再使用）
-├── .github/workflows/docker-publish.yml   构建并推送镜像到 GHCR（backend / frontend / app）
-├── Dockerfile.allinone      前后端一体化单镜像（构建上下文 = 仓库根目录）
-├── docker-compose.yml       应用编排（默认拉取 GHCR 镜像，SQLite 数据落宿主机挂载目录）
+├── .github/workflows/docker-publish.yml   构建并推送单镜像到 GHCR
+├── Dockerfile       前后端一体单镜像（构建上下文 = 仓库根目录）
+├── docker-compose.yml       应用编排（默认拉取 GHCR 单镜像，SQLite 数据落宿主机挂载目录）
 ├── docker-compose.build.yml 源码构建覆盖文件
-├── docker-compose.allinone.yml        一体化模式覆盖文件（后端镜像内含前端）
-├── docker-compose.allinone.build.yml  一体化模式源码构建覆盖文件
 └── .env.example             部署环境变量样例
 ```
 
@@ -95,14 +93,16 @@ npm run dev
 
 ## 生产部署
 
-### 方式一：Docker Compose
+推荐只部署**一个镜像**（`spectrace-app`）：前端 SPA 已打进后端 Jar，站点与 API 同源，一个容器、一个进程，含内嵌采集 Agent。
+
+### 方式一：Docker Compose（推荐）
 
 编排由一份主文件 + 一份可选构建覆盖文件组成：
 
 | 文件 | 内容 |
 | --- | --- |
-| `docker-compose.yml` | 应用：`backend`(8080 内网，含采集 Agent) + `frontend`(Nginx，宿主机 `${HTTP_PORT:-80}`)；默认拉取 GHCR 镜像；SQLite 数据写入宿主机目录 `${SPECTRACE_DATA_DIR:-./data}`（挂载到容器 `/data`） |
-| `docker-compose.build.yml` | 覆盖文件：为各服务补充 `build` 上下文（改为从源码构建） |
+| `docker-compose.yml` | 单服务 `app`：镜像 `spectrace-app`，宿主机 `${HTTP_PORT:-80}` → 容器 `8080`；SQLite 数据写入宿主机目录 `${SPECTRACE_DATA_DIR:-./data}`（挂载到容器 `/data`） |
+| `docker-compose.build.yml` | 覆盖文件：改为从仓库根目录源码构建单镜像 |
 
 ```bash
 cp .env.example .env      # 按需修改；生产务必改 JWT_SECRET，并把 SPECTRACE_DATA_DIR 指向有备份的磁盘目录
@@ -120,7 +120,7 @@ docker compose up -d
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
-- 镜像：`ghcr.io/jingyuan9527/spectrace-{backend,frontend}`，版本由 `.env` 的 `IMAGE_TAG` 控制（默认 `latest`）
+- 镜像：`ghcr.io/jingyuan9527/spectrace-app`，版本由 `.env` 的 `IMAGE_TAG` 控制（默认 `latest`）
 - 数据**不落 Docker 卷**，而是挂载宿主机目录：`.env` 的 `SPECTRACE_DATA_DIR`（默认 `./data`，即 `docker compose` 执行目录下的 `data/`）挂到容器 `/data`，数据库 `spectrace.db` 与上传文件都在其中，由用户自行管理；备份直接复制该目录即可
 - `SPECTRACE_DATA_DIR` 建议用**绝对路径**（如 `/opt/spectrace/data`），避免相对路径随执行目录漂移；目录须存在且容器内进程（默认 root）可写
 - 采集 Agent 内嵌在后端，无需额外服务或内部令牌；如不希望自动采集，设 `SPECTRACE_AGENT_ENABLED=false`
@@ -130,30 +130,16 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 
 - 访问 `http://<服务器IP>:<HTTP_PORT>`，后台 `/#/admin/login`（`admin / admin123`，登录后请立即改密）
 - 可先 `pull` 更新镜像再启动：如 `docker compose pull && docker compose up -d`
-- 常用操作：`docker compose logs -f backend`、`docker compose down`（数据在宿主机目录，`down -v` 不会删除数据；删数据＝删除 `SPECTRACE_DATA_DIR` 目录）
+- 常用操作：`docker compose logs -f app`、`docker compose down`（数据在宿主机目录，`down -v` 不会删除数据；删数据＝删除 `SPECTRACE_DATA_DIR` 目录）
 - AI 连接/模型在后台「AI 配置」页面维护，无需改环境变量
-- 如需直连后端或 Swagger，放开 `docker-compose.yml` 中 backend 的 `ports` 注释
+- 站点与 Swagger 同源：`http://<服务器IP>:<HTTP_PORT>/swagger-ui.html`
 
 > 注意：表结构由后端启动时自动创建，脚本幂等；升级不会清空已有数据。需要回滚或迁移时先备份宿主机数据目录 `SPECTRACE_DATA_DIR` 中的 `spectrace.db`。
 
-### 方式二：传统部署（单个 Jar）
-
-1. 构建并启动后端：`cd backend && mvn -B package -DskipTests`，再 `java -jar target/spectrace-backend-1.0.0.jar`
-   - 该 Jar **已内含采集 Agent**，无需单独部署
-   - 数据目录（含 `spectrace.db` 与上传文件）建议用环境变量指定：`SPECTRACE_DB_PATH=/opt/spectrace/data/spectrace.db`（默认 `./data/spectrace.db`）
-   - 必改密钥：`SPECTRACE_JWT_SECRET`；上传目录：`SPECTRACE_UPLOAD_DIR=/opt/spectrace/data/uploads`
-   - 任务队列默认 `memory`；多实例部署可设 `SPECTRACE_AGENT_QUEUE=redis` 并配置 Redis
-   - 如需关闭采集：`SPECTRACE_AGENT_ENABLED=false`
-2. 前端 `cd frontend && npm run build`，将 `dist/` 交由 Nginx 托管并反向代理 `/api`、`/uploads`（可参考 `frontend/nginx.conf`）
-
-### 方式三：前后端一体化单镜像（可选）
-
-把前端构建产物并入后端 Jar 的 `static`，**一个镜像 / 一个进程**同时提供站点与 API（含内嵌采集 Agent），前端与接口同源，无需 Nginx，也无需反向代理。
-
-**A. 直接 docker build / run**
+### 方式二：直接 docker build / run（不用 Compose）
 
 ```bash
-docker build -f Dockerfile.allinone -t ghcr.io/jingyuan9527/spectrace-app:latest .
+docker build -t ghcr.io/jingyuan9527/spectrace-app:latest .
 
 docker run -d --name spectrace-app -p 80:8080 \
   -e SPECTRACE_JWT_SECRET=*** \
@@ -162,53 +148,36 @@ docker run -d --name spectrace-app -p 80:8080 \
   ghcr.io/jingyuan9527/spectrace-app:latest
 ```
 
-**B. 使用 Compose 覆盖文件**（复用主编排的密钥与数据目录挂载）
-
-```bash
-# 拉取一体化镜像
-docker compose -f docker-compose.yml -f docker-compose.allinone.yml up -d
-# 源码构建一体化镜像
-docker compose -f docker-compose.yml -f docker-compose.allinone.yml -f docker-compose.allinone.build.yml up -d --build
-```
-
-访问 `http://<服务器IP>:<HTTP_PORT>`；登录、上传等行为与方式一一致。
-
 > 构建上下文必须是**仓库根目录**（需同时读取 `frontend/` 与 `backend/`），根目录 `.dockerignore` 已排除 `node_modules`、`target` 等无关文件。
+
+### 方式三：传统部署（单个 Jar）
+
+1. 构建并启动：`cd backend && mvn -B package -DskipTests`，再 `java -jar target/spectrace-backend-1.0.0.jar`
+   - 该 Jar **已内含采集 Agent**，无需单独部署
+   - 数据目录（含 `spectrace.db` 与上传文件）建议用环境变量指定：`SPECTRACE_DB_PATH=/opt/spectrace/data/spectrace.db`（默认 `./data/spectrace.db`）
+   - 必改密钥：`SPECTRACE_JWT_SECRET`；上传目录：`SPECTRACE_UPLOAD_DIR=/opt/spectrace/data/uploads`
+   - 任务队列默认 `memory`；多实例部署可设 `SPECTRACE_AGENT_QUEUE=redis` 并配置 Redis
+   - 如需关闭采集：`SPECTRACE_AGENT_ENABLED=false`
+2. 单 Jar 只提供 API；如需自带站点，用方式一/二的单镜像（`Dockerfile` 会把 `frontend/dist` 打进 Jar），或 `cd frontend && npm run build` 后自行托管 `dist/` 并反向代理 `/api`、`/uploads`、`/brands`
 
 ## CI/CD（GitHub Actions）
 
 工作流：`.github/workflows/docker-publish.yml`
 
 - **触发**：推送到 `main`、打 `v*` tag、手动 `workflow_dispatch`；Pull Request 仅构建校验、不推送
-- **产物**：`ghcr.io/jingyuan9527/spectrace-backend`（含采集 Agent）、`spectrace-frontend`、`spectrace-app`（前后端一体化）
+- **产物**：`ghcr.io/jingyuan9527/spectrace-app`（前后端一体单镜像，含采集 Agent）
+- **构建**：上下文为仓库根目录，使用根目录 `Dockerfile`（先构建前端，再并入后端 Jar）
 - **架构**：发布时构建 `linux/amd64` + `linux/arm64` 多架构镜像（`docker pull` 自动匹配），PR 仅校验 `linux/amd64`
 - **标签**：分支名、tag、`{{version}}` / `{{major}}.{{minor}}`、`sha-<短哈希>`、默认分支的 `latest`
 - **权限**：使用内置 `GITHUB_TOKEN`（`packages: write`）登录 GHCR，无需额外 Secrets
 - **缓存**：Buildx `type=gha` 分层缓存，加速重复构建
 - **注意**：镜像自带 SQLite 驱动，运行时不依赖外部数据库；首次推送后可在仓库 Packages 页把包的可见性设为 Public（否则部署端需先 `docker login ghcr.io`）
 
-新增组件只需扩展矩阵（`include` 形式，便于为每个镜像指定构建上下文与 Dockerfile）：
-
-```yaml
-strategy:
-  matrix:
-    include:
-      - component: backend
-        context: ./backend
-        file: ./backend/Dockerfile
-      - component: frontend
-        context: ./frontend
-        file: ./frontend/Dockerfile
-      - component: app
-        context: .
-        file: ./Dockerfile.allinone
-```
-
 ## 关键设计
 
 - **动态参数**：`brand / param_group / param_def / device / device_param_value` 分离，新增参数只需向 `param_def` 插入记录，无需 DDL 改表；新增品牌/参数不影响业务代码。
 - **参数全量覆盖**：保存机型参数时以提交的 `paramKey -> value` 为准，未提交或值为空白的参数键会被删除；仅当 `params` 为 null（未提供）时才不改动既有参数。删除的品牌/用户等采用逻辑删除，唯一键（`param_key` / `username`）通过 SQLite 部分唯一索引 `WHERE deleted = 0` 保证软删后仍可重建同名记录。
-- **品牌 Logo 内置静态资源**：品牌 logo 是随 Jar / 镜像发布的 `backend/src/main/resources/static/brands/*.png`（1280px 高清 PNG，取自 Wikimedia Commons 的公有领域 / PD-textlogo 矢量文件），接口返回 `/brands/<名称>.png`；前端 `vite` 与 `nginx` 均已代理 `/brands`，替换 logo 直接覆盖文件或改 `brand.logo` 即可。
+- **品牌 Logo 内置静态资源**：品牌 logo 是随 Jar / 镜像发布的 `backend/src/main/resources/static/brands/*.png`（1280px 高清 PNG，取自 Wikimedia Commons 的公有领域 / PD-textlogo 矢量文件），接口返回 `/brands/<名称>.png`；单镜像部署前后端同源无需代理，本地 `vite` 开发已代理 `/brands`，替换 logo 直接覆盖文件或改 `brand.logo` 即可。
 - **对比差异高亮**：后端 `compare` 接口返回每行参数的 `same` 标记，前端据此高亮差异、置灰相同项。
 - **截图分享**：`html2canvas` 截取对比/图表区域，支持下载 PNG、复制到剪贴板，水印可开关；截图时自动隐藏交互控件保证画面干净。
 - **内嵌采集 Agent**：`TaskQueue` 抽象（内存 / Redis 按配置切换），Agent 与后端同进程直接调用 Service，抓取结果先进待审核库，人工审核通过才迁移；无需单独服务与内部回调令牌。
