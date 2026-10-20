@@ -31,7 +31,7 @@ SpecTrace/
 ├── sql/             旧版 MySQL 建表脚本（仅迁移参考，当前应用不再使用）
 ├── .github/workflows/docker-publish.yml   构建并推送镜像到 GHCR（backend / frontend / app）
 ├── Dockerfile.allinone      前后端一体化单镜像（构建上下文 = 仓库根目录）
-├── docker-compose.yml       应用编排（默认拉取 GHCR 镜像，SQLite 数据卷持久化）
+├── docker-compose.yml       应用编排（默认拉取 GHCR 镜像，SQLite 数据落宿主机挂载目录）
 ├── docker-compose.build.yml 源码构建覆盖文件
 ├── docker-compose.allinone.yml        一体化模式覆盖文件（后端镜像内含前端）
 ├── docker-compose.allinone.build.yml  一体化模式源码构建覆盖文件
@@ -101,11 +101,11 @@ npm run dev
 
 | 文件 | 内容 |
 | --- | --- |
-| `docker-compose.yml` | 应用：`backend`(8080 内网，含采集 Agent) + `frontend`(Nginx，宿主机 `${HTTP_PORT:-80}`)；默认拉取 GHCR 镜像；SQLite 数据写入 `data` 卷 |
+| `docker-compose.yml` | 应用：`backend`(8080 内网，含采集 Agent) + `frontend`(Nginx，宿主机 `${HTTP_PORT:-80}`)；默认拉取 GHCR 镜像；SQLite 数据写入宿主机目录 `${SPECTRACE_DATA_DIR:-./data}`（挂载到容器 `/data`） |
 | `docker-compose.build.yml` | 覆盖文件：为各服务补充 `build` 上下文（改为从源码构建） |
 
 ```bash
-cp .env.example .env      # 按需修改；生产务必改 JWT_SECRET
+cp .env.example .env      # 按需修改；生产务必改 JWT_SECRET，并把 SPECTRACE_DATA_DIR 指向有备份的磁盘目录
 ```
 
 **A. 使用 GHCR 镜像部署（推荐，服务器无需源码）**
@@ -121,7 +121,8 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
 - 镜像：`ghcr.io/jingyuan9527/spectrace-{backend,frontend}`，版本由 `.env` 的 `IMAGE_TAG` 控制（默认 `latest`）
-- 数据库为容器内 `/data/spectrace.db`，通过 `data` 卷持久化；备份直接复制该文件即可
+- 数据**不落 Docker 卷**，而是挂载宿主机目录：`.env` 的 `SPECTRACE_DATA_DIR`（默认 `./data`，即 `docker compose` 执行目录下的 `data/`）挂到容器 `/data`，数据库 `spectrace.db` 与上传文件都在其中，由用户自行管理；备份直接复制该目录即可
+- `SPECTRACE_DATA_DIR` 建议用**绝对路径**（如 `/opt/spectrace/data`），避免相对路径随执行目录漂移；目录须存在且容器内进程（默认 root）可写
 - 采集 Agent 内嵌在后端，无需额外服务或内部令牌；如不希望自动采集，设 `SPECTRACE_AGENT_ENABLED=false`
 - 公共镜像可直接拉取；若包为私有，先登录：`echo <PAT> | docker login ghcr.io -u <用户名> --password-stdin`
 
@@ -129,18 +130,18 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 
 - 访问 `http://<服务器IP>:<HTTP_PORT>`，后台 `/#/admin/login`（`admin / admin123`，登录后请立即改密）
 - 可先 `pull` 更新镜像再启动：如 `docker compose pull && docker compose up -d`
-- 常用操作：`docker compose logs -f backend`、`docker compose down`（加 `-v` 会连同 SQLite 数据卷一起删除）
+- 常用操作：`docker compose logs -f backend`、`docker compose down`（数据在宿主机目录，`down -v` 不会删除数据；删数据＝删除 `SPECTRACE_DATA_DIR` 目录）
 - AI 连接/模型在后台「AI 配置」页面维护，无需改环境变量
 - 如需直连后端或 Swagger，放开 `docker-compose.yml` 中 backend 的 `ports` 注释
 
-> 注意：表结构由后端启动时自动创建，脚本幂等；升级不会清空已有数据。需要回滚或迁移时先备份 `data` 卷中的 `spectrace.db`。
+> 注意：表结构由后端启动时自动创建，脚本幂等；升级不会清空已有数据。需要回滚或迁移时先备份宿主机数据目录 `SPECTRACE_DATA_DIR` 中的 `spectrace.db`。
 
 ### 方式二：传统部署（单个 Jar）
 
 1. 构建并启动后端：`cd backend && mvn -B package -DskipTests`，再 `java -jar target/spectrace-backend-1.0.0.jar`
    - 该 Jar **已内含采集 Agent**，无需单独部署
-   - SQLite 路径建议用环境变量指定：`SPECTRACE_DB_PATH=/data/spectrace.db`（默认 `./data/spectrace.db`）
-   - 必改密钥：`SPECTRACE_JWT_SECRET`；上传目录：`SPECTRACE_UPLOAD_DIR=/data/spectrace/uploads`
+   - 数据目录（含 `spectrace.db` 与上传文件）建议用环境变量指定：`SPECTRACE_DB_PATH=/opt/spectrace/data/spectrace.db`（默认 `./data/spectrace.db`）
+   - 必改密钥：`SPECTRACE_JWT_SECRET`；上传目录：`SPECTRACE_UPLOAD_DIR=/opt/spectrace/data/uploads`
    - 任务队列默认 `memory`；多实例部署可设 `SPECTRACE_AGENT_QUEUE=redis` 并配置 Redis
    - 如需关闭采集：`SPECTRACE_AGENT_ENABLED=false`
 2. 前端 `cd frontend && npm run build`，将 `dist/` 交由 Nginx 托管并反向代理 `/api`、`/uploads`（可参考 `frontend/nginx.conf`）
@@ -157,11 +158,11 @@ docker build -f Dockerfile.allinone -t ghcr.io/jingyuan9527/spectrace-app:latest
 docker run -d --name spectrace-app -p 80:8080 \
   -e SPECTRACE_JWT_SECRET=*** \
   -e SPECTRACE_UPLOAD_DIR=/data/uploads \
-  -v spectrace-data:/data \
+  -v /opt/spectrace/data:/data \
   ghcr.io/jingyuan9527/spectrace-app:latest
 ```
 
-**B. 使用 Compose 覆盖文件**（复用主编排的密钥与 SQLite 数据卷）
+**B. 使用 Compose 覆盖文件**（复用主编排的密钥与数据目录挂载）
 
 ```bash
 # 拉取一体化镜像

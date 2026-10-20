@@ -22,6 +22,9 @@ uploads/
 *.db-wal
 *.db-shm
 
+# 本地数据目录（compose 默认挂载 ./data，含 DB 与上传文件）
+/data/
+
 # IDE
 .idea/
 *.iml
