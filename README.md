@@ -97,42 +97,38 @@ npm run dev
 
 ### 方式一：Docker Compose（推荐）
 
-编排由一份主文件 + 一份可选构建覆盖文件组成：
+三步部署（服务器只需装好 Docker，无需源码）：
+
+1. `cp .env.example .env`
+2. 打开 `.env`，只改三项：`HTTP_PORT`、`SPECTRACE_DATA_DIR`、`JWT_SECRET`
+3. `docker compose up -d`
+
+然后访问 `http://<服务器IP>:<HTTP_PORT>`，后台 `/#/admin/login`（默认 `admin / admin123`，登录后立即改密）。
+
+编排文件：
 
 | 文件 | 内容 |
 | --- | --- |
 | `docker-compose.yml` | 单服务 `app`：镜像 `spectrace-app`，宿主机 `${HTTP_PORT:-80}` → 容器 `8080`；SQLite 数据写入宿主机目录 `${SPECTRACE_DATA_DIR:-./data}`（挂载到容器 `/data`） |
-| `docker-compose.build.yml` | 覆盖文件：改为从仓库根目录源码构建单镜像 |
+| `docker-compose.build.yml` | 可选覆盖文件：改为从仓库根目录源码构建单镜像 |
 
-```bash
-cp .env.example .env      # 按需修改；生产务必改 JWT_SECRET，并把 SPECTRACE_DATA_DIR 指向有备份的磁盘目录
-```
-
-**A. 使用 GHCR 镜像部署（推荐，服务器无需源码）**
-
-```bash
-docker compose up -d
-```
-
-**B. 从源码构建（有源码 / 需改代码）**
+**从源码构建**（有源码 / 需改代码）：
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
-- 镜像：`ghcr.io/jingyuan9527/spectrace-app`，版本由 `.env` 的 `IMAGE_TAG` 控制（默认 `latest`）
-- 数据**不落 Docker 卷**，而是挂载宿主机目录：`.env` 的 `SPECTRACE_DATA_DIR`（默认 `./data`，即 `docker compose` 执行目录下的 `data/`）挂到容器 `/data`，数据库 `spectrace.db` 与上传文件都在其中，由用户自行管理；备份直接复制该目录即可
+- `.env` 只需上面三项；`IMAGE_TAG`、`SPECTRACE_AGENT_ENABLED`、`SPECTRACE_AGENT_QUEUE` 均为可选覆盖（默认 `latest` / 开启采集 / 内存队列），不改即用默认
+- 数据**不落 Docker 卷**：`SPECTRACE_DATA_DIR`（默认 `./data`，即 compose 执行目录下的 `data/`）挂到容器 `/data`，数据库 `spectrace.db` 与上传文件都在其中；备份直接复制该目录
 - `SPECTRACE_DATA_DIR` 建议用**绝对路径**（如 `/opt/spectrace/data`），避免相对路径随执行目录漂移；目录须存在且容器内进程（默认 root）可写
-- 采集 Agent 内嵌在后端，无需额外服务或内部令牌；如不希望自动采集，设 `SPECTRACE_AGENT_ENABLED=false`
-- 公共镜像可直接拉取；若包为私有，先登录：`echo <PAT> | docker login ghcr.io -u <用户名> --password-stdin`
+- AI 连接/模型在后台「AI 配置」页面维护，无需改环境变量；站点与 Swagger 同源：`http://<服务器IP>:<HTTP_PORT>/swagger-ui.html`
+- 若镜像包为私有，先登录：`echo <PAT> | docker login ghcr.io -u <用户名> --password-stdin`
 
-**通用说明**
+**日常运维**
 
-- 访问 `http://<服务器IP>:<HTTP_PORT>`，后台 `/#/admin/login`（`admin / admin123`，登录后请立即改密）
-- 可先 `pull` 更新镜像再启动：如 `docker compose pull && docker compose up -d`
-- 常用操作：`docker compose logs -f app`、`docker compose down`（数据在宿主机目录，`down -v` 不会删除数据；删数据＝删除 `SPECTRACE_DATA_DIR` 目录）
-- AI 连接/模型在后台「AI 配置」页面维护，无需改环境变量
-- 站点与 Swagger 同源：`http://<服务器IP>:<HTTP_PORT>/swagger-ui.html`
+- 升级：`docker compose pull && docker compose up -d`
+- 日志：`docker compose logs -f app`
+- 停止：`docker compose down`（数据在宿主机目录，`-v` 不会删除数据；删数据＝删除 `SPECTRACE_DATA_DIR` 目录）
 
 > 注意：表结构由后端启动时自动创建，脚本幂等；升级不会清空已有数据。需要回滚或迁移时先备份宿主机数据目录 `SPECTRACE_DATA_DIR` 中的 `spectrace.db`。
 

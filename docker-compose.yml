@@ -12,7 +12,7 @@ name: spectrace
 
 services:
   app:
-    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:-jingyuan9527}/spectrace-app:${IMAGE_TAG:-latest}
+    image: ghcr.io/jingyuan9527/spectrace-app:${IMAGE_TAG:-latest}
     container_name: spectrace-app
     environment:
       # ---- 数据（SQLite 与上传文件都落在宿主机挂载目录内）----
