@@ -5,12 +5,20 @@
 
 -- 品牌
 INSERT OR IGNORE INTO brand (id, name, logo, sort_order, status) VALUES
- (1, 'Apple',  'https://cdn.spectrace.dev/brand/apple.svg',  1, 1),
- (2, '小米',   'https://cdn.spectrace.dev/brand/xiaomi.svg', 2, 1),
- (3, '华为',   'https://cdn.spectrace.dev/brand/huawei.svg', 3, 1),
- (4, '三星',   'https://cdn.spectrace.dev/brand/samsung.svg',4, 1),
- (5, 'OPPO',   'https://cdn.spectrace.dev/brand/oppo.svg',   5, 1),
- (6, 'vivo',   'https://cdn.spectrace.dev/brand/vivo.svg',   6, 1);
+ (1, 'Apple',  '/brands/apple.png',   1, 1),
+ (2, '小米',   '/brands/xiaomi.png',  2, 1),
+ (3, '华为',   '/brands/huawei.png',  3, 1),
+ (4, '三星',   '/brands/samsung.png', 4, 1),
+ (5, 'OPPO',   '/brands/oppo.png',    5, 1),
+ (6, 'vivo',   '/brands/vivo.png',    6, 1);
+
+-- 修正历史种子数据里指向失效 CDN 的 logo（仅当仍是旧链接时更新，不覆盖管理员自定义）
+UPDATE brand SET logo = '/brands/apple.png'   WHERE name = 'Apple' AND logo LIKE 'https://cdn.spectrace.dev/%';
+UPDATE brand SET logo = '/brands/xiaomi.png'  WHERE name = '小米'  AND logo LIKE 'https://cdn.spectrace.dev/%';
+UPDATE brand SET logo = '/brands/huawei.png'  WHERE name = '华为'  AND logo LIKE 'https://cdn.spectrace.dev/%';
+UPDATE brand SET logo = '/brands/samsung.png' WHERE name = '三星'  AND logo LIKE 'https://cdn.spectrace.dev/%';
+UPDATE brand SET logo = '/brands/oppo.png'    WHERE name = 'OPPO'  AND logo LIKE 'https://cdn.spectrace.dev/%';
+UPDATE brand SET logo = '/brands/vivo.png'    WHERE name = 'vivo'  AND logo LIKE 'https://cdn.spectrace.dev/%';
 
 -- 参数分组
 INSERT OR IGNORE INTO param_group (id, name, sort_order) VALUES
