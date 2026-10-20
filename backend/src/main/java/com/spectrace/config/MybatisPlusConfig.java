@@ -16,7 +16,7 @@ public class MybatisPlusConfig {
     @Bean
     public MybatisPlusInterceptor mybatisPlusInterceptor() {
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
-        // 不显式指定 DbType，交由 MyBatis-Plus 依据 JDBC URL 自动识别（H2 / MySQL 通用）
+        // 不显式指定 DbType，交由 MyBatis-Plus 依据 JDBC URL 自动识别（SQLite）
         interceptor.addInnerInterceptor(new PaginationInnerInterceptor());
         return interceptor;
     }

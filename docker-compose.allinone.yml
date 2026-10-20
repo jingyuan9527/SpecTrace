@@ -4,8 +4,6 @@
 #
 # 拉取镜像：
 #   docker compose -f docker-compose.yml -f docker-compose.allinone.yml up -d
-# 内置库：
-#   docker compose -f docker-compose.yml -f docker-compose.allinone.yml -f docker-compose.infra.yml up -d
 # 源码构建：
 #   docker compose -f docker-compose.yml -f docker-compose.allinone.yml -f docker-compose.allinone.build.yml up -d --build
 #

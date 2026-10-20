@@ -27,10 +27,10 @@ public class SecurityConfig {
             "/assets/**",
             "/api/auth/login",
             "/api/public/**",
+            "/uploads/**",
             "/v3/api-docs/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
-            "/h2-console/**",
             "/error"
     };
 

@@ -9,6 +9,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @Slf4j
 @Hidden
@@ -25,6 +26,13 @@ public class GlobalExceptionHandler {
         FieldError fieldError = e.getBindingResult().getFieldError();
         String msg = fieldError == null ? "参数校验失败" : fieldError.getField() + " " + fieldError.getDefaultMessage();
         return R.fail(400, msg);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public R<Void> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+        String required = e.getRequiredType() == null ? "?" : e.getRequiredType().getSimpleName();
+        log.warn("请求参数类型不匹配: name={} value={} requiredType={}", e.getName(), e.getValue(), required);
+        return R.fail(400, "参数 " + e.getName() + " 类型不正确，应为 " + required);
     }
 
     @ExceptionHandler(AccessDeniedException.class)

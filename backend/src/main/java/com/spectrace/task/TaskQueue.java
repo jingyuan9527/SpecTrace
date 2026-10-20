@@ -5,8 +5,8 @@ import com.spectrace.dto.AgentTaskPayload;
 import java.time.Duration;
 
 /**
- * Agent 抓取任务队列抽象。默认内存实现用于本地开发，
- * 生产环境通过 spectrace.agent.queue=redis 切换到 Redis List。
+ * Agent 抓取任务队列抽象。默认内存实现无需外部服务，
+ * 多实例部署可通过 spectrace.agent.queue=redis 切换到 Redis List。
  */
 public interface TaskQueue {
 

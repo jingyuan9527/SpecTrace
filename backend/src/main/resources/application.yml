@@ -6,15 +6,17 @@ server:
 spring:
   application:
     name: spectrace-backend
-  profiles:
-    active: dev
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: GMT+8
     default-property-inclusion: non_null
+  datasource:
+    url: jdbc:sqlite:${SPECTRACE_DB_PATH:./data/spectrace.db}?journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL&foreign_keys=on
+    driver-class-name: org.sqlite.JDBC
   sql:
     init:
       mode: always
+      encoding: UTF-8
       schema-locations: classpath:db/schema.sql
       data-locations: classpath:db/data.sql
       continue-on-error: false
@@ -40,8 +42,8 @@ spectrace:
   agent:
     # 是否随应用启动常驻消费抓取任务
     enabled: ${SPECTRACE_AGENT_ENABLED:true}
-    # 队列实现：memory(本地开发) / redis(生产)
-    queue: memory
+    # 队列实现：memory(默认，无需外部服务) / redis(可选，多实例部署)
+    queue: ${SPECTRACE_AGENT_QUEUE:memory}
     queue-key: "spectrace:agent:task"
     # HarnessAgent 工作区（persona/AGENTS.md 及运行期会话数据的落盘位置）
     workspace: ${AGENTSCOPE_WORKSPACE:.agentscope/workspace}
@@ -65,43 +67,3 @@ logging:
   level:
     com.spectrace: debug
     io.agentscope: warn
-
----
-# 本地开发：H2 内存库，无需安装 MySQL / Redis
-spring:
-  config:
-    activate:
-      on-profile: dev
-  datasource:
-    url: jdbc:h2:mem:spectrace;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
-
----
-# 生产/联调：MySQL + Redis
-spring:
-  config:
-    activate:
-      on-profile: prod
-  datasource:
-    url: jdbc:mysql://127.0.0.1:3306/spectrace?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    username: root
-    password: root
-  sql:
-    init:
-      mode: never
-  data:
-    redis:
-      host: 127.0.0.1
-      port: 6379
-      database: 0
-
-spectrace:
-  agent:
-    queue: redis

@@ -4,7 +4,7 @@
 -- ============================================================
 
 -- 品牌
-INSERT INTO brand (id, name, logo, sort_order, status) VALUES
+INSERT OR IGNORE INTO brand (id, name, logo, sort_order, status) VALUES
  (1, 'Apple',  'https://cdn.spectrace.dev/brand/apple.svg',  1, 1),
  (2, '小米',   'https://cdn.spectrace.dev/brand/xiaomi.svg', 2, 1),
  (3, '华为',   'https://cdn.spectrace.dev/brand/huawei.svg', 3, 1),
@@ -13,7 +13,7 @@ INSERT INTO brand (id, name, logo, sort_order, status) VALUES
  (6, 'vivo',   'https://cdn.spectrace.dev/brand/vivo.svg',   6, 1);
 
 -- 参数分组
-INSERT INTO param_group (id, name, sort_order) VALUES
+INSERT OR IGNORE INTO param_group (id, name, sort_order) VALUES
  (1, '基础信息', 1),
  (2, '屏幕',     2),
  (3, '性能',     3),
@@ -24,7 +24,7 @@ INSERT INTO param_group (id, name, sort_order) VALUES
  (8, '其他',     8);
 
 -- 参数定义
-INSERT INTO param_def (id, param_key, param_name, group_id, param_type, enum_options, unit, sort_order, enabled) VALUES
+INSERT OR IGNORE INTO param_def (id, param_key, param_name, group_id, param_type, enum_options, unit, sort_order, enabled) VALUES
  (1,  'release_date',        '发布时间',       1, 'date',   NULL, NULL,  1, 1),
  (2,  'launch_price',        '首发价格',       1, 'number', NULL, '元',  2, 1),
  (3,  'screen_size',         '屏幕尺寸',       2, 'number', NULL, '英寸',1, 1),
@@ -53,7 +53,7 @@ INSERT INTO param_def (id, param_key, param_name, group_id, param_type, enum_opt
  (26, 'infrared',            '红外遥控',       8, 'text',   NULL, NULL,  2, 1);
 
 -- 机型
-INSERT INTO device (id, brand_id, name, release_date, thumbnail, description, status) VALUES
+INSERT OR IGNORE INTO device (id, brand_id, name, release_date, thumbnail, description, status) VALUES
  (1, 1, 'iPhone 13', '2021-09-24', 'https://cdn.spectrace.dev/device/iphone13.jpg',  '苹果 2021 年旗舰机型', 1),
  (2, 1, 'iPhone 14', '2022-09-16', 'https://cdn.spectrace.dev/device/iphone14.jpg',  '苹果 2022 年旗舰机型', 1),
  (3, 1, 'iPhone 15', '2023-09-22', 'https://cdn.spectrace.dev/device/iphone15.jpg',  '苹果 2023 年旗舰机型', 1),
@@ -62,7 +62,7 @@ INSERT INTO device (id, brand_id, name, release_date, thumbnail, description, st
  (6, 3, '华为 Mate 60 Pro', '2023-08-29', 'https://cdn.spectrace.dev/device/mate60pro.jpg', '华为 2023 年旗舰机型', 1);
 
 -- 机型参数值（节选，用于演示对比与历史演变）
-INSERT INTO device_param_value (device_id, param_def_id, param_value) VALUES
+INSERT OR IGNORE INTO device_param_value (device_id, param_def_id, param_value) VALUES
  -- iPhone 13
  (1, 1, '2021-09-24'), (1, 3, '6.1'), (1, 5, '60'), (1, 7, 'Apple A15 Bionic'),
  (1, 8, '4GB'), (1, 11, '3240'), (1, 12, '20'), (1, 18, '174'), (1, 20, 'IP68'),
@@ -83,9 +83,9 @@ INSERT INTO device_param_value (device_id, param_def_id, param_value) VALUES
  (6, 8, '12GB'), (6, 11, '5000'), (6, 12, '88'), (6, 18, '225'), (6, 20, 'IP68');
 
 -- AI 连接与模型配置（API Key 请在后台「AI 配置」中填写）
-INSERT INTO ai_config (id, name, provider, base_url, api_key, enabled) VALUES
+INSERT OR IGNORE INTO ai_config (id, name, provider, base_url, api_key, enabled) VALUES
  (1, '阿里云百炼', 'dashscope', 'https://dashscope.aliyuncs.com/compatible-mode/v1', '', 1);
 
-INSERT INTO ai_model (id, config_id, model, temperature, is_default, enabled) VALUES
+INSERT OR IGNORE INTO ai_model (id, config_id, model, temperature, is_default, enabled) VALUES
  (1, 1, 'qwen-max', 0.20, 1, 1);
 

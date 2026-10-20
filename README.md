@@ -12,28 +12,27 @@
 ```
 ┌──────────────────────────┐   HTTP    ┌────────────────────────────────────────┐
 │  Vue3 前端（访客端/后台）│ ────────► │  SpringBoot 3.x 后端（单体应用）        │
-│                          │ ◄──────── │   业务：MyBatis-Plus / JWT / RBAC       │ ──► MySQL（主业务库）
-└──────────────────────────┘           │   采集：内嵌 AgentScope Java 2 Agent    │ ──► Redis（缓存 + 任务队列）
+│                          │ ◄──────── │   业务：MyBatis-Plus / JWT / RBAC       │ ──► SQLite（单文件主业务库）
+└──────────────────────────┘           │   采集：内嵌 AgentScope Java 2 Agent    │ ──► 内存任务队列（可选 Redis）
                                        └────────────────────────────────────────┘
 ```
 
-采集 Agent 与业务后端**同一进程、同一份镜像**：任务经队列（内存 / Redis）投递，Agent 直接调用后端 Service 完成「搜索 → 抓取 → LLM 结构化抽取 → 写待审核库」，无 HTTP 往返，也无需单独部署 Agent 服务。
+采集 Agent 与业务后端**同一进程、同一份镜像**：任务经队列（默认内存，可选 Redis）投递，Agent 直接调用后端 Service 完成「搜索 → 抓取 → LLM 结构化抽取 → 写待审核库」，无 HTTP 往返，也无需单独部署 Agent 服务。
 
 **职责精简**：Agent 不直接访问数据库，只负责采集与结构化；入库、审核状态流转仍全部由 SpringBoot 掌管。
-**数据存储解耦**：MySQL / Redis 支持**外部托管**（默认）或由 Docker 内置，二选一，见下文部署说明。
+**零外部服务**：业务数据保存在 SQLite 单文件，任务队列默认使用进程内内存；只有多实例部署时才需要可选启用 Redis。
 
 ## 目录结构
 
 ```
 SpecTrace/
-├── backend/         SpringBoot 3.3 + MyBatis-Plus + 内嵌采集 Agent（默认 H2 内存库启动）+ Dockerfile
+├── backend/         SpringBoot 3.3 + MyBatis-Plus + 内嵌采集 Agent（SQLite 单文件库）+ Dockerfile
 ├── frontend/        Vue3 + Element Plus + TailwindCSS + ECharts + html2canvas + Dockerfile/nginx.conf
-├── sql/             MySQL 生产库建表脚本
+├── sql/             旧版 MySQL 建表脚本（仅迁移参考，当前应用不再使用）
 ├── .github/workflows/docker-publish.yml   构建并推送镜像到 GHCR（backend / frontend / app）
 ├── Dockerfile.allinone      前后端一体化单镜像（构建上下文 = 仓库根目录）
-├── docker-compose.yml       应用编排（默认拉取 GHCR 镜像，连接外部 MySQL/Redis）
+├── docker-compose.yml       应用编排（默认拉取 GHCR 镜像，SQLite 数据卷持久化）
 ├── docker-compose.build.yml 源码构建覆盖文件
-├── docker-compose.infra.yml 内置 MySQL/Redis 叠加文件
 ├── docker-compose.allinone.yml        一体化模式覆盖文件（后端镜像内含前端）
 ├── docker-compose.allinone.build.yml  一体化模式源码构建覆盖文件
 └── .env.example             部署环境变量样例
@@ -48,9 +47,9 @@ cd backend
 mvn spring-boot:run
 ```
 
-- 默认 `dev` profile，使用 H2 内存库并自动建表、写入种子数据
+- 默认使用 SQLite 文件库 `backend/data/spectrace.db`，启动时自动建表、幂等写入种子数据
 - 端口 `8080`，接口文档：http://localhost:8080/swagger-ui.html
-- H2 控制台：http://localhost:8080/h2-console （JDBC URL `jdbc:h2:mem:spectrace`，用户 `sa`，空密码）
+- 数据文件路径可用 `SPECTRACE_DB_PATH` 覆盖（例如 `SPECTRACE_DB_PATH=D:/data/spectrace.db`）
 - 初始超级管理员：`admin / admin123`（启动时以 BCrypt 写入）
 - **采集 Agent 随应用启动常驻消费任务**：先在后台「AI 配置」保存连接与模型（填好 API Key），再到「抓取任务」提交任务即可自动采集
 - 关闭内嵌 Agent：启动加 `--spectrace.agent.enabled=false`（或环境变量 `SPECTRACE_AGENT_ENABLED=false`）
@@ -73,7 +72,7 @@ npm run dev
 基于 **AgentScope Java 2.0 Harness 模式**（`HarnessAgent` + `Toolkit`）：persona / 输出规约写在**工作区 `AGENTS.md`**（Harness 的「智能体定义事实来源」，运行期可直接编辑、无需改码），自定义工具 `web_search` / `fetch_page`（Jsoup 抽取正文）。
 
 - 工作区目录由 `AGENTSCOPE_WORKSPACE` 控制（默认 `.agentscope/workspace`），首次启动把内置 persona 写入其下 `AGENTS.md`
-- 任务获取实现由 `spectrace.agent.queue` 决定：`memory`（本地开发，进程内队列）/ `redis`（生产，`BLPOP spectrace:agent:task`）；后端投递与 Agent 消费共用同一实现
+- 任务获取实现由 `spectrace.agent.queue` 决定：`memory`（默认，进程内队列，无外部服务）/ `redis`（可选，`BLPOP spectrace:agent:task`，多实例部署）；后端投递与 Agent 消费共用同一实现
 - 每个任务执行前解析一次 AI 模型参数，后台「AI 配置」改完**下个任务即生效**，无需重启
 - AI 连接（服务商 / 接口地址 / API Key）与模型在后台「AI 配置」页面维护：保存连接后可**拉取远端模型**、一次导入多个模型并设默认；创建抓取任务时可指定模型，缺省用默认模型
 
@@ -81,7 +80,9 @@ npm run dev
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
+| `SPECTRACE_DB_PATH` | `./data/spectrace.db` | SQLite 数据文件路径 |
 | `SPECTRACE_AGENT_ENABLED` | `true` | 是否启用内嵌采集 Agent |
+| `SPECTRACE_AGENT_QUEUE` | `memory` | 任务队列：`memory` / `redis` |
 | `AGENTSCOPE_WORKSPACE` | `.agentscope/workspace` | Harness 工作区目录 |
 | `POLL_INTERVAL_SECONDS` | `5` | 阻塞等待任务的超时（秒） |
 | `TASK_TIMEOUT_SECONDS` | `180` | 单任务最长耗时（秒） |
@@ -96,39 +97,31 @@ npm run dev
 
 ### 方式一：Docker Compose
 
-编排由一份主文件 + 两份可选覆盖文件组成：
+编排由一份主文件 + 一份可选构建覆盖文件组成：
 
 | 文件 | 内容 |
 | --- | --- |
-| `docker-compose.yml` | 应用：`backend`(8080 内网，含采集 Agent) + `frontend`(Nginx，宿主机 `${HTTP_PORT:-80}`)；默认拉取 GHCR 镜像 |
+| `docker-compose.yml` | 应用：`backend`(8080 内网，含采集 Agent) + `frontend`(Nginx，宿主机 `${HTTP_PORT:-80}`)；默认拉取 GHCR 镜像；SQLite 数据写入 `data` 卷 |
 | `docker-compose.build.yml` | 覆盖文件：为各服务补充 `build` 上下文（改为从源码构建） |
-| `docker-compose.infra.yml` | 叠加文件：内置 `mysql` + `redis`（默认连外部库，无需此文件） |
 
 ```bash
-cp .env.example .env      # 按需修改；生产务必改 JWT_SECRET / 数据库密码
+cp .env.example .env      # 按需修改；生产务必改 JWT_SECRET
 ```
 
 **A. 使用 GHCR 镜像部署（推荐，服务器无需源码）**
 
 ```bash
-# 外部 MySQL / Redis（默认）：先对目标库执行 sql/schema-mysql.sql 建库建表
 docker compose up -d
-
-# 内置 MySQL / Redis（首次启动自动建库建表）
-docker compose -f docker-compose.yml -f docker-compose.infra.yml up -d
 ```
 
 **B. 从源码构建（有源码 / 需改代码）**
 
 ```bash
-# 外部库
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
-# 内置库
-docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.infra.yml up -d --build
 ```
 
 - 镜像：`ghcr.io/jingyuan9527/spectrace-{backend,frontend}`，版本由 `.env` 的 `IMAGE_TAG` 控制（默认 `latest`）
-- `.env` 配置 `MYSQL_HOST/PORT/DATABASE/USERNAME/PASSWORD` 与 `REDIS_HOST/PORT/PASSWORD`；默认 `host.docker.internal`（宿主机），远程库填 IP / 域名
+- 数据库为容器内 `/data/spectrace.db`，通过 `data` 卷持久化；备份直接复制该文件即可
 - 采集 Agent 内嵌在后端，无需额外服务或内部令牌；如不希望自动采集，设 `SPECTRACE_AGENT_ENABLED=false`
 - 公共镜像可直接拉取；若包为私有，先登录：`echo <PAT> | docker login ghcr.io -u <用户名> --password-stdin`
 
@@ -136,21 +129,21 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compo
 
 - 访问 `http://<服务器IP>:<HTTP_PORT>`，后台 `/#/admin/login`（`admin / admin123`，登录后请立即改密）
 - 可先 `pull` 更新镜像再启动：如 `docker compose pull && docker compose up -d`
-- 常用操作：`docker compose logs -f backend`、`docker compose down`（加 `-v` 可连同数据卷一起删除）
+- 常用操作：`docker compose logs -f backend`、`docker compose down`（加 `-v` 会连同 SQLite 数据卷一起删除）
 - AI 连接/模型在后台「AI 配置」页面维护，无需改环境变量
 - 如需直连后端或 Swagger，放开 `docker-compose.yml` 中 backend 的 `ports` 注释
 
-> 注意：内置库模式下 `./sql/schema-mysql.sql` 仅在 MySQL 空数据卷时执行；后续结构变更需手动迁移或重建数据卷。外部库需自行执行 `sql/schema-mysql.sql` 保证表结构。
+> 注意：表结构由后端启动时自动创建，脚本幂等；升级不会清空已有数据。需要回滚或迁移时先备份 `data` 卷中的 `spectrace.db`。
 
 ### 方式二：传统部署（单个 Jar）
 
-1. 执行 `sql/schema-mysql.sql` 建库建表
-2. 构建并启动后端：`cd backend && mvn -B package -DskipTests`，再 `java -jar target/spectrace-backend-1.0.0.jar --spring.profiles.active=prod`
+1. 构建并启动后端：`cd backend && mvn -B package -DskipTests`，再 `java -jar target/spectrace-backend-1.0.0.jar`
    - 该 Jar **已内含采集 Agent**，无需单独部署
-   - 连接信息建议用环境变量覆盖：`SPRING_DATASOURCE_URL` / `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` / `SPRING_DATA_REDIS_HOST`
+   - SQLite 路径建议用环境变量指定：`SPECTRACE_DB_PATH=/data/spectrace.db`（默认 `./data/spectrace.db`）
    - 必改密钥：`SPECTRACE_JWT_SECRET`；上传目录：`SPECTRACE_UPLOAD_DIR=/data/spectrace/uploads`
-   - `prod` 段 `spectrace.agent.queue=redis`，任务走 Redis List 队列；如需关闭采集：`SPECTRACE_AGENT_ENABLED=false`
-3. 前端 `cd frontend && npm run build`，将 `dist/` 交由 Nginx 托管并反向代理 `/api`、`/uploads`（可参考 `frontend/nginx.conf`）
+   - 任务队列默认 `memory`；多实例部署可设 `SPECTRACE_AGENT_QUEUE=redis` 并配置 Redis
+   - 如需关闭采集：`SPECTRACE_AGENT_ENABLED=false`
+2. 前端 `cd frontend && npm run build`，将 `dist/` 交由 Nginx 托管并反向代理 `/api`、`/uploads`（可参考 `frontend/nginx.conf`）
 
 ### 方式三：前后端一体化单镜像（可选）
 
@@ -162,23 +155,17 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compo
 docker build -f Dockerfile.allinone -t ghcr.io/jingyuan9527/spectrace-app:latest .
 
 docker run -d --name spectrace-app -p 80:8080 \
-  -e SPRING_DATASOURCE_URL='jdbc:mysql://<mysql-host>:3306/spectrace?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true' \
-  -e SPRING_DATASOURCE_USERNAME=root \
-  -e SPRING_DATASOURCE_PASSWORD=*** \
-  -e SPRING_DATA_REDIS_HOST=<redis-host> \
   -e SPECTRACE_JWT_SECRET=*** \
   -e SPECTRACE_UPLOAD_DIR=/data/uploads \
-  -v spectrace-uploads:/data/uploads \
+  -v spectrace-data:/data \
   ghcr.io/jingyuan9527/spectrace-app:latest
 ```
 
-**B. 使用 Compose 覆盖文件**（复用主编排的数据库/密钥环境变量）
+**B. 使用 Compose 覆盖文件**（复用主编排的密钥与 SQLite 数据卷）
 
 ```bash
-# 拉取一体化镜像 · 外部库
+# 拉取一体化镜像
 docker compose -f docker-compose.yml -f docker-compose.allinone.yml up -d
-# 拉取一体化镜像 · 内置库
-docker compose -f docker-compose.yml -f docker-compose.allinone.yml -f docker-compose.infra.yml up -d
 # 源码构建一体化镜像
 docker compose -f docker-compose.yml -f docker-compose.allinone.yml -f docker-compose.allinone.build.yml up -d --build
 ```
@@ -197,7 +184,7 @@ docker compose -f docker-compose.yml -f docker-compose.allinone.yml -f docker-co
 - **标签**：分支名、tag、`{{version}}` / `{{major}}.{{minor}}`、`sha-<短哈希>`、默认分支的 `latest`
 - **权限**：使用内置 `GITHUB_TOKEN`（`packages: write`）登录 GHCR，无需额外 Secrets
 - **缓存**：Buildx `type=gha` 分层缓存，加速重复构建
-- **注意**：镜像**不含** MySQL / Redis，运行时通过环境变量连接外部实例；首次推送后可在仓库 Packages 页把包的可见性设为 Public（否则部署端需先 `docker login ghcr.io`）
+- **注意**：镜像自带 SQLite 驱动，运行时不依赖外部数据库；首次推送后可在仓库 Packages 页把包的可见性设为 Public（否则部署端需先 `docker login ghcr.io`）
 
 新增组件只需扩展矩阵（`include` 形式，便于为每个镜像指定构建上下文与 Dockerfile）：
 
@@ -219,6 +206,7 @@ strategy:
 ## 关键设计
 
 - **动态参数**：`brand / param_group / param_def / device / device_param_value` 分离，新增参数只需向 `param_def` 插入记录，无需 DDL 改表；新增品牌/参数不影响业务代码。
+- **参数全量覆盖**：保存机型参数时以提交的 `paramKey -> value` 为准，未提交或值为空白的参数键会被删除；仅当 `params` 为 null（未提供）时才不改动既有参数。删除的品牌/用户等采用逻辑删除，唯一键（`param_key` / `username`）通过 SQLite 部分唯一索引 `WHERE deleted = 0` 保证软删后仍可重建同名记录。
 - **对比差异高亮**：后端 `compare` 接口返回每行参数的 `same` 标记，前端据此高亮差异、置灰相同项。
 - **截图分享**：`html2canvas` 截取对比/图表区域，支持下载 PNG、复制到剪贴板，水印可开关；截图时自动隐藏交互控件保证画面干净。
 - **内嵌采集 Agent**：`TaskQueue` 抽象（内存 / Redis 按配置切换），Agent 与后端同进程直接调用 Service，抓取结果先进待审核库，人工审核通过才迁移；无需单独服务与内部回调令牌。

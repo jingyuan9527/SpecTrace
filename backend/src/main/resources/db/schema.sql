@@ -1,34 +1,29 @@
 -- ============================================================
--- SpecTrace 手机参数对比平台 - H2 开发库建表脚本 (MODE=MySQL)
--- 生产 MySQL 版本见 /sql/schema-mysql.sql
+-- SpecTrace 手机参数对比平台 - SQLite 建表脚本
+-- 幂等执行：应用每次启动都会执行，已有表/数据不会被覆盖
 -- ============================================================
 
-DROP TABLE IF EXISTS brand;
-CREATE TABLE brand (
-    id          BIGINT       NOT NULL AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS brand (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        VARCHAR(64)  NOT NULL,
     logo        VARCHAR(512) DEFAULT NULL,
     sort_order  INT          NOT NULL DEFAULT 0,
     status      TINYINT      NOT NULL DEFAULT 1,
     created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
-    deleted     TINYINT      NOT NULL DEFAULT 0,
-    PRIMARY KEY (id)
+    deleted     TINYINT      NOT NULL DEFAULT 0
 );
 
-DROP TABLE IF EXISTS param_group;
-CREATE TABLE param_group (
-    id          BIGINT      NOT NULL AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS param_group (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        VARCHAR(64) NOT NULL,
     sort_order  INT         NOT NULL DEFAULT 0,
     created_at  DATETIME    DEFAULT CURRENT_TIMESTAMP,
-    deleted     TINYINT     NOT NULL DEFAULT 0,
-    PRIMARY KEY (id)
+    deleted     TINYINT     NOT NULL DEFAULT 0
 );
 
-DROP TABLE IF EXISTS param_def;
-CREATE TABLE param_def (
-    id            BIGINT      NOT NULL AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS param_def (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
     param_key     VARCHAR(64) NOT NULL,
     param_name    VARCHAR(64) NOT NULL,
     group_id      BIGINT      NOT NULL,
@@ -38,13 +33,11 @@ CREATE TABLE param_def (
     sort_order    INT         NOT NULL DEFAULT 0,
     enabled       TINYINT     NOT NULL DEFAULT 1,
     created_at    DATETIME    DEFAULT CURRENT_TIMESTAMP,
-    deleted       TINYINT     NOT NULL DEFAULT 0,
-    PRIMARY KEY (id)
+    deleted       TINYINT     NOT NULL DEFAULT 0
 );
 
-DROP TABLE IF EXISTS device;
-CREATE TABLE device (
-    id           BIGINT       NOT NULL AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS device (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
     brand_id     BIGINT       NOT NULL,
     name         VARCHAR(128) NOT NULL,
     release_date DATE         DEFAULT NULL,
@@ -53,24 +46,21 @@ CREATE TABLE device (
     status       TINYINT      NOT NULL DEFAULT 1,
     created_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
     updated_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
-    deleted      TINYINT      NOT NULL DEFAULT 0,
-    PRIMARY KEY (id)
+    deleted      TINYINT      NOT NULL DEFAULT 0
 );
 
-DROP TABLE IF EXISTS device_param_value;
-CREATE TABLE device_param_value (
-    id            BIGINT   NOT NULL AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS device_param_value (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
     device_id     BIGINT   NOT NULL,
     param_def_id  BIGINT   NOT NULL,
     param_value   TEXT     DEFAULT NULL,
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id)
+    CONSTRAINT uk_device_param UNIQUE (device_id, param_def_id)
 );
 
-DROP TABLE IF EXISTS agent_task;
-CREATE TABLE agent_task (
-    id           BIGINT       NOT NULL AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS agent_task (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
     model_name   VARCHAR(128) NOT NULL,
     brand_name   VARCHAR(64)  DEFAULT NULL,
     ai_model_id  BIGINT       DEFAULT NULL,
@@ -80,13 +70,11 @@ CREATE TABLE agent_task (
     error_msg    TEXT         DEFAULT NULL,
     duration_ms  BIGINT       DEFAULT NULL,
     created_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
-    updated_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id)
+    updated_at   DATETIME     DEFAULT CURRENT_TIMESTAMP
 );
 
-DROP TABLE IF EXISTS agent_pending_data;
-CREATE TABLE agent_pending_data (
-    id           BIGINT       NOT NULL AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS agent_pending_data (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id      BIGINT       DEFAULT NULL,
     model_name   VARCHAR(128) NOT NULL,
     brand_name   VARCHAR(64)  DEFAULT NULL,
@@ -95,13 +83,11 @@ CREATE TABLE agent_pending_data (
     status       VARCHAR(24)  NOT NULL DEFAULT 'PENDING_REVIEW',
     created_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
     updated_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
-    deleted      TINYINT      NOT NULL DEFAULT 0,
-    PRIMARY KEY (id)
+    deleted      TINYINT      NOT NULL DEFAULT 0
 );
 
-DROP TABLE IF EXISTS ai_config;
-CREATE TABLE ai_config (
-    id           BIGINT       NOT NULL AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS ai_config (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
     name         VARCHAR(64)  NOT NULL,
     provider     VARCHAR(32)  NOT NULL DEFAULT 'dashscope',
     base_url     VARCHAR(255) DEFAULT NULL,
@@ -109,13 +95,11 @@ CREATE TABLE ai_config (
     enabled      TINYINT      NOT NULL DEFAULT 1,
     created_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
     updated_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
-    deleted      TINYINT      NOT NULL DEFAULT 0,
-    PRIMARY KEY (id)
+    deleted      TINYINT      NOT NULL DEFAULT 0
 );
 
-DROP TABLE IF EXISTS ai_model;
-CREATE TABLE ai_model (
-    id           BIGINT       NOT NULL AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS ai_model (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
     config_id    BIGINT       NOT NULL,
     model        VARCHAR(128) NOT NULL,
     temperature  DECIMAL(3,2) NOT NULL DEFAULT 0.20,
@@ -123,13 +107,11 @@ CREATE TABLE ai_model (
     enabled      TINYINT      NOT NULL DEFAULT 1,
     created_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
     updated_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
-    deleted      TINYINT      NOT NULL DEFAULT 0,
-    PRIMARY KEY (id)
+    deleted      TINYINT      NOT NULL DEFAULT 0
 );
 
-DROP TABLE IF EXISTS admin_user;
-CREATE TABLE admin_user (
-    id          BIGINT       NOT NULL AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS admin_user (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
     username    VARCHAR(64)  NOT NULL,
     password    VARCHAR(128) NOT NULL,
     nickname    VARCHAR(64)  DEFAULT NULL,
@@ -137,27 +119,36 @@ CREATE TABLE admin_user (
     status      TINYINT      NOT NULL DEFAULT 1,
     created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
-    deleted     TINYINT      NOT NULL DEFAULT 0,
-    PRIMARY KEY (id)
+    deleted     TINYINT      NOT NULL DEFAULT 0
 );
 
-DROP TABLE IF EXISTS operation_log;
-CREATE TABLE operation_log (
-    id           BIGINT      NOT NULL AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS operation_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
     admin_id     BIGINT      DEFAULT NULL,
     admin_name   VARCHAR(64) DEFAULT NULL,
     action       VARCHAR(64) NOT NULL,
     target_type  VARCHAR(32) DEFAULT NULL,
     target_id    BIGINT      DEFAULT NULL,
     detail       TEXT        DEFAULT NULL,
-    created_at   DATETIME    DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id)
+    created_at   DATETIME    DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_device_brand ON device (brand_id);
-CREATE INDEX idx_dpv_device ON device_param_value (device_id);
-CREATE INDEX idx_dpv_def ON device_param_value (param_def_id);
-CREATE INDEX idx_task_status ON agent_task (status);
-CREATE INDEX idx_pending_status ON agent_pending_data (status);
-CREATE INDEX idx_ai_model_config ON ai_model (config_id);
-CREATE INDEX idx_ai_model_default ON ai_model (is_default);
+-- 逻辑删除的软删行不参与唯一约束，删除后允许重建同名记录（SQLite 部分索引）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_param_key ON param_def (param_key) WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_username ON admin_user (username) WHERE deleted = 0;
+
+CREATE INDEX IF NOT EXISTS idx_brand_sort ON brand (sort_order);
+CREATE INDEX IF NOT EXISTS idx_param_group ON param_def (group_id);
+CREATE INDEX IF NOT EXISTS idx_device_brand ON device (brand_id);
+CREATE INDEX IF NOT EXISTS idx_device_release ON device (release_date);
+CREATE INDEX IF NOT EXISTS idx_device_name ON device (name);
+CREATE INDEX IF NOT EXISTS idx_dpv_device ON device_param_value (device_id);
+CREATE INDEX IF NOT EXISTS idx_dpv_def ON device_param_value (param_def_id);
+CREATE INDEX IF NOT EXISTS idx_task_status ON agent_task (status);
+CREATE INDEX IF NOT EXISTS idx_task_created ON agent_task (created_at);
+CREATE INDEX IF NOT EXISTS idx_pending_status ON agent_pending_data (status);
+CREATE INDEX IF NOT EXISTS idx_pending_task ON agent_pending_data (task_id);
+CREATE INDEX IF NOT EXISTS idx_ai_model_config ON ai_model (config_id);
+CREATE INDEX IF NOT EXISTS idx_ai_model_default ON ai_model (is_default);
+CREATE INDEX IF NOT EXISTS idx_log_target ON operation_log (target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_log_created ON operation_log (created_at);

@@ -3,7 +3,6 @@
 #
 # 用法（与主编排叠加）：
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
-#   docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.infra.yml up -d --build
 #
 # 构建产物会以 docker-compose.yml 中定义的 image 名称打标签。
 # ============================================================

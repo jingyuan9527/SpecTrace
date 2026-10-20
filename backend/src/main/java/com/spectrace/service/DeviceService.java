@@ -39,7 +39,8 @@ public class DeviceService {
             query.eq(Device::getBrandId, brandId);
         }
         if (year != null) {
-            query.apply("YEAR(release_date) = {0}", year);
+            LocalDate start = LocalDate.of(year, 1, 1);
+            query.ge(Device::getReleaseDate, start).lt(Device::getReleaseDate, start.plusYears(1));
         }
         if (StringUtils.hasText(keyword)) {
             query.like(Device::getName, keyword);
@@ -104,30 +105,52 @@ public class DeviceService {
         return device;
     }
 
-    /** 以 paramKey -> value 覆盖式保存机型参数值。 */
+    /**
+     * 以 paramKey -> value 全量覆盖机型参数值：未提交或值为空白的参数键视为删除。
+     * params 为 null（未提供参数）时不改动既有参数，避免仅更新机型主表字段时误删。
+     */
     @Transactional
     public void saveParamValues(Long deviceId, Map<String, String> params) {
-        if (params == null || params.isEmpty()) {
+        if (params == null) {
             return;
         }
         Map<String, ParamDef> defMap = paramService.keyToDefMap();
+
+        // 目标参数集合：仅保留已定义且值非空白的键
+        Map<Long, String> desired = new LinkedHashMap<>();
         for (Map.Entry<String, String> entry : params.entrySet()) {
             ParamDef def = defMap.get(entry.getKey());
-            if (def == null) {
+            if (def == null || !StringUtils.hasText(entry.getValue())) {
                 continue;
             }
-            DeviceParamValue existing = valueMapper.selectOne(Wrappers.<DeviceParamValue>lambdaQuery()
-                    .eq(DeviceParamValue::getDeviceId, deviceId)
-                    .eq(DeviceParamValue::getParamDefId, def.getId()));
-            if (existing == null) {
+            desired.put(def.getId(), entry.getValue().trim());
+        }
+
+        List<DeviceParamValue> existing = valueMapper.selectList(Wrappers.<DeviceParamValue>lambdaQuery()
+                .eq(DeviceParamValue::getDeviceId, deviceId));
+
+        // 删除不再提交的参数
+        List<Long> removeIds = existing.stream()
+                .filter(v -> !desired.containsKey(v.getParamDefId()))
+                .map(DeviceParamValue::getId)
+                .toList();
+        if (!removeIds.isEmpty()) {
+            valueMapper.deleteByIds(removeIds);
+        }
+
+        Map<Long, DeviceParamValue> existingByDef = existing.stream()
+                .collect(Collectors.toMap(DeviceParamValue::getParamDefId, Function.identity(), (a, b) -> a));
+        for (Map.Entry<Long, String> entry : desired.entrySet()) {
+            DeviceParamValue current = existingByDef.get(entry.getKey());
+            if (current == null) {
                 DeviceParamValue value = new DeviceParamValue();
                 value.setDeviceId(deviceId);
-                value.setParamDefId(def.getId());
+                value.setParamDefId(entry.getKey());
                 value.setParamValue(entry.getValue());
                 valueMapper.insert(value);
-            } else {
-                existing.setParamValue(entry.getValue());
-                valueMapper.updateById(existing);
+            } else if (!entry.getValue().equals(current.getParamValue())) {
+                current.setParamValue(entry.getValue());
+                valueMapper.updateById(current);
             }
         }
     }

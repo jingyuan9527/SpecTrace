@@ -13,8 +13,9 @@ RUN mvn -B -q clean package -DskipTests
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 ENV TZ=Asia/Shanghai
-ENV SPRING_PROFILES_ACTIVE=prod
+ENV SPECTRACE_DB_PATH=/data/spectrace.db
 
+RUN mkdir -p /data
 COPY --from=build /build/target/spectrace-backend-1.0.0.jar app.jar
 
 EXPOSE 8080

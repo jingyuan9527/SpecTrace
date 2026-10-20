@@ -1,12 +1,12 @@
 # ============================================================
-# SpecTrace 应用编排（默认拉取 GHCR 镜像，连接【外部】MySQL / Redis）
+# SpecTrace 应用编排（默认拉取 GHCR 镜像）
 #
-# 纯镜像 · 外部库：docker compose up -d
-# 纯镜像 · 内置库：docker compose -f docker-compose.yml -f docker-compose.infra.yml up -d
+# 数据库为 SQLite，数据文件持久化在 data 卷，无需 MySQL / Redis。
+# 纯镜像：docker compose up -d
 # 源码构建（追加覆盖）：docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 #
-# 采集 Agent 已内嵌在后端同进程，无需单独服务。
-# 镜像名与连接信息经 .env / 环境变量注入，见 .env.example
+# 采集 Agent 已内嵌在后端同进程，无需单独服务；默认使用内存队列。
+# 镜像名与应用密钥经 .env / 环境变量注入，见 .env.example
 # ============================================================
 name: spectrace
 
@@ -15,26 +15,18 @@ services:
     image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:-jingyuan9527}/spectrace-backend:${IMAGE_TAG:-latest}
     container_name: spectrace-backend
     environment:
-      SPRING_PROFILES_ACTIVE: prod
-      # ---- 外部 MySQL ----
-      SPRING_DATASOURCE_URL: jdbc:mysql://${MYSQL_HOST:-host.docker.internal}:${MYSQL_PORT:-3306}/${MYSQL_DATABASE:-spectrace}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-      SPRING_DATASOURCE_USERNAME: ${MYSQL_USERNAME:-root}
-      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-spectrace}
-      # ---- 外部 Redis ----
-      SPRING_DATA_REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
-      SPRING_DATA_REDIS_PORT: ${REDIS_PORT:-6379}
-      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # ---- SQLite（单文件，随 data 卷持久化）----
+      SPECTRACE_DB_PATH: /data/spectrace.db
       # ---- 应用密钥（生产务必修改）----
       SPECTRACE_JWT_SECRET: ${JWT_SECRET:-change-me-spectrace-jwt-secret-please-use-32bytes-min}
       SPECTRACE_UPLOAD_DIR: /data/uploads
       # ---- 内嵌采集 Agent（可关闭；AI Key 正常在后台「AI 配置」维护）----
       SPECTRACE_AGENT_ENABLED: ${SPECTRACE_AGENT_ENABLED:-true}
+      # 任务队列：memory（默认，无需外部服务）/ redis（可选，多实例部署）
+      SPECTRACE_AGENT_QUEUE: ${SPECTRACE_AGENT_QUEUE:-memory}
       TZ: Asia/Shanghai
-    # 让容器可通过 host.docker.internal 访问宿主机上的 MySQL / Redis（Linux 生效）
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
-      - uploads:/data/uploads
+      - data:/data
     # 如需直连后端 / Swagger，可放开下面注释
     # ports:
     #   - "8080:8080"
@@ -50,4 +42,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  uploads:
+  data:
