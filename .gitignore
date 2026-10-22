@@ -11,6 +11,12 @@ frontend/node_modules/
 frontend/dist/
 npm-debug.log*
 
+# Playwright E2E 产物
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/.playwright/
+
 # 环境变量与本地文件
 .env
 backend/uploads/

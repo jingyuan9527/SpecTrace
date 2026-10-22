@@ -7,6 +7,14 @@ export interface PageResult<T> {
   records: T[]
 }
 
+export interface UploadResult {
+  url: string
+  width?: number | null
+  height?: number | null
+  size: number
+  contentType: string
+}
+
 // ---------- 访客端 ----------
 export const publicApi = {
   brands: () => request.get<any[], any[]>('/public/brands'),
@@ -14,11 +22,22 @@ export const publicApi = {
   paramDefs: () => request.get<any[], any[]>('/public/param-defs'),
   devices: (params: Record<string, unknown>) => request.get<PageResult<any>, PageResult<any>>('/public/devices', { params }),
   hot: (limit = 8) => request.get<any[], any[]>('/public/devices/hot', { params: { limit } }),
+  suggest: (keyword: string, limit = 8) =>
+    request.get<any[], any[]>('/public/devices/suggest', { params: { keyword, limit } }),
   deviceDetail: (id: number) => request.get<any, any>(`/public/devices/${id}`),
   compare: (ids: number[]) => request.get<any, any>('/public/compare', { params: { ids: ids.join(',') } }),
-  history: (brandId: number, paramDefId: number) =>
-    request.get<any[], any[]>('/public/history', { params: { brandId, paramDefId } }),
+  history: (brandIds: number[], paramDefId: number) =>
+    request.get<any, any>('/public/history', { params: { brandIds: brandIds.join(','), paramDefId } }),
   years: (brandId?: number) => request.get<number[], number[]>('/public/years', { params: { brandId } }),
+  submitFeedback: (data: {
+    deviceId: number
+    paramDefId?: number
+    paramKey?: string
+    currentValue?: string
+    suggestedValue?: string
+    description?: string
+    contact?: string
+  }) => request.post<number, number>('/public/feedback', data),
 }
 
 // ---------- 鉴权 ----------
@@ -43,6 +62,13 @@ export const adminApi = {
   deleteParamDef: (id: number) => request.delete(`/admin/param-defs/${id}`),
 
   devices: (params: Record<string, unknown>) => request.get<PageResult<any>, PageResult<any>>('/admin/devices', { params }),
+  deviceImportTemplate: () =>
+    request.get<Blob, Blob>('/admin/devices/import/template', { responseType: 'blob' }),
+  importDevices: (file: File, dryRun: boolean) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request.post<any, any>('/admin/devices/import', form, { params: { dryRun } })
+  },
   deviceDetail: (id: number) => request.get<any, any>(`/admin/devices/${id}`),
   saveDevice: (data: any) =>
     data.id ? request.put(`/admin/devices/${data.id}`, data) : request.post('/admin/devices', data),
@@ -52,6 +78,7 @@ export const adminApi = {
     request.get<PageResult<any>, PageResult<any>>('/admin/agent-tasks', { params }),
   createAgentTask: (data: { modelName: string; brandName?: string; aiModelId?: number | null }) =>
     request.post('/admin/agent-tasks', data),
+  retryAgentTask: (id: number) => request.post<any, any>(`/admin/agent-tasks/${id}/retry`),
 
   // AI 连接（供应商）
   aiConfigs: () => request.get<any[], any[]>('/admin/ai-configs'),
@@ -75,6 +102,8 @@ export const adminApi = {
   pendingDetail: (id: number) => request.get<any, any>(`/admin/pending-data/${id}`),
   approvePending: (id: number, data: any) => request.post(`/admin/pending-data/${id}/approve`, data),
   discardPending: (id: number) => request.post(`/admin/pending-data/${id}/discard`),
+  batchApprovePending: (ids: number[]) => request.post<any, any>('/admin/pending-data/batch-approve', { ids }),
+  batchDiscardPending: (ids: number[]) => request.post<any, any>('/admin/pending-data/batch-discard', { ids }),
 
   users: (params: Record<string, unknown>) => request.get<PageResult<any>, PageResult<any>>('/admin/users', { params }),
   createUser: (data: any) => request.post('/admin/users', data),
@@ -84,11 +113,22 @@ export const adminApi = {
     request.put(`/admin/users/${id}/password`, null, { params: { password } }),
   deleteUser: (id: number) => request.delete(`/admin/users/${id}`),
 
+  feedback: (params: Record<string, unknown>) =>
+    request.get<PageResult<any>, PageResult<any>>('/admin/feedback', { params }),
+  updateFeedbackStatus: (id: number, status: string, note?: string) =>
+    request.put(`/admin/feedback/${id}/status`, null, { params: { status, note } }),
+
   logs: (params: Record<string, unknown>) => request.get<PageResult<any>, PageResult<any>>('/admin/logs', { params }),
 
-  upload: (file: File) => {
+  upload: (file: File, onProgress?: (percent: number) => void) => {
     const form = new FormData()
     form.append('file', file)
-    return request.post<string, string>('/admin/files/upload', form)
+    return request.post<UploadResult, UploadResult>('/admin/files/upload', form, {
+      onUploadProgress: (event) => {
+        if (onProgress && event.total) {
+          onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)))
+        }
+      },
+    })
   },
 }

@@ -20,6 +20,11 @@ spring:
       schema-locations: classpath:db/schema.sql
       data-locations: classpath:db/data.sql
       continue-on-error: false
+  servlet:
+    multipart:
+      # 前端会先做压缩，这里留足余量并作为最终兜底
+      max-file-size: 10MB
+      max-request-size: 12MB
 
 mybatis-plus:
   configuration:
@@ -34,10 +39,36 @@ mybatis-plus:
       logic-not-delete-value: 0
 
 # ---- 业务自定义配置 ----
+# 健康检查与指标：容器探针用 /actuator/health，监控抓取用 /actuator/metrics（需登录）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  # 默认不使用 Redis 队列，关闭其健康检查，避免 /actuator/health 恒为 DOWN；
+  # 改用 SPECTRACE_AGENT_QUEUE=redis 时请把该项设为 true
+  health:
+    redis:
+      enabled: ${SPECTRACE_REDIS_HEALTH_ENABLED:false}
+
 spectrace:
   jwt:
     secret: "spectrace-dev-secret-key-please-change-in-production-0123456789"
     expire-seconds: 86400
+  # SQLite 每日备份：VACUUM INTO 生成快照并只保留最近 N 份
+  backup:
+    enabled: ${SPECTRACE_BACKUP_ENABLED:true}
+    dir: ${SPECTRACE_BACKUP_DIR:./data/backups}
+    keep: ${SPECTRACE_BACKUP_KEEP:7}
+    cron: ${SPECTRACE_BACKUP_CRON:0 30 3 * * *}
+  # 图片上传落盘目录与大小上限（前端已压缩，此值仅做服务端兜底）
+  upload-dir: ${SPECTRACE_UPLOAD_DIR:uploads}
+  upload:
+    max-bytes: ${SPECTRACE_UPLOAD_MAX_BYTES:8388608}
   # ---- 内嵌采集 Agent（AgentScope Java 2.0 · Harness 模式，与后端同进程）----
   agent:
     # 是否随应用启动常驻消费抓取任务
@@ -58,6 +89,9 @@ spectrace:
     # 抓取风控：每次请求间隔（秒）与单任务最长耗时
     crawl-interval-seconds: ${CRAWL_INTERVAL_SECONDS:2}
     task-timeout-seconds: ${TASK_TIMEOUT_SECONDS:180}
+    # 连续失败告警：达到次数写 ERROR 日志（关键字 AGENT_CONSECUTIVE_FAILURE），webhook 可选
+    alert-threshold: ${AGENT_ALERT_THRESHOLD:3}
+    alert-webhook: ${AGENT_ALERT_WEBHOOK:}
 
 springdoc:
   swagger-ui:

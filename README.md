@@ -62,8 +62,9 @@ npm run dev
 ```
 
 - 访问 http://localhost:5173 ，已配置 `/api`、`/uploads` 代理到后端 8080
-- 访客端：`/#/` 首页、`/#/devices` 机型库、`/#/compare` 对比、`/#/history` 参数历史
-- 管理后台：`/#/admin/login`
+- 前端使用 history 路由（无 `#`）：`/` 首页、`/devices` 机型库、`/compare` 对比、`/history` 参数历史
+- 管理后台：`/admin/login`
+- E2E（无需后端与数据库，接口由 `e2e/mock-api.ts` 拦截）：`npx playwright install chromium` 后执行 `npm run test:e2e`；失败会保留截图、trace 与视频到 `test-results/`
 
 ## 采集 Agent（内嵌）
 
@@ -88,6 +89,8 @@ npm run dev
 | `SEARCH_RESULT_LIMIT` | `5` | 搜索结果条数上限 |
 | `SERPER_API_KEY` | 空 | 留空用 DuckDuckGo 免 key 抓取，填入则用 Serper |
 | `DASHSCOPE_API_KEY` / `DASHSCOPE_MODEL` | 空 / `qwen-max` | 后台未配置 AI 连接时的兜底 |
+| `AGENT_ALERT_THRESHOLD` | `3` | 采集任务连续失败达到该次数写 `AGENT_CONSECUTIVE_FAILURE` ERROR 日志，0 关闭 |
+| `AGENT_ALERT_WEBHOOK` | 空 | 告警 webhook（钉钉机器人文本消息格式），留空只写日志 |
 
 抓取结果写入【待审核数据表】，管理员在后台「待审核数据」中修正并审核通过后，才迁移到正式机型库。
 
@@ -103,7 +106,7 @@ npm run dev
 2. 打开 `.env`，只改三项：`HTTP_PORT`、`SPECTRACE_DATA_DIR`、`JWT_SECRET`
 3. `docker compose up -d`
 
-然后访问 `http://<服务器IP>:<HTTP_PORT>`，后台 `/#/admin/login`（默认 `admin / admin123`，登录后立即改密）。
+然后访问 `http://<服务器IP>:<HTTP_PORT>`，后台 `/admin/login`（默认 `admin / admin123`，登录后立即改密）。
 
 编排文件：
 
@@ -129,6 +132,9 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 - 升级：`docker compose pull && docker compose up -d`
 - 日志：`docker compose logs -f app`
 - 停止：`docker compose down`（数据在宿主机目录，`-v` 不会删除数据；删数据＝删除 `SPECTRACE_DATA_DIR` 目录）
+- 健康检查：`GET /actuator/health`（含 liveness / readiness 探针组，可直接用于容器探针）；`/actuator/metrics` 需要登录后访问
+- 自动备份：默认每天 03:30 用 `VACUUM INTO` 生成一致性快照到 `${SPECTRACE_BACKUP_DIR}`（compose 下为 `/data/backups`），只保留最近 `SPECTRACE_BACKUP_KEEP`（默认 7）份；可用 `SPECTRACE_BACKUP_CRON` 改时间，`SPECTRACE_BACKUP_ENABLED=false` 关闭
+- 备份恢复：停容器后把 `spectrace-<时间戳>.db` 复制为 `SPECTRACE_DB_PATH` 指向的文件（默认 `/data/spectrace.db`）再启动即可，备份文件本身就是完整 SQLite 库
 
 > 注意：表结构由后端启动时自动创建，脚本幂等；升级不会清空已有数据。需要回滚或迁移时先备份宿主机数据目录 `SPECTRACE_DATA_DIR` 中的 `spectrace.db`。
 
@@ -155,6 +161,7 @@ docker run -d --name spectrace-app -p 80:8080 \
    - 任务队列默认 `memory`；多实例部署可设 `SPECTRACE_AGENT_QUEUE=redis` 并配置 Redis
    - 如需关闭采集：`SPECTRACE_AGENT_ENABLED=false`
 2. 单 Jar 只提供 API；如需自带站点，用方式一/二的单镜像（`Dockerfile` 会把 `frontend/dist` 打进 Jar），或 `cd frontend && npm run build` 后自行托管 `dist/` 并反向代理 `/api`、`/uploads`、`/brands`
+   - 前端为 history 路由，自行托管时需把未匹配的页面路径（如 `/compare`、`/devices/7`）回退到 `index.html`；打进 Jar 时已由 `ResourceConfig` 处理
 
 ## CI/CD（GitHub Actions）
 
@@ -180,6 +187,11 @@ docker run -d --name spectrace-app -p 80:8080 \
 - **内嵌采集 Agent**：`TaskQueue` 抽象（内存 / Redis 按配置切换），Agent 与后端同进程直接调用 Service，抓取结果先进待审核库，人工审核通过才迁移；无需单独服务与内部回调令牌。
 - **AI 连接与模型集中管理**：后台「AI 配置」维护多个供应商连接（服务商 / 接口地址 / API Key），支持**拉取远端模型列表**批量导入、导入多个模型并设置默认；创建抓取任务时可指定具体模型，缺省用默认模型。Agent 每任务解析并构建大模型（DashScope 原生或 OpenAI 兼容端点，兼容 DeepSeek / Kimi / vLLM / Ollama）。
 - **LLM 抽取约束**：Agent 系统提示强制按 `param_def` 定义的 `param_key` 输出 JSON，并对未知键做丢弃清洗。
+- **字段级溯源**：`device_param_value` 记录 `source_url` / `confidence` / `updated_at`，审核通过时把抓取来源写入对应参数值；人工修正会清空来源并把更新时间刷新。详情页逐行展示来源与更新时间，页头展示机型最后更新时间。
+- **审核 diff 与覆盖更新**：待审核详情会返回同品牌同名机型的现有参数，审核页标出「旧值 → 新值」并折叠未变化项；审核通过时若库中已有同名机型则覆盖更新参数，避免重复抓取产生重复机型。支持多选批量通过 / 批量丢弃。
+- **纠错反馈**：访客在详情页参数行点旗标即可提交建议值与说明（同来源同机型 1 分钟限流），后台「纠错反馈」列表核实后标记已处理 / 已忽略。
+- **批量导入**：后台机型页支持 CSV 导入，模板列与 `param_def` 的 `param_key` 同步生成；上传后先预览逐行校验（品牌是否存在、日期格式、重复机型），确认后逐行落库，单次上限 500 行。
+- **图片上传**：前端 canvas 压缩到最长边 1600px 并转 WebP，后端按文件头校验真实类型（JPG/PNG/WebP/GIF）并限制大小，返回访问地址与像素尺寸。
 
 ## 接口文档
 
@@ -188,4 +200,5 @@ docker run -d --name spectrace-app -p 80:8080 \
 ## 开发规约
 
 - 后端：Java 21 / Spring Boot 3.3 / MyBatis-Plus / AgentScope Java 2.0（Harness，内嵌），统一响应体 `R<T>`，全局异常处理 `GlobalExceptionHandler`
-- 前端：`npm run build` 验证构建；`npm run typecheck` 做类型检查
+- 前端：`npm run build` 验证构建；`npm run typecheck` 做类型检查；`npm run test:e2e` 跑 Playwright 主链路
+- 表结构变更：新增列请同时改 `db/schema.sql` 与 `SqliteSchemaMigration`（老库靠后者补列）

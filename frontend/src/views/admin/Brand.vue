@@ -25,6 +25,7 @@ import {
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import ImageWithFallback from '@/components/ImageWithFallback.vue'
+import { compressImage, formatBytes } from '@/lib/image'
 
 interface Brand {
   id: number | null
@@ -99,8 +100,10 @@ async function onFileChange(event: Event) {
   if (!file) return
   uploading.value = true
   try {
-    form.logo = await adminApi.upload(file)
-    toast.success('Logo 上传成功')
+    const compressed = await compressImage(file)
+    const result = await adminApi.upload(compressed)
+    form.logo = result.url
+    toast.success(`Logo 上传成功（${formatBytes(result.size)}）`)
   } finally {
     uploading.value = false
     if (fileInput.value) fileInput.value.value = ''

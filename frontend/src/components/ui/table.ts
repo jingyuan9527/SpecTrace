@@ -61,6 +61,7 @@ export const TableHead = defineComponent({
       h(
         'th',
         {
+          scope: 'col',
           class: cn(
             'h-10 px-3 text-left align-middle text-xs font-medium uppercase tracking-wide text-muted-foreground [&:has([role=checkbox])]:pr-0',
             props.class,

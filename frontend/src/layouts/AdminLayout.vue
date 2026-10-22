@@ -5,6 +5,7 @@ import {
   Bot,
   ChevronDown,
   ClipboardCheck,
+  Flag,
   House,
   Laptop,
   LogOut,
@@ -36,6 +37,7 @@ const menus = [
   { path: '/admin/agent-tasks', label: '抓取任务', icon: Bot },
   { path: '/admin/ai-config', label: 'AI 配置', icon: Sparkles },
   { path: '/admin/pending', label: '待审核数据', icon: ClipboardCheck },
+  { path: '/admin/feedback', label: '纠错反馈', icon: Flag },
   { path: '/admin/users', label: '账号权限', icon: Users },
   { path: '/admin/logs', label: '操作日志', icon: ScrollText },
 ]

@@ -19,6 +19,7 @@ import {
   Switch,
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -256,6 +257,9 @@ async function copyToClipboard() {
 
         <div v-if="displayedGroups.length" class="overflow-x-auto">
           <Table class="min-w-[640px]">
+            <TableCaption class="sr-only">
+              机型参数对比表：共 {{ result.devices.length }} 台机型，差异项已高亮
+            </TableCaption>
             <TableHeader>
               <TableRow class="hover:bg-transparent">
                 <TableHead class="sticky left-0 z-10 w-40 bg-muted/60">参数</TableHead>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
-import { Bot, Loader2, RefreshCw, Send, Terminal } from '@lucide/vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { Bot, ExternalLink, Loader2, RefreshCw, RotateCcw, Send, Terminal } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
 import {
@@ -15,6 +15,8 @@ import {
   Input,
   Pagination,
   Select,
+  Separator,
+  Sheet,
   Skeleton,
   Table,
   TableBody,
@@ -61,15 +63,64 @@ const statusOptions = [
 
 const modelOptions = ref<{ label: string; value: number }[]>([])
 
-async function load() {
-  loading.value = true
+async function load(silent = false) {
+  if (!silent) loading.value = true
   try {
     const res = await adminApi.agentTasks({ ...query, status: query.status || undefined })
     list.value = res.records
     total.value = res.total
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
+}
+
+// 页面可见时每 5 秒静默轮询，任务状态无需手动刷新即可从「排队中」流转
+const POLL_INTERVAL_MS = 5000
+let pollTimer: number | undefined
+
+function startPolling() {
+  stopPolling()
+  pollTimer = window.setInterval(() => {
+    if (document.visibilityState === 'visible' && !detailTarget.value) {
+      load(true)
+    }
+  }, POLL_INTERVAL_MS)
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    window.clearInterval(pollTimer)
+    pollTimer = undefined
+  }
+}
+
+const detailTarget = ref<any>(null)
+const detailOpen = computed({
+  get: () => !!detailTarget.value,
+  set: (value: boolean) => {
+    if (!value) detailTarget.value = null
+  },
+})
+const retryingId = ref<number | null>(null)
+
+async function retry(row: any) {
+  retryingId.value = row.id
+  try {
+    const task = await adminApi.retryAgentTask(row.id)
+    toast.success(`已重新提交，新任务 #${task?.id ?? ''}`)
+    await load(true)
+  } finally {
+    retryingId.value = null
+  }
+}
+
+function formatTime(value?: string) {
+  return value ? value.replace('T', ' ').slice(0, 19) : '—'
+}
+
+function formatDuration(ms?: number | null) {
+  if (!ms || ms < 0) return '—'
+  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`
 }
 
 async function loadAiModels() {
@@ -84,7 +135,10 @@ async function loadAiModels() {
 
 onMounted(async () => {
   await Promise.all([load(), loadAiModels()])
+  startPolling()
 })
+
+onBeforeUnmount(stopPolling)
 
 watch(
   () => query.current,
@@ -178,6 +232,7 @@ function modelLabel(id: number | null) {
               <TableHead class="w-24">耗时</TableHead>
               <TableHead class="w-44">创建时间</TableHead>
               <TableHead class="min-w-44">来源 / 异常</TableHead>
+              <TableHead class="w-32 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -208,6 +263,22 @@ function modelLabel(id: number | null) {
                 <span v-if="row.errorMsg" class="mt-1 block break-words text-destructive">{{ row.errorMsg }}</span>
                 <span v-if="!row.sourceUrl && !row.errorMsg" class="text-muted-foreground">—</span>
               </TableCell>
+              <TableCell class="text-right">
+                <div class="flex justify-end gap-1">
+                  <Button variant="ghost" size="sm" @click="detailTarget = row">详情</Button>
+                  <Button
+                    v-if="row.status === 'FAILED'"
+                    variant="outline"
+                    size="sm"
+                    :disabled="retryingId === row.id"
+                    @click="retry(row)"
+                  >
+                    <Loader2 v-if="retryingId === row.id" class="animate-spin" />
+                    <RotateCcw v-else />
+                    重试
+                  </Button>
+                </div>
+              </TableCell>
             </TableRow>
           </TableBody>
         </Table>
@@ -219,5 +290,72 @@ function modelLabel(id: number | null) {
     </Card>
 
     <Pagination v-if="total > query.size" v-model:page="query.current" :page-size="query.size" :total="total" />
+
+    <Sheet
+      v-model:open="detailOpen"
+      title="任务详情"
+      :description="`#${detailTarget?.id ?? ''} ${detailTarget?.modelName ?? ''}`"
+      side="right"
+      class="w-[92vw] sm:w-[460px]"
+    >
+      <div v-if="detailTarget" class="space-y-4 text-sm">
+        <div class="grid grid-cols-[88px_1fr] gap-y-2">
+          <span class="text-muted-foreground">状态</span>
+          <Badge :variant="statusMap[detailTarget.status]?.variant ?? 'secondary'">
+            {{ statusMap[detailTarget.status]?.label ?? detailTarget.status }}
+          </Badge>
+          <span class="text-muted-foreground">品牌</span>
+          <span>{{ detailTarget.brandName || '—' }}</span>
+          <span class="text-muted-foreground">AI 模型</span>
+          <span class="break-all">{{ modelLabel(detailTarget.aiModelId) }}</span>
+          <span class="text-muted-foreground">耗时</span>
+          <span class="tabular-nums">{{ formatDuration(detailTarget.durationMs) }}</span>
+          <span class="text-muted-foreground">创建时间</span>
+          <span class="tabular-nums">{{ formatTime(detailTarget.createdAt) }}</span>
+          <span class="text-muted-foreground">更新时间</span>
+          <span class="tabular-nums">{{ formatTime(detailTarget.updatedAt) }}</span>
+        </div>
+
+        <Separator />
+
+        <div class="space-y-1.5">
+          <div class="text-xs font-medium text-muted-foreground">来源链接</div>
+          <a
+            v-if="detailTarget.sourceUrl"
+            :href="detailTarget.sourceUrl"
+            target="_blank"
+            rel="noreferrer"
+            class="inline-flex items-start gap-1 break-all text-primary hover:underline"
+          >
+            {{ detailTarget.sourceUrl }}
+            <ExternalLink class="mt-0.5 h-3 w-3 shrink-0" />
+          </a>
+          <span v-else class="text-muted-foreground">—</span>
+        </div>
+
+        <div v-if="detailTarget.errorMsg" class="space-y-1.5">
+          <div class="text-xs font-medium text-muted-foreground">错误信息</div>
+          <p class="break-words rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {{ detailTarget.errorMsg }}
+          </p>
+        </div>
+
+        <div v-if="detailTarget.result" class="space-y-1.5">
+          <div class="text-xs font-medium text-muted-foreground">抓取结果</div>
+          <pre class="max-h-72 overflow-auto rounded-md bg-muted/60 p-3 text-xs leading-5">{{
+            detailTarget.result
+          }}</pre>
+        </div>
+
+        <Button
+          v-if="detailTarget.status === 'FAILED'"
+          :disabled="retryingId === detailTarget.id"
+          @click="retry(detailTarget)"
+        >
+          <RotateCcw />
+          重试该任务
+        </Button>
+      </div>
+    </Sheet>
   </div>
 </template>

@@ -22,6 +22,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -52,6 +53,54 @@ public class DeviceService {
         return deviceMapper.selectPage(new Page<>(current, size), query);
     }
 
+    /**
+     * 搜索联想：机型名或品牌名命中即返回，最多 limit 条。
+     * 拼音首字母匹配放在前端（pinyin-pro），此接口保证中文关键词与超大机型库也能命中。
+     */
+    public List<DeviceSuggestVO> suggest(String keyword, int limit) {
+        if (!StringUtils.hasText(keyword)) {
+            return List.of();
+        }
+        String kw = keyword.trim();
+        int size = Math.min(Math.max(limit, 1), 20);
+
+        List<Long> brandIds = brandMapper.selectList(Wrappers.<Brand>lambdaQuery()
+                        .like(Brand::getName, kw)).stream()
+                .map(Brand::getId)
+                .toList();
+
+        var query = Wrappers.<Device>lambdaQuery()
+                .eq(Device::getStatus, 1)
+                .and(w -> {
+                    w.like(Device::getName, kw);
+                    if (!brandIds.isEmpty()) {
+                        w.or().in(Device::getBrandId, brandIds);
+                    }
+                })
+                .orderByDesc(Device::getReleaseDate)
+                .orderByAsc(Device::getName)
+                .last("LIMIT " + size);
+
+        List<Device> devices = deviceMapper.selectList(query);
+        if (devices.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Brand> brandMap = brandMapper.selectBatchIds(
+                        devices.stream().map(Device::getBrandId).distinct().toList()).stream()
+                .collect(Collectors.toMap(Brand::getId, b -> b));
+
+        return devices.stream().map(device -> {
+            DeviceSuggestVO vo = new DeviceSuggestVO();
+            vo.setId(device.getId());
+            vo.setName(device.getName());
+            vo.setBrandId(device.getBrandId());
+            vo.setThumbnail(device.getThumbnail());
+            Brand brand = brandMap.get(device.getBrandId());
+            vo.setBrandName(brand == null ? null : brand.getName());
+            return vo;
+        }).toList();
+    }
+
     public List<Device> hot(int limit) {
         return deviceMapper.selectList(Wrappers.<Device>lambdaQuery()
                 .eq(Device::getStatus, 1)
@@ -59,19 +108,76 @@ public class DeviceService {
                 .last("LIMIT " + limit));
     }
 
-    /** 机型详情：主表 + 参数值（paramKey -> value）。 */
+    /**
+     * 机型详情：主表 + 参数值（paramKey -> value）+ 字段级溯源 + 最后更新时间。
+     * paramMeta 与 params 并行返回，避免改变既有参数结构导致管理端编辑表单失效。
+     */
     public Map<String, Object> detail(Long id) {
         Device device = deviceMapper.selectById(id);
         if (device == null) {
             throw new BizException("机型不存在");
         }
         Brand brand = brandMapper.selectById(device.getBrandId());
+        List<DeviceParamValue> values = rawParamValues(id);
+        Map<Long, ParamDef> defMap = defMap();
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("device", device);
         result.put("brand", brand);
-        result.put("params", paramValuesOf(id));
+        result.put("params", toParamValues(values, defMap));
+        result.put("paramMeta", toParamMeta(values, defMap));
+        result.put("lastUpdated", lastUpdated(device, values));
         result.put("variants", variantsOf(id));
         return result;
+    }
+
+    private Map<Long, ParamDef> defMap() {
+        return paramService.listDefs(null, null).stream()
+                .collect(Collectors.toMap(ParamDef::getId, Function.identity()));
+    }
+
+    private List<DeviceParamValue> rawParamValues(Long deviceId) {
+        return valueMapper.selectList(Wrappers.<DeviceParamValue>lambdaQuery()
+                .eq(DeviceParamValue::getDeviceId, deviceId));
+    }
+
+    private Map<String, String> toParamValues(List<DeviceParamValue> values, Map<Long, ParamDef> defMap) {
+        Map<String, String> map = new LinkedHashMap<>();
+        for (DeviceParamValue value : values) {
+            ParamDef def = defMap.get(value.getParamDefId());
+            if (def == null) {
+                continue;
+            }
+            map.putIfAbsent(def.getParamKey(), value.getParamValue() == null ? "" : value.getParamValue());
+        }
+        return map;
+    }
+
+    private Map<String, ParamMetaVO> toParamMeta(List<DeviceParamValue> values, Map<Long, ParamDef> defMap) {
+        Map<String, ParamMetaVO> meta = new LinkedHashMap<>();
+        for (DeviceParamValue value : values) {
+            ParamDef def = defMap.get(value.getParamDefId());
+            if (def == null) {
+                continue;
+            }
+            ParamMetaVO vo = new ParamMetaVO();
+            vo.setSourceUrl(value.getSourceUrl());
+            vo.setConfidence(value.getConfidence());
+            vo.setUpdatedAt(value.getUpdatedAt());
+            meta.putIfAbsent(def.getParamKey(), vo);
+        }
+        return meta;
+    }
+
+    /** 机型最后更新时间：机型主表与参数值取最大，前端据此展示数据新鲜度。 */
+    private LocalDateTime lastUpdated(Device device, List<DeviceParamValue> values) {
+        LocalDateTime latest = device.getUpdatedAt();
+        for (DeviceParamValue value : values) {
+            if (value.getUpdatedAt() != null && (latest == null || value.getUpdatedAt().isAfter(latest))) {
+                latest = value.getUpdatedAt();
+            }
+        }
+        return latest;
     }
 
     /** 机型全部存储版本，按 sortOrder 升序。 */
@@ -97,19 +203,17 @@ public class DeviceService {
     }
 
     public Map<String, String> paramValuesOf(Long deviceId) {
-        Map<Long, ParamDef> defMap = paramService.listDefs(null, null).stream()
-                .collect(Collectors.toMap(ParamDef::getId, Function.identity()));
-        return valueMapper.selectList(Wrappers.<DeviceParamValue>lambdaQuery()
-                        .eq(DeviceParamValue::getDeviceId, deviceId)).stream()
-                .filter(v -> defMap.containsKey(v.getParamDefId()))
-                .collect(Collectors.toMap(
-                        v -> defMap.get(v.getParamDefId()).getParamKey(),
-                        v -> v.getParamValue() == null ? "" : v.getParamValue(),
-                        (a, b) -> a));
+        return toParamValues(rawParamValues(deviceId), defMap());
     }
 
     @Transactional
     public Device save(DeviceSaveRequest req, Long adminId, String adminName) {
+        return save(req, adminId, adminName, null);
+    }
+
+    /** sourceUrl 非空表示本次写入来自 Agent 抓取，会落到每个参数值上用于溯源。 */
+    @Transactional
+    public Device save(DeviceSaveRequest req, Long adminId, String adminName, String sourceUrl) {
         Device device = new Device();
         device.setId(req.getId());
         device.setBrandId(req.getBrandId());
@@ -125,7 +229,7 @@ public class DeviceService {
         } else {
             deviceMapper.updateById(device);
         }
-        saveParamValues(device.getId(), req.getParams());
+        saveParamValues(device.getId(), req.getParams(), sourceUrl);
         saveVariants(device.getId(), req.getVariants());
 
         logService.record(adminId, adminName, isNew ? "CREATE_DEVICE" : "UPDATE_DEVICE",
@@ -139,6 +243,15 @@ public class DeviceService {
      */
     @Transactional
     public void saveParamValues(Long deviceId, Map<String, String> params) {
+        saveParamValues(deviceId, params, null);
+    }
+
+    /**
+     * 以 paramKey -> value 全量覆盖机型参数值，并记录来源。
+     * 值发生变化时：有 sourceUrl 覆盖为抓取来源，否则清空来源（说明已被人工修正）。
+     */
+    @Transactional
+    public void saveParamValues(Long deviceId, Map<String, String> params, String sourceUrl) {
         if (params == null) {
             return;
         }
@@ -175,9 +288,13 @@ public class DeviceService {
                 value.setDeviceId(deviceId);
                 value.setParamDefId(entry.getKey());
                 value.setParamValue(entry.getValue());
+                value.setSourceUrl(sourceUrl);
                 valueMapper.insert(value);
             } else if (!entry.getValue().equals(current.getParamValue())) {
                 current.setParamValue(entry.getValue());
+                current.setSourceUrl(sourceUrl);
+                // strictUpdateFill 仅在字段为空时填充，已从库中读出的实体需显式刷新更新时间
+                current.setUpdatedAt(LocalDateTime.now());
                 valueMapper.updateById(current);
             }
         }
@@ -354,8 +471,65 @@ public class DeviceService {
         return result;
     }
 
-    public List<HistoryPoint> history(Long brandId, Long paramDefId) {
-        return valueMapper.selectHistory(brandId, paramDefId);
+    /**
+     * 多品牌参数历史：逐品牌取时序数据，返回统一单位与数值/文本判定，供前端画多折线。
+     * 单次最多 4 个品牌，避免图表不可读。
+     */
+    public HistorySeriesVO historySeries(List<Long> brandIds, Long paramDefId) {
+        if (brandIds == null || brandIds.isEmpty()) {
+            throw new BizException("请至少选择一个品牌");
+        }
+        if (brandIds.size() > 4) {
+            throw new BizException("最多同时对比 4 个品牌");
+        }
+        ParamDef def = paramService.listDefs(null, null).stream()
+                .filter(d -> d.getId().equals(paramDefId))
+                .findFirst()
+                .orElseThrow(() -> new BizException("参数不存在"));
+
+        List<HistorySeriesItemVO> series = new ArrayList<>();
+        boolean numeric = true;
+        for (Long brandId : brandIds.stream().distinct().toList()) {
+            Brand brand = brandMapper.selectById(brandId);
+            if (brand == null) {
+                continue;
+            }
+            List<HistoryPoint> points = valueMapper.selectHistory(brandId, paramDefId);
+            if (points.isEmpty()) {
+                continue;
+            }
+            for (HistoryPoint point : points) {
+                if (!isNumeric(point.getValue())) {
+                    numeric = false;
+                }
+            }
+            HistorySeriesItemVO item = new HistorySeriesItemVO();
+            item.setBrandId(brand.getId());
+            item.setBrandName(brand.getName());
+            item.setPoints(points);
+            series.add(item);
+        }
+
+        HistorySeriesVO result = new HistorySeriesVO();
+        result.setParamDefId(def.getId());
+        result.setParamName(def.getParamName());
+        result.setUnit(def.getUnit());
+        result.setNumeric(numeric);
+        result.setSeries(series);
+        return result;
+    }
+
+    /** 数值判定：允许首位正负号与小数点，其余一律按文本处理。 */
+    private boolean isNumeric(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        try {
+            new BigDecimal(value.trim());
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     public List<Integer> releaseYears(Long brandId) {

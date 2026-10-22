@@ -18,6 +18,8 @@ services:
       # ---- 数据（SQLite 与上传文件都落在宿主机挂载目录内）----
       SPECTRACE_DB_PATH: /data/spectrace.db
       SPECTRACE_UPLOAD_DIR: /data/uploads
+      # 每日备份落在同一挂载目录内，容器重建不丢；保留份数可用 SPECTRACE_BACKUP_KEEP 调整
+      SPECTRACE_BACKUP_DIR: /data/backups
       # ---- 应用密钥（生产务必修改）----
       SPECTRACE_JWT_SECRET: ${JWT_SECRET:-change-me-spectrace-jwt-secret-please-use-32bytes-min}
       # ---- 内嵌采集 Agent（可关闭；AI Key 正常在后台「AI 配置」维护）----

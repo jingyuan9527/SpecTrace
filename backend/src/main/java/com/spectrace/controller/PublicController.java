@@ -3,7 +3,8 @@ package com.spectrace.controller;
 import com.spectrace.common.PageResult;
 import com.spectrace.common.R;
 import com.spectrace.dto.CompareResultVO;
-import com.spectrace.dto.HistoryPoint;
+import com.spectrace.dto.DeviceSuggestVO;
+import com.spectrace.dto.HistorySeriesVO;
 import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
 import com.spectrace.entity.ParamDef;
@@ -61,6 +62,13 @@ public class PublicController {
         return R.ok(PageResult.of(deviceService.page(current, size, brandId, year, keyword)));
     }
 
+    @Operation(summary = "机型搜索联想")
+    @GetMapping("/devices/suggest")
+    public R<List<DeviceSuggestVO>> suggest(@RequestParam String keyword,
+                                            @RequestParam(defaultValue = "8") int limit) {
+        return R.ok(deviceService.suggest(keyword, limit));
+    }
+
     @Operation(summary = "热门机型")
     @GetMapping("/devices/hot")
     public R<List<Device>> hot(@RequestParam(defaultValue = "8") int limit) {
@@ -84,10 +92,16 @@ public class PublicController {
         return R.ok(deviceService.compare(deviceIds));
     }
 
-    @Operation(summary = "单参数历史演变")
+    @Operation(summary = "参数历史演变（支持多品牌叠加）")
     @GetMapping("/history")
-    public R<List<HistoryPoint>> history(@RequestParam Long brandId, @RequestParam Long paramDefId) {
-        return R.ok(deviceService.history(brandId, paramDefId));
+    public R<HistorySeriesVO> history(@RequestParam("brandIds") String brandIds,
+                                      @RequestParam Long paramDefId) {
+        List<Long> ids = Arrays.stream(brandIds.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(Long::valueOf)
+                .toList();
+        return R.ok(deviceService.historySeries(ids, paramDefId));
     }
 
     @Operation(summary = "机型发布年份")

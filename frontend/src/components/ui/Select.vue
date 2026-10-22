@@ -22,6 +22,7 @@ const props = withDefaults(
     options: SelectOption[]
     placeholder?: string
     disabled?: boolean
+    id?: string
     class?: string
   }>(),
   { placeholder: '请选择', disabled: false },
@@ -50,6 +51,7 @@ function decode(value: unknown) {
     @update:model-value="emit('update:modelValue', decode($event))"
   >
     <SelectTrigger
+      :id="props.id"
       :class="
         cn(
           'flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',

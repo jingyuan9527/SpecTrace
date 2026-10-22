@@ -12,6 +12,7 @@ const props = withDefaults(
     placeholder?: string
     searchPlaceholder?: string
     disabled?: boolean
+    id?: string
     class?: string
   }>(),
   { placeholder: '请选择', searchPlaceholder: '搜索…', disabled: false },
@@ -39,6 +40,7 @@ function select(option: SelectOption) {
   <PopoverRoot v-model:open="open">
     <PopoverTrigger as-child :disabled="props.disabled">
       <button
+        :id="props.id"
         type="button"
         :class="
           cn(

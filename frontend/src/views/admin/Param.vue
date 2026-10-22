@@ -380,16 +380,17 @@ async function confirmDeleteDef() {
           <Input id="def-name" v-model="defForm.paramName" placeholder="如 屏幕尺寸" />
         </div>
         <div class="space-y-1.5">
-          <Label>所属分组</Label>
+          <Label for="def-group">所属分组</Label>
           <Select
+            id="def-group"
             v-model="defForm.groupId"
             :options="groups.map((g) => ({ label: g.name, value: g.id as number }))"
             placeholder="选择分组"
           />
         </div>
         <div class="space-y-1.5">
-          <Label>参数类型</Label>
-          <Select v-model="defForm.paramType" :options="types" placeholder="选择类型" />
+          <Label for="def-type">参数类型</Label>
+          <Select id="def-type" v-model="defForm.paramType" :options="types" placeholder="选择类型" />
         </div>
         <div v-if="defForm.paramType === 'select'" class="space-y-1.5 sm:col-span-2">
           <Label for="def-enum">枚举选项</Label>

@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS device_param_value (
     device_id     BIGINT   NOT NULL,
     param_def_id  BIGINT   NOT NULL,
     param_value   TEXT     DEFAULT NULL,
+    -- 字段级溯源：抓取入库时记录来源页面与置信度，人工录入留空
+    source_url    VARCHAR(512) DEFAULT NULL,
+    confidence    DECIMAL(3,2) DEFAULT NULL,
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uk_device_param UNIQUE (device_id, param_def_id)
@@ -72,6 +75,25 @@ CREATE TABLE IF NOT EXISTS device_variant (
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uk_device_variant UNIQUE (device_id, storage, ram)
+);
+
+-- 访客提交的参数纠错反馈，处理状态由管理端维护
+CREATE TABLE IF NOT EXISTS feedback (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id       BIGINT       NOT NULL,
+    device_name     VARCHAR(128) DEFAULT NULL,
+    param_def_id    BIGINT       DEFAULT NULL,
+    param_key       VARCHAR(64)  DEFAULT NULL,
+    param_name      VARCHAR(64)  DEFAULT NULL,
+    current_value   TEXT         DEFAULT NULL,
+    suggested_value TEXT         DEFAULT NULL,
+    description     TEXT         DEFAULT NULL,
+    contact         VARCHAR(128) DEFAULT NULL,
+    status          VARCHAR(24)  NOT NULL DEFAULT 'OPEN',
+    handler_note    TEXT         DEFAULT NULL,
+    created_at      DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    deleted         TINYINT      NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS agent_task (
@@ -160,6 +182,8 @@ CREATE INDEX IF NOT EXISTS idx_device_name ON device (name);
 CREATE INDEX IF NOT EXISTS idx_dpv_device ON device_param_value (device_id);
 CREATE INDEX IF NOT EXISTS idx_dpv_def ON device_param_value (param_def_id);
 CREATE INDEX IF NOT EXISTS idx_variant_device ON device_variant (device_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback (status);
+CREATE INDEX IF NOT EXISTS idx_feedback_device ON feedback (device_id);
 CREATE INDEX IF NOT EXISTS idx_task_status ON agent_task (status);
 CREATE INDEX IF NOT EXISTS idx_task_created ON agent_task (created_at);
 CREATE INDEX IF NOT EXISTS idx_pending_status ON agent_pending_data (status);

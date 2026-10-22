@@ -1,4 +1,5 @@
-import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { resetPageMeta } from '@/lib/meta'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -29,6 +30,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'agent-tasks', name: 'admin-agent-tasks', component: () => import('@/views/admin/AgentTasks.vue') },
       { path: 'ai-config', name: 'admin-ai-config', component: () => import('@/views/admin/AiConfig.vue') },
       { path: 'pending', name: 'admin-pending', component: () => import('@/views/admin/PendingData.vue') },
+      { path: 'feedback', name: 'admin-feedback', component: () => import('@/views/admin/Feedback.vue') },
       { path: 'users', name: 'admin-users', component: () => import('@/views/admin/Users.vue') },
       { path: 'logs', name: 'admin-logs', component: () => import('@/views/admin/Logs.vue') },
     ],
@@ -36,7 +38,8 @@ const routes: RouteRecordRaw[] = [
 ]
 
 const router = createRouter({
-  history: createWebHashHistory(),
+  // history 模式便于分享与搜索引擎收录；生产环境由后端把未知路径回退到 index.html
+  history: createWebHistory(),
   routes,
 })
 
@@ -46,5 +49,8 @@ router.beforeEach((to) => {
   }
   return true
 })
+
+// 详情页会在数据加载后覆盖标题，这里负责把其它页面的标题复位，避免残留
+router.afterEach(() => resetPageMeta())
 
 export default router

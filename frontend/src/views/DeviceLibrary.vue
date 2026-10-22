@@ -2,11 +2,12 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { motion } from 'motion-v'
-import { GitCompareArrows, Search, Smartphone, SlidersHorizontal } from '@lucide/vue'
+import { GitCompareArrows, Smartphone, SlidersHorizontal } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
 import { useCompareStore } from '@/stores/compare'
-import { Badge, Button, Card, CardContent, Empty, Input, Pagination, Select, Skeleton } from '@/components/ui'
+import { Badge, Button, Card, CardContent, Empty, Pagination, Select, Skeleton } from '@/components/ui'
+import DeviceSearch from '@/components/DeviceSearch.vue'
 import ImageWithFallback from '@/components/ImageWithFallback.vue'
 
 interface Brand {
@@ -100,6 +101,10 @@ watch(
   () => load(),
 )
 
+function goDetail(device: { id: number }) {
+  router.push({ name: 'device-detail', params: { id: device.id } })
+}
+
 function toggleCompare(device: Device) {
   if (compare.has(device.id)) {
     compare.remove(device.id)
@@ -137,10 +142,12 @@ function toggleCompare(device: Device) {
         <div class="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[160px_140px_1fr_auto]">
           <Select v-model="query.brandId" :options="brandOptions" placeholder="全部品牌" />
           <Select v-model="query.year" :options="yearOptions" placeholder="全部年份" />
-          <div class="relative">
-            <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input v-model="query.keyword" class="pl-9" placeholder="机型名称" @keyup.enter="applyFilter" />
-          </div>
+          <DeviceSearch
+            v-model="query.keyword"
+            placeholder="机型名称或拼音首字母"
+            @submit="applyFilter"
+            @select="goDetail"
+          />
           <Button @click="applyFilter">搜索</Button>
         </div>
       </CardContent>

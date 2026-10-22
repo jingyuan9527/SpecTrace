@@ -395,8 +395,13 @@ async function confirmDeleteModel() {
           <Input id="conn-name" v-model="form.name" placeholder="如 阿里云百炼 / 本地 Ollama" />
         </div>
         <div class="space-y-1.5">
-          <Label>服务商</Label>
-          <Select v-model="form.provider" :options="providerOptions" @update:model-value="onProviderChange($event as string)" />
+          <Label for="conn-provider">服务商</Label>
+          <Select
+            id="conn-provider"
+            v-model="form.provider"
+            :options="providerOptions"
+            @update:model-value="onProviderChange($event as string)"
+          />
         </div>
         <div class="space-y-1.5">
           <Label for="conn-key">API Key</Label>

@@ -3,6 +3,28 @@
 > 基于 2026-10-22 的现状评估拆分。优先级：P0 直接影响可用性，P1 建立数据可信度，P2 提升后台效率，P3 长期增强。
 > 每项按「改动点 → 验收标准 → 预估」组织，默认一个任务一个 commit。
 
+## 完成情况（2026-10-22）
+
+| 任务 | 状态 | 落地要点 |
+| --- | --- | --- |
+| T5 字段级来源 | ✅ | `device_param_value` 增 `source_url` / `confidence`（`SqliteSchemaMigration` 兼容老库）；审核回写来源，人工改值清空来源并刷新 `updated_at`；详情页逐行「更新于 / 来源」，页头「最后更新」 |
+| T6 待审核 diff | ✅ | `pendingDetail` 返回同品牌同名机型现有参数与 `newDevice`；弹窗「旧值 → 新值」，未变化项折叠；同名机型审核通过改为覆盖更新 |
+| T7 参数纠错 | ✅ | `feedback` 表 + `POST /api/public/feedback`（同来源同机型 1 分钟限流）+ 后台「纠错反馈」页 |
+| T8 批量导入 | ✅ | CSV 模板按 `param_def` 动态生成；`/admin/devices/import?dryRun=` 预览逐行校验（行号、品牌不存在、重复机型），确认后逐行落库，上限 500 行 |
+| T9 复制机型 | ✅ | 列表复制按钮带出全部参数与版本价格，名称加「副本」、发布日期置空 |
+| T10 任务实时状态 | ✅ | 页面可见时 5 秒静默轮询；失败任务重试接口；详情抽屉展示来源/耗时/错误/结果 |
+| T11 待审核批量操作 | ✅ | 多选 + 批量通过 / 批量丢弃，单条失败不影响其余并回传原因 |
+| T12 上传优化 | ✅ | canvas 压缩最长边 1600px 转 WebP；后端文件头校验 + 大小限制 + 返回尺寸；进度显示与失败重试 |
+| T13 历史多品牌 | ✅ | 最多 4 品牌叠加、日期对齐的双/多折线、极值标注、单位与数值校验提示、CSV 导出 |
+| T14 搜索联想 | ✅ | `/public/devices/suggest` + 前端 `pinyin-pro` 全拼/首字母本地匹配，下拉可键盘选择 |
+| T15 SEO / history 路由 | ✅ | `createWebHistory`；`ResourceConfig` SPA 回退（`/api`、带扩展名不回落）；详情页动态 title/description/OG |
+| T16 可访问性 | ✅ | Dialog/Sheet 缺省 Description 用隐藏文本兜底；`Select`/`Combobox` 支持 `id` 与 `label for` 对齐；表头 `scope="col"`、对比表 `caption` |
+| T17 E2E | ✅ | Playwright 两条主链路（访客对比分享、后台审核入库），接口由 `e2e/mock-api.ts` 拦截，失败保留 trace/截图/视频 |
+| T18 运维与备份 | ✅ | Actuator health/metrics；`VACUUM INTO` 每日备份保留 7 份；采集连续失败写 `AGENT_CONSECUTIVE_FAILURE` 日志并可选 webhook |
+| T19 AI 增强 | ⏸ | 需产品确认场景与成本，未开始 |
+
+> P1 / P2 / P3 正文保留原始需求描述，作为验收依据。
+
 ## P0 · 第一批（已完成 2026-10-22）
 
 ### T1 图片资产本地化 ✅

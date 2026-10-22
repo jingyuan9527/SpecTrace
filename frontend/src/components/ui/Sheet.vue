@@ -34,6 +34,8 @@ const sideClass = computed(() =>
           <DialogTitle v-if="props.title" class="text-base font-semibold">{{ props.title }}</DialogTitle>
           <VisuallyHidden v-else><DialogTitle>菜单</DialogTitle></VisuallyHidden>
           <DialogDescription v-if="props.description" class="text-sm text-muted-foreground">{{ props.description }}</DialogDescription>
+          <!-- 与 Dialog 一致：缺少描述时补隐藏文本，避免 reka-ui 运行时告警 -->
+          <VisuallyHidden v-else><DialogDescription>侧边面板内容</DialogDescription></VisuallyHidden>
         </div>
         <slot />
         <DialogClose class="absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none">

@@ -227,8 +227,8 @@ async function confirmDelete() {
           <Input id="user-nick" v-model="form.nickname" placeholder="展示名称" />
         </div>
         <div class="space-y-1.5">
-          <Label>角色</Label>
-          <Select v-model="form.role" :options="roles" />
+          <Label for="user-role">角色</Label>
+          <Select id="user-role" v-model="form.role" :options="roles" />
         </div>
       </div>
       <template #footer>

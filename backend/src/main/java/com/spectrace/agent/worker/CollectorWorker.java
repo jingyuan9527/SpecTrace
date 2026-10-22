@@ -14,10 +14,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 内嵌采集 Agent 工作线程：随应用启动，常驻从 {@link TaskQueue} 消费抓取任务并执行。
@@ -38,6 +43,10 @@ public class CollectorWorker implements ApplicationRunner {
     private final AiConfigService aiConfigService;
     private final ParamService paramService;
     private final AgentProperties props;
+
+    /** 连续失败计数，成功任务清零；日志关键字供外部日志告警规则匹配 */
+    private final AtomicInteger consecutiveFailures = new AtomicInteger();
+    private static final String ALERT_KEYWORD = "AGENT_CONSECUTIVE_FAILURE";
 
     @Override
     public void run(ApplicationArguments args) {
@@ -115,6 +124,44 @@ public class CollectorWorker implements ApplicationRunner {
             log.info("采集完成 taskId={} status={}", payload.getTaskId(), result.getStatus());
         } catch (Exception e) {
             log.error("写回采集结果失败 taskId={}", payload.getTaskId(), e);
+        }
+        trackFailure(payload, result);
+    }
+
+    /** 连续失败达到阈值时输出可检索的 ERROR 日志，并可选推送 webhook。 */
+    private void trackFailure(AgentTaskPayload payload, AgentCallbackRequest result) {
+        if (!"FAILED".equalsIgnoreCase(result.getStatus())) {
+            consecutiveFailures.set(0);
+            return;
+        }
+        int failures = consecutiveFailures.incrementAndGet();
+        int threshold = props.getAlertThreshold();
+        // 达到阈值只报一次，避免持续失败时刷屏
+        if (threshold <= 0 || failures != threshold) {
+            return;
+        }
+        String message = "采集任务连续失败 " + failures + " 次，最近任务 taskId=" + payload.getTaskId()
+                + " model=" + payload.getModelName() + " error=" + result.getError();
+        log.error("{} {}", ALERT_KEYWORD, message);
+        sendWebhook(message);
+    }
+
+    /** webhook 采用钉钉机器人文本消息格式；飞书/Slack 需在转发层做一次字段映射。 */
+    private void sendWebhook(String message) {
+        String webhook = props.getAlertWebhook();
+        if (!StringUtils.hasText(webhook)) {
+            return;
+        }
+        try {
+            RestClient.create().post()
+                    .uri(webhook)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("msgtype", "text", "text", Map.of("content", "[SpecTrace] " + message)))
+                    .retrieve()
+                    .toBodilessEntity();
+            log.info("告警 webhook 已发送: {}", webhook);
+        } catch (Exception e) {
+            log.warn("发送告警 webhook 失败: url={}", webhook, e);
         }
     }
 }

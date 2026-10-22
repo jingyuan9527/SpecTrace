@@ -25,6 +25,12 @@ public class DeviceParamValue {
 
     private String paramValue;
 
+    /** 该参数值的来源页面，人工录入或历史数据为空 */
+    private String sourceUrl;
+
+    /** 采集置信度 0~1，仅 Agent 抓取结果可携带 */
+    private java.math.BigDecimal confidence;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

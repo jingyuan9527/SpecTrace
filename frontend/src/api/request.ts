@@ -30,9 +30,9 @@ request.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('spectrace-token')
       localStorage.removeItem('spectrace-user')
-      if (location.hash.includes('/admin') && !location.hash.includes('/admin/login')) {
+      if (location.pathname.startsWith('/admin') && !location.pathname.startsWith('/admin/login')) {
         toast.error('登录已过期，请重新登录')
-        location.hash = '#/admin/login'
+        location.href = '/admin/login'
       }
     } else {
       toast.error(error.response?.data?.message || error.message || '网络错误')

@@ -47,6 +47,8 @@ const emit = defineEmits<{ 'update:open': [value: boolean] }>()
           <DialogDescription v-if="props.description" class="text-sm text-muted-foreground">
             {{ props.description }}
           </DialogDescription>
+          <!-- reka-ui 要求每个 Dialog 都有 Description，缺省时用隐藏文本满足可访问性 -->
+          <VisuallyHidden v-else><DialogDescription>对话框内容</DialogDescription></VisuallyHidden>
         </div>
 
         <slot />

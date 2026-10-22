@@ -30,9 +30,17 @@ public class SecurityConfig {
             "/uploads/**",
             "/brands/**",
             "/devices/**",
+            // history 路由下的前端页面直接访问时返回 SPA 壳，登录态由前端路由守卫控制
+            "/compare",
+            "/history",
+            "/admin/**",
             "/v3/api-docs/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
+            // 容器健康探针公开，metrics 仍需登录
+            "/actuator/health",
+            "/actuator/health/**",
+            "/actuator/info",
             "/error"
     };
 

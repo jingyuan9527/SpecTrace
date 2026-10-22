@@ -39,4 +39,10 @@ public class AgentProperties {
 
     /** 单任务最长耗时（秒） */
     private int taskTimeoutSeconds = 180;
+
+    /** 连续失败达到该次数时告警，0 表示关闭 */
+    private int alertThreshold = 3;
+
+    /** 告警 webhook（钉钉/飞书/Slack 传入消息地址即可），留空只写 ERROR 日志 */
+    private String alertWebhook = "";
 }

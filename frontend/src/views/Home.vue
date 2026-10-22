@@ -2,11 +2,12 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { motion } from 'motion-v'
-import { ArrowRight, GitCompareArrows, Search, Smartphone, Sparkles, TrendingUp } from '@lucide/vue'
+import { ArrowRight, GitCompareArrows, Smartphone, Sparkles, TrendingUp } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
 import { useCompareStore } from '@/stores/compare'
-import { Badge, Button, Card, CardContent, Empty, Input, Skeleton } from '@/components/ui'
+import { Badge, Button, Card, CardContent, Empty, Skeleton } from '@/components/ui'
+import DeviceSearch from '@/components/DeviceSearch.vue'
 import ImageWithFallback from '@/components/ImageWithFallback.vue'
 
 interface Brand {
@@ -42,6 +43,10 @@ onMounted(async () => {
 
 function search() {
   router.push({ name: 'devices', query: keyword.value ? { keyword: keyword.value } : {} })
+}
+
+function goDetail(device: { id: number }) {
+  router.push({ name: 'device-detail', params: { id: device.id } })
 }
 
 function addCompare(device: Device) {
@@ -86,13 +91,13 @@ function addCompare(device: Device) {
           </motion.p>
 
           <div class="mt-6 flex max-w-xl flex-col gap-2 sm:flex-row">
-            <div class="relative flex-1">
-              <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
+            <div class="flex-1">
+              <DeviceSearch
                 v-model="keyword"
-                class="h-10 pl-9"
-                placeholder="搜索机型，如 iPhone 17"
-                @keyup.enter="search"
+                input-class="h-10"
+                placeholder="搜索机型或拼音首字母，如 iPhone 17、pg"
+                @submit="search"
+                @select="goDetail"
               />
             </div>
             <Button size="lg" @click="search">搜索机型</Button>

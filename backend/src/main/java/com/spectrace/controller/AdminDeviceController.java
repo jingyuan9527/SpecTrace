@@ -2,14 +2,21 @@ package com.spectrace.controller;
 
 import com.spectrace.common.PageResult;
 import com.spectrace.common.R;
+import com.spectrace.dto.DeviceImportResult;
 import com.spectrace.dto.DeviceSaveRequest;
 import com.spectrace.entity.Device;
+import com.spectrace.service.DeviceImportService;
 import com.spectrace.service.DeviceService;
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 @Tag(name = "后台-机型管理")
 @RestController
@@ -19,6 +26,26 @@ import org.springframework.web.bind.annotation.*;
 public class AdminDeviceController {
 
     private final DeviceService deviceService;
+    private final DeviceImportService deviceImportService;
+
+    @Operation(summary = "下载机型批量导入 CSV 模板")
+    @GetMapping("/import/template")
+    public ResponseEntity<byte[]> importTemplate() {
+        byte[] body = deviceImportService.template();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"device-import-template.csv\"")
+                .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
+                .body(body);
+    }
+
+    @Operation(summary = "机型批量导入（dryRun=true 仅预览校验）")
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public R<DeviceImportResult> importDevices(@RequestParam("file") MultipartFile file,
+                                               @RequestParam(defaultValue = "true") boolean dryRun,
+                                               @RequestAttribute Long adminId,
+                                               @RequestAttribute String adminName) {
+        return R.ok(deviceImportService.importCsv(file, dryRun, adminId, adminName));
+    }
 
     @GetMapping
     public R<PageResult<Device>> page(@RequestParam(defaultValue = "1") long current,

@@ -1,12 +1,30 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { motion } from 'motion-v'
-import { ArrowLeft, CalendarDays, GitCompareArrows, Smartphone } from '@lucide/vue'
+import { ArrowLeft, CalendarDays, Clock3, Flag, GitCompareArrows, Link2, Loader2, Smartphone } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
+import { absoluteUrl, setPageMeta } from '@/lib/meta'
 import { useCompareStore } from '@/stores/compare'
-import { Button, Card, CardContent, Empty, Separator, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui'
+import {
+  Button,
+  Card,
+  CardContent,
+  Dialog,
+  Empty,
+  Input,
+  Label,
+  Separator,
+  Skeleton,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+} from '@/components/ui'
 import ImageWithFallback from '@/components/ImageWithFallback.vue'
 
 interface ParamGroup {
@@ -31,6 +49,12 @@ interface DeviceVariant {
   priceType?: string
 }
 
+interface ParamMeta {
+  sourceUrl?: string | null
+  confidence?: number | null
+  updatedAt?: string | null
+}
+
 const route = useRoute()
 const router = useRouter()
 const compare = useCompareStore()
@@ -38,6 +62,8 @@ const compare = useCompareStore()
 const device = ref<any>(null)
 const brand = ref<any>(null)
 const params = ref<Record<string, string>>({})
+const paramMeta = ref<Record<string, ParamMeta>>({})
+const lastUpdated = ref<string | null>(null)
 const variants = ref<DeviceVariant[]>([])
 const groups = ref<ParamGroup[]>([])
 const defs = ref<ParamDef[]>([])
@@ -51,7 +77,7 @@ const grouped = computed(() =>
       name: group.name,
       items: defs.value
         .filter((d) => d.groupId === group.id)
-        .map((d) => ({ ...d, value: params.value[d.paramKey] ?? '' }))
+        .map((d) => ({ ...d, value: params.value[d.paramKey] ?? '', meta: paramMeta.value[d.paramKey] }))
         .filter((d) => d.value !== ''),
     }))
     .filter((g) => g.items.length > 0),
@@ -64,7 +90,19 @@ onMounted(async () => {
     device.value = detail.device
     brand.value = detail.brand
     params.value = detail.params || {}
+    paramMeta.value = detail.paramMeta || {}
+    lastUpdated.value = detail.lastUpdated || null
     variants.value = detail.variants || []
+    // SEO：详情页动态标题与分享卡片信息
+    const brandName = detail.brand?.name || ''
+    setPageMeta({
+      title: `${detail.device.name} 参数${brandName ? ` - ${brandName}` : ''} - SpecTrace`,
+      description:
+        detail.device.description ||
+        `${brandName} ${detail.device.name} 的完整参数、存储版本与发布价，支持横向对比与历史演变。`,
+      image: absoluteUrl(detail.device.thumbnail),
+      url: location.href,
+    })
     ;[groups.value, defs.value] = await Promise.all([publicApi.paramGroups(), publicApi.paramDefs()])
   } catch {
     notFound.value = true
@@ -72,6 +110,12 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+/** 后端返回 ISO 时间，统一裁剪为「YYYY-MM-DD HH:mm」。 */
+function formatTime(value?: string | null) {
+  if (!value) return ''
+  return value.replace('T', ' ').slice(0, 16)
+}
 
 function formatPrice(price?: number | null, currency = 'CNY') {
   if (price === null || price === undefined) return '—'
@@ -97,6 +141,41 @@ function addCompare() {
     return
   }
   toast.success('已加入对比池')
+}
+
+// ---------- 参数纠错 ----------
+const feedbackOpen = ref(false)
+const feedbackSaving = ref(false)
+const feedbackTarget = ref<{ paramKey: string; paramName: string; value: string } | null>(null)
+const feedbackForm = reactive({ suggestedValue: '', description: '', contact: '' })
+
+function openFeedback(item: { paramKey: string; paramName: string; value: string }) {
+  feedbackTarget.value = item
+  Object.assign(feedbackForm, { suggestedValue: '', description: '', contact: '' })
+  feedbackOpen.value = true
+}
+
+async function submitFeedback() {
+  if (!device.value || !feedbackTarget.value) return
+  if (!feedbackForm.suggestedValue.trim() && !feedbackForm.description.trim()) {
+    toast.warning('请填写正确值或问题说明')
+    return
+  }
+  feedbackSaving.value = true
+  try {
+    await publicApi.submitFeedback({
+      deviceId: device.value.id,
+      paramKey: feedbackTarget.value.paramKey,
+      currentValue: feedbackTarget.value.value,
+      suggestedValue: feedbackForm.suggestedValue.trim() || undefined,
+      description: feedbackForm.description.trim() || undefined,
+      contact: feedbackForm.contact.trim() || undefined,
+    })
+    toast.success('反馈已提交，感谢你的帮助')
+    feedbackOpen.value = false
+  } finally {
+    feedbackSaving.value = false
+  }
 }
 </script>
 
@@ -136,9 +215,15 @@ function addCompare() {
                 {{ device.description || '暂无机型简介。' }}
               </p>
 
-              <div class="mt-4 flex items-center gap-1.5 text-sm text-muted-foreground">
-                <CalendarDays class="h-4 w-4" />
-                发布时间：{{ device.releaseDate || '待补充' }}
+              <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-muted-foreground">
+                <span class="flex items-center gap-1.5">
+                  <CalendarDays class="h-4 w-4" />
+                  发布时间：{{ device.releaseDate || '待补充' }}
+                </span>
+                <span v-if="lastUpdated" class="flex items-center gap-1.5">
+                  <Clock3 class="h-4 w-4" />
+                  最后更新：{{ formatTime(lastUpdated) }}
+                </span>
               </div>
 
               <Separator class="my-5" />
@@ -195,14 +280,45 @@ function addCompare() {
                 <TableRow class="hover:bg-transparent">
                   <TableHead class="w-40">参数</TableHead>
                   <TableHead>值</TableHead>
+                  <TableHead class="w-12 text-right">
+                    <span class="sr-only">纠错</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 <TableRow v-for="item in group.items" :key="item.paramKey">
-                  <TableCell class="text-muted-foreground">{{ item.paramName }}</TableCell>
+                  <TableCell class="align-top text-muted-foreground">{{ item.paramName }}</TableCell>
                   <TableCell class="font-medium">
                     {{ item.value }}
                     <span v-if="item.unit" class="ml-1 text-xs font-normal text-muted-foreground">{{ item.unit }}</span>
+                    <div
+                      v-if="item.meta?.sourceUrl || item.meta?.updatedAt"
+                      class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-normal text-muted-foreground"
+                    >
+                      <span v-if="item.meta?.updatedAt">更新于 {{ formatTime(item.meta.updatedAt) }}</span>
+                      <a
+                        v-if="item.meta?.sourceUrl"
+                        :href="item.meta.sourceUrl"
+                        target="_blank"
+                        rel="noreferrer"
+                        class="inline-flex items-center gap-0.5 text-primary hover:underline"
+                      >
+                        <Link2 class="h-3 w-3" />
+                        来源
+                      </a>
+                    </div>
+                  </TableCell>
+                  <TableCell class="text-right align-top">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      class="text-muted-foreground hover:text-foreground"
+                      aria-label="报告参数错误"
+                      title="报告参数错误"
+                      @click="openFeedback(item)"
+                    >
+                      <Flag />
+                    </Button>
                   </TableCell>
                 </TableRow>
               </TableBody>
@@ -213,5 +329,38 @@ function addCompare() {
 
       <Empty v-else title="暂无参数数据" description="该机型尚未录入参数，可在管理后台补充。" />
     </template>
+
+    <Dialog
+      v-model:open="feedbackOpen"
+      title="报告参数错误"
+      description="提交后会进入后台人工核对；重复提交会受频率限制。"
+      class="max-w-lg"
+    >
+      <div class="space-y-4">
+        <div class="rounded-md bg-muted/50 px-3 py-2 text-sm">
+          <div class="text-xs text-muted-foreground">{{ feedbackTarget?.paramName }}</div>
+          <div class="font-medium">{{ feedbackTarget?.value || '—' }}</div>
+        </div>
+        <div class="space-y-1.5">
+          <Label for="feedback-suggested">正确的值</Label>
+          <Input id="feedback-suggested" v-model="feedbackForm.suggestedValue" placeholder="如 5000mAh" />
+        </div>
+        <div class="space-y-1.5">
+          <Label for="feedback-desc">问题说明</Label>
+          <Textarea id="feedback-desc" v-model="feedbackForm.description" placeholder="补充来源链接或说明，便于核实" />
+        </div>
+        <div class="space-y-1.5">
+          <Label for="feedback-contact">联系方式（选填）</Label>
+          <Input id="feedback-contact" v-model="feedbackForm.contact" placeholder="邮箱 / 手机号，便于回访" />
+        </div>
+      </div>
+      <template #footer>
+        <Button variant="outline" :disabled="feedbackSaving" @click="feedbackOpen = false">取消</Button>
+        <Button :disabled="feedbackSaving" @click="submitFeedback">
+          <Loader2 v-if="feedbackSaving" class="animate-spin" />
+          {{ feedbackSaving ? '提交中…' : '提交反馈' }}
+        </Button>
+      </template>
+    </Dialog>
   </div>
 </template>

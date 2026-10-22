@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ImagePlus, Loader2, Pencil, Plus, Search, Smartphone, Trash2 } from '@lucide/vue'
+import { Copy, Download, FileUp, ImagePlus, Loader2, Pencil, Plus, Search, Smartphone, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
 import {
@@ -27,6 +27,7 @@ import {
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import ImageWithFallback from '@/components/ImageWithFallback.vue'
+import { compressImage, formatBytes } from '@/lib/image'
 
 interface Brand {
   id: number
@@ -171,6 +172,28 @@ async function openEdit(row: any) {
   dialog.value = true
 }
 
+/** 复制机型：带出全部参数与版本价格，名称追加「副本」、发布日期置空，保存时新增一条记录。 */
+async function openCopy(row: any) {
+  const detail = await adminApi.deviceDetail(row.id)
+  Object.assign(form, {
+    id: null,
+    brandId: detail.device.brandId,
+    name: `${detail.device.name} 副本`,
+    releaseDate: '',
+    thumbnail: detail.device.thumbnail || '',
+    description: detail.device.description || '',
+    status: detail.device.status ?? 1,
+    params: { ...(detail.params || {}) },
+    variants: (detail.variants || []).map((v: any) => ({
+      id: undefined,
+      storage: v.storage || '',
+      ram: v.ram || '',
+      price: v.price === null || v.price === undefined ? '' : String(v.price),
+    })),
+  })
+  dialog.value = true
+}
+
 async function save() {
   if (!form.name.trim()) {
     toast.warning('请填写机型名称')
@@ -218,16 +241,37 @@ async function confirmDelete() {
   }
 }
 
+const uploadProgress = ref(0)
+const uploadFailed = ref(false)
+const pendingImage = ref<File | null>(null)
+
 async function onFileChange(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]
   if (!file) return
+  pendingImage.value = file
+  await uploadPendingImage()
+  if (fileInput.value) fileInput.value.value = ''
+}
+
+/** 压缩后上传；失败保留原文件，用户可点重试而无需重新选择。 */
+async function uploadPendingImage() {
+  if (!pendingImage.value) return
   uploading.value = true
+  uploadFailed.value = false
+  uploadProgress.value = 0
   try {
-    form.thumbnail = await adminApi.upload(file)
-    toast.success('图片上传成功')
+    const compressed = await compressImage(pendingImage.value)
+    const result = await adminApi.upload(compressed, (percent) => {
+      uploadProgress.value = percent
+    })
+    form.thumbnail = result.url
+    const dimensions = result.width && result.height ? `${result.width}×${result.height}，` : ''
+    toast.success(`图片上传成功（${dimensions}${formatBytes(result.size)}）`)
+    pendingImage.value = null
+  } catch {
+    uploadFailed.value = true
   } finally {
     uploading.value = false
-    if (fileInput.value) fileInput.value.value = ''
   }
 }
 
@@ -251,12 +295,71 @@ function optionsOf(def: ParamDef): string[] {
 function brandName(id: number) {
   return brands.value.find((b) => b.id === id)?.name ?? '—'
 }
+
+// ---------- 批量导入 ----------
+const importOpen = ref(false)
+const importFile = ref<File | null>(null)
+const importPreview = ref<any>(null)
+const previewing = ref(false)
+const importing = ref(false)
+const importInput = ref<HTMLInputElement>()
+
+function openImport() {
+  importFile.value = null
+  importPreview.value = null
+  importOpen.value = true
+}
+
+async function downloadTemplate() {
+  const blob = await adminApi.deviceImportTemplate()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'device-import-template.csv'
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+async function onImportFileChange(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  importFile.value = file
+  importPreview.value = null
+  previewing.value = true
+  try {
+    importPreview.value = await adminApi.importDevices(file, true)
+  } finally {
+    previewing.value = false
+    if (importInput.value) importInput.value.value = ''
+  }
+}
+
+async function confirmImport() {
+  if (!importFile.value) return
+  importing.value = true
+  try {
+    const result = await adminApi.importDevices(importFile.value, false)
+    importPreview.value = result
+    toast.success(`导入完成，成功 ${result.createdCount} 台`)
+    await load()
+  } finally {
+    importing.value = false
+  }
+}
+
+function rowMessages(row: any) {
+  return [...(row.errors || []), ...(row.warnings || [])]
+}
 </script>
 
 <template>
   <div class="space-y-4">
     <PageHeader title="机型管理" description="维护机型基础信息与参数值，支持按品牌和关键词筛选">
       <template #actions>
+        <Button size="sm" variant="outline" @click="openImport">
+          <FileUp />
+          批量导入
+        </Button>
         <Button size="sm" @click="openCreate">
           <Plus />
           新增机型
@@ -310,10 +413,13 @@ function brandName(id: number) {
               </TableCell>
               <TableCell class="text-right">
                 <div class="flex justify-end gap-1">
-                  <Button variant="ghost" size="icon-sm" aria-label="编辑" @click="openEdit(row)">
+                  <Button variant="ghost" size="icon-sm" aria-label="编辑" title="编辑" @click="openEdit(row)">
                     <Pencil />
                   </Button>
-                  <Button variant="ghost" size="icon-sm" class="text-destructive" aria-label="删除" @click="deleteTarget = row">
+                  <Button variant="ghost" size="icon-sm" aria-label="复制机型" title="复制机型" @click="openCopy(row)">
+                    <Copy />
+                  </Button>
+                  <Button variant="ghost" size="icon-sm" class="text-destructive" aria-label="删除" title="删除" @click="deleteTarget = row">
                     <Trash2 />
                   </Button>
                 </div>
@@ -336,8 +442,8 @@ function brandName(id: number) {
             <Input id="device-name" v-model="form.name" placeholder="如 iPhone 17 Pro" />
           </div>
           <div class="space-y-1.5">
-            <Label>品牌</Label>
-            <Select v-model="form.brandId" :options="brandOptions" placeholder="选择品牌" />
+            <Label for="device-brand">品牌</Label>
+            <Select id="device-brand" v-model="form.brandId" :options="brandOptions" placeholder="选择品牌" />
           </div>
           <div class="space-y-1.5">
             <Label for="device-date">发布时间</Label>
@@ -345,13 +451,16 @@ function brandName(id: number) {
           </div>
           <div class="space-y-1.5">
             <Label>缩略图</Label>
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
               <Button variant="outline" size="sm" :disabled="uploading" @click="fileInput?.click()">
                 <Loader2 v-if="uploading" class="animate-spin" />
                 <ImagePlus v-else />
-                {{ uploading ? '上传中…' : '上传图片' }}
+                {{ uploading ? `上传中 ${uploadProgress}%` : '上传图片' }}
               </Button>
+              <Button v-if="uploadFailed" variant="ghost" size="sm" @click="uploadPendingImage">重试上传</Button>
               <img v-if="form.thumbnail" :src="form.thumbnail" alt="缩略图预览" class="h-9 max-w-16 object-contain" />
+              <span v-if="uploadFailed" class="text-xs text-destructive">上传失败</span>
+              <span v-else class="text-xs text-muted-foreground">最长边 1600px，自动转 WebP</span>
               <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileChange" />
             </div>
           </div>
@@ -388,15 +497,15 @@ function brandName(id: number) {
             >
               <div class="space-y-1">
                 <Label class="text-xs">存储</Label>
-                <Input v-model="variant.storage" placeholder="如 256GB" />
+                <Input v-model="variant.storage" aria-label="存储容量" placeholder="如 256GB" />
               </div>
               <div class="space-y-1">
                 <Label class="text-xs">运行内存</Label>
-                <Input v-model="variant.ram" placeholder="可空" />
+                <Input v-model="variant.ram" aria-label="运行内存" placeholder="可空" />
               </div>
               <div class="space-y-1">
                 <Label class="text-xs">发布价（元）</Label>
-                <Input v-model="variant.price" type="number" min="0" placeholder="如 5999" />
+                <Input v-model="variant.price" aria-label="发布价" type="number" min="0" placeholder="如 5999" />
               </div>
               <Button variant="ghost" size="icon-sm" class="text-destructive" aria-label="删除版本" @click="removeVariant(index)">
                 <Trash2 />
@@ -439,6 +548,90 @@ function brandName(id: number) {
       <template #footer>
         <Button variant="outline" :disabled="saving" @click="dialog = false">取消</Button>
         <Button :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存' }}</Button>
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model:open="importOpen"
+      title="批量导入机型"
+      description="上传 CSV 后先预览校验结果，确认无误再写入机型库；表头需包含 name、brand、releaseDate。"
+      class="max-w-3xl"
+    >
+      <div class="space-y-4">
+        <div class="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" @click="downloadTemplate">
+            <Download />
+            下载模板
+          </Button>
+          <Button variant="outline" size="sm" :disabled="previewing" @click="importInput?.click()">
+            <Loader2 v-if="previewing" class="animate-spin" />
+            <FileUp v-else />
+            {{ previewing ? '解析中…' : '选择 CSV' }}
+          </Button>
+          <span class="text-xs text-muted-foreground">{{ importFile?.name || '尚未选择文件' }}</span>
+          <input ref="importInput" type="file" accept=".csv,text/csv" class="hidden" @change="onImportFileChange" />
+        </div>
+
+        <template v-if="importPreview">
+          <div class="flex flex-wrap items-center gap-2">
+            <Badge variant="info">共 {{ importPreview.total }} 行</Badge>
+            <Badge variant="success">可写入 {{ importPreview.validCount }} 行</Badge>
+            <Badge v-if="importPreview.invalidCount" variant="destructive">
+              异常 {{ importPreview.invalidCount }} 行
+            </Badge>
+            <Badge v-if="!importPreview.dryRun" variant="warning">已导入 {{ importPreview.createdCount }} 台</Badge>
+          </div>
+
+          <div class="max-h-80 overflow-auto rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow class="hover:bg-transparent">
+                  <TableHead class="w-16">行号</TableHead>
+                  <TableHead class="min-w-32">机型</TableHead>
+                  <TableHead class="min-w-24">品牌</TableHead>
+                  <TableHead class="w-28">发布时间</TableHead>
+                  <TableHead class="w-20">参数</TableHead>
+                  <TableHead class="min-w-56">校验结果</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="row in importPreview.rows" :key="row.rowNo">
+                  <TableCell class="text-muted-foreground">{{ row.rowNo }}</TableCell>
+                  <TableCell class="font-medium">{{ row.name || '—' }}</TableCell>
+                  <TableCell class="text-muted-foreground">{{ row.brandName || '—' }}</TableCell>
+                  <TableCell class="text-muted-foreground">{{ row.releaseDate || '—' }}</TableCell>
+                  <TableCell class="text-muted-foreground">{{ Object.keys(row.params || {}).length }}</TableCell>
+                  <TableCell class="text-xs">
+                    <span v-if="!rowMessages(row).length" class="text-emerald-600 dark:text-emerald-400">通过</span>
+                    <ul v-else class="space-y-0.5">
+                      <li
+                        v-for="(message, index) in rowMessages(row)"
+                        :key="index"
+                        :class="row.errors?.length ? 'text-destructive' : 'text-muted-foreground'"
+                      >
+                        {{ message }}
+                      </li>
+                    </ul>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        </template>
+
+        <p v-else class="text-xs leading-5 text-muted-foreground">
+          列名与参数 Key 一致即视为该参数值，例如 screen_size、battery_capacity；也可用 params 列写
+          <code class="rounded bg-muted px-1">screen_size=6.3;battery_capacity=3600</code>。
+          单次最多 500 行，品牌必须已在品牌管理中创建。
+        </p>
+      </div>
+
+      <template #footer>
+        <Button variant="outline" :disabled="importing" @click="importOpen = false">关闭</Button>
+        <Button :disabled="importing || !importPreview?.validCount || !importPreview?.dryRun" @click="confirmImport">
+          <Loader2 v-if="importing" class="animate-spin" />
+          {{ importing ? '导入中…' : `确认导入 ${importPreview?.validCount ?? 0} 台` }}
+        </Button>
       </template>
     </Dialog>
 
