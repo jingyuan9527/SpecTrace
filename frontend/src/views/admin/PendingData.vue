@@ -1,23 +1,71 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { onMounted, reactive, ref, watch } from 'vue'
+import { ClipboardCheck, ExternalLink, Loader2, RefreshCw, ShieldCheck } from '@lucide/vue'
+import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  Dialog,
+  Empty,
+  Input,
+  Label,
+  Pagination,
+  Select,
+  Separator,
+  Skeleton,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import PageHeader from '@/components/PageHeader.vue'
 
 const list = ref<any[]>([])
-const total = ref(0)
-const loading = ref(false)
-const query = reactive({ current: 1, size: 10, status: 'PENDING_REVIEW' as string | undefined })
 const brands = ref<any[]>([])
 const defs = ref<any[]>([])
+const total = ref(0)
+const loading = ref(true)
+const saving = ref(false)
+const discarding = ref(false)
 
+const query = reactive({ current: 1, size: 10, status: 'PENDING_REVIEW' as string | undefined })
 const dialog = ref(false)
 const current = ref<any>(null)
-const form = reactive<any>({ brandId: undefined, name: '', releaseDate: '', thumbnail: '', description: '', params: {} as Record<string, string> })
+const discardTarget = ref<any>(null)
+
+const form = reactive<any>({
+  brandId: undefined,
+  name: '',
+  releaseDate: '',
+  thumbnail: '',
+  description: '',
+  params: {} as Record<string, string>,
+})
+
+const statusOptions = [
+  { label: '待审核', value: 'PENDING_REVIEW' },
+  { label: '已通过', value: 'APPROVED' },
+  { label: '已丢弃', value: 'DISCARDED' },
+  { label: '全部状态', value: '' },
+]
+
+const statusMeta: Record<string, { label: string; variant: 'info' | 'success' | 'secondary' }> = {
+  PENDING_REVIEW: { label: '待审核', variant: 'info' },
+  APPROVED: { label: '已通过', variant: 'success' },
+  DISCARDED: { label: '已丢弃', variant: 'secondary' },
+}
 
 async function load() {
   loading.value = true
   try {
-    const res = await adminApi.pendingData({ ...query })
+    const res = await adminApi.pendingData({ ...query, status: query.status || undefined })
     list.value = res.records
     total.value = res.total
   } finally {
@@ -27,8 +75,21 @@ async function load() {
 
 onMounted(async () => {
   ;[brands.value, defs.value] = await Promise.all([adminApi.brands(), adminApi.paramDefs()])
-  load()
+  await load()
 })
+
+watch(
+  () => query.current,
+  () => load(),
+)
+
+watch(
+  () => query.status,
+  () => {
+    query.current = 1
+    load()
+  },
+)
 
 async function openReview(row: any) {
   const detail = await adminApi.pendingDetail(row.id)
@@ -36,30 +97,46 @@ async function openReview(row: any) {
   Object.assign(form, {
     brandId: brands.value.find((b) => b.name === detail.brandName)?.id,
     name: detail.modelName,
-    releaseDate: detail.params['release_date'] || '',
+    releaseDate: detail.params?.['release_date'] || '',
     thumbnail: '',
     description: '',
-    params: { ...detail.params },
+    params: { ...(detail.params || {}) },
   })
   dialog.value = true
 }
 
 async function approve() {
   if (!form.brandId) {
-    ElMessage.warning('请选择品牌')
+    toast.warning('请选择品牌')
     return
   }
-  await adminApi.approvePending(current.value.id, { ...form })
-  ElMessage.success('审核通过，已迁移到正式机型库')
-  dialog.value = false
-  load()
+  if (!form.name.trim()) {
+    toast.warning('请填写机型名称')
+    return
+  }
+  saving.value = true
+  try {
+    await adminApi.approvePending(current.value.id, { ...form, params: { ...form.params } })
+    toast.success('审核通过，已迁移到正式机型库')
+    dialog.value = false
+    await load()
+  } finally {
+    saving.value = false
+  }
 }
 
-async function discard(row: any) {
-  await ElMessageBox.confirm(`确认丢弃「${row.modelName}」的抓取数据？`, '提示', { type: 'warning' })
-  await adminApi.discardPending(row.id)
-  ElMessage.success('已丢弃')
-  load()
+async function confirmDiscard() {
+  if (!discardTarget.value) return
+  discarding.value = true
+  try {
+    await adminApi.discardPending(discardTarget.value.id)
+    toast.success('已丢弃')
+    discardTarget.value = null
+    dialog.value = false
+    await load()
+  } finally {
+    discarding.value = false
+  }
 }
 
 function label(key: string) {
@@ -69,64 +146,157 @@ function label(key: string) {
 
 <template>
   <div class="space-y-4">
-    <div class="flex items-center gap-3">
-      <h2 class="text-lg font-semibold">待审核数据</h2>
-      <el-select v-model="query.status" placeholder="全部状态" clearable class="w-40 ml-auto" @change="query.current = 1; load()">
-        <el-option label="待审核" value="PENDING_REVIEW" />
-        <el-option label="已通过" value="APPROVED" />
-        <el-option label="已丢弃" value="DISCARDED" />
-      </el-select>
-      <el-button @click="load">刷新</el-button>
+    <PageHeader title="待审核数据" description="Agent 抓取结果必须人工核对后才能进入正式机型库" />
+
+    <div class="flex flex-wrap items-center gap-2">
+      <Select v-model="query.status" :options="statusOptions" class="w-40" />
+      <Button variant="outline" size="sm" @click="load">
+        <RefreshCw />
+        刷新
+      </Button>
+      <span class="ml-auto text-xs text-muted-foreground">共 {{ total }} 条记录</span>
     </div>
 
-    <el-table v-loading="loading" :data="list" border stripe>
-      <el-table-column prop="id" label="ID" width="70" />
-      <el-table-column prop="modelName" label="机型名称" />
-      <el-table-column prop="brandName" label="品牌" width="120" />
-      <el-table-column label="来源链接" min-width="220">
-        <template #default="{ row }">
-          <a v-if="row.sourceUrl" :href="row.sourceUrl" target="_blank" class="text-brand break-all">{{ row.sourceUrl }}</a>
-        </template>
-      </el-table-column>
-      <el-table-column prop="createdAt" label="抓取时间" width="180" />
-      <el-table-column label="操作" width="180">
-        <template #default="{ row }">
-          <el-button size="small" type="primary" @click="openReview(row)" :disabled="row.status !== 'PENDING_REVIEW'">审核</el-button>
-          <el-button size="small" type="danger" @click="discard(row)" :disabled="row.status !== 'PENDING_REVIEW'">丢弃</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <Card>
+      <CardContent class="p-0">
+        <div v-if="loading" class="space-y-2 p-4">
+          <Skeleton v-for="i in 6" :key="i" class="h-11" />
+        </div>
 
-    <div class="flex justify-center">
-      <el-pagination v-model:current-page="query.current" :page-size="query.size" :total="total"
-        layout="prev, pager, next, total" @current-change="load" />
-    </div>
+        <Table v-else-if="list.length">
+          <TableHeader>
+            <TableRow class="hover:bg-transparent">
+              <TableHead class="w-16">ID</TableHead>
+              <TableHead>机型名称</TableHead>
+              <TableHead class="w-28">品牌</TableHead>
+              <TableHead class="min-w-56">来源链接</TableHead>
+              <TableHead class="w-44">抓取时间</TableHead>
+              <TableHead class="w-24">状态</TableHead>
+              <TableHead class="w-32 text-right">操作</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow v-for="row in list" :key="row.id">
+              <TableCell class="text-muted-foreground">{{ row.id }}</TableCell>
+              <TableCell class="font-medium">{{ row.modelName }}</TableCell>
+              <TableCell class="text-muted-foreground">{{ row.brandName || '—' }}</TableCell>
+              <TableCell class="max-w-64 text-xs">
+                <a
+                  v-if="row.sourceUrl"
+                  :href="row.sourceUrl"
+                  target="_blank"
+                  rel="noreferrer"
+                  class="inline-flex items-center gap-1 break-all text-primary hover:underline"
+                >
+                  {{ row.sourceUrl }}
+                  <ExternalLink class="h-3 w-3 shrink-0" />
+                </a>
+                <span v-else class="text-muted-foreground">—</span>
+              </TableCell>
+              <TableCell class="text-xs text-muted-foreground">{{ row.createdAt }}</TableCell>
+              <TableCell>
+                <Badge :variant="statusMeta[row.status]?.variant ?? 'secondary'">
+                  {{ statusMeta[row.status]?.label ?? row.status }}
+                </Badge>
+              </TableCell>
+              <TableCell class="text-right">
+                <div class="flex justify-end gap-1">
+                  <Button size="sm" variant="outline" :disabled="row.status !== 'PENDING_REVIEW'" @click="openReview(row)">
+                    审核
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    class="text-destructive"
+                    :disabled="row.status !== 'PENDING_REVIEW'"
+                    @click="discardTarget = row"
+                  >
+                    丢弃
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
 
-    <el-dialog v-model="dialog" title="审核 Agent 抓取数据" width="720" top="5vh">
-      <div class="mb-3 text-sm text-slate-400">
-        来源：
-        <a v-if="current?.sourceUrl" :href="current.sourceUrl" target="_blank" class="text-brand break-all">{{ current.sourceUrl }}</a>
+        <Empty v-else title="暂无待审核数据" description="Agent 抓取完成后，结果会进入这里等待核对。">
+          <template #icon><ClipboardCheck class="mb-1 h-8 w-8 text-muted-foreground/40" /></template>
+        </Empty>
+      </CardContent>
+    </Card>
+
+    <Pagination v-if="total > query.size" v-model:page="query.current" :page-size="query.size" :total="total" />
+
+    <Dialog v-model:open="dialog" title="审核 Agent 抓取数据" class="max-w-2xl">
+      <div class="space-y-4">
+        <Alert variant="info" :title="`来源：${current?.confidence ? `置信度 ${current.confidence}` : 'Agent 抓取结果'}`">
+          <a
+            v-if="current?.sourceUrl"
+            :href="current.sourceUrl"
+            target="_blank"
+            rel="noreferrer"
+            class="mt-1 inline-flex items-center gap-1 break-all text-xs underline underline-offset-2"
+          >
+            {{ current.sourceUrl }}
+            <ExternalLink class="h-3 w-3 shrink-0" />
+          </a>
+        </Alert>
+
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="space-y-1.5">
+            <Label for="review-name">机型名称</Label>
+            <Input id="review-name" v-model="form.name" />
+          </div>
+          <div class="space-y-1.5">
+            <Label>品牌</Label>
+            <Select
+              v-model="form.brandId"
+              :options="brands.map((b) => ({ label: b.name, value: b.id }))"
+              placeholder="选择品牌"
+            />
+          </div>
+          <div class="space-y-1.5">
+            <Label for="review-date">发布日期</Label>
+            <Input id="review-date" v-model="form.releaseDate" type="date" />
+          </div>
+        </div>
+
+        <Separator />
+
+        <div class="space-y-3">
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-semibold">参数（可直接修正）</h3>
+            <Badge variant="secondary">{{ Object.keys(form.params).length }} 项</Badge>
+          </div>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div v-for="(value, key) in form.params" :key="key" class="space-y-1.5">
+              <Label :for="`review-${key}`">{{ label(String(key)) }}</Label>
+              <Input :id="`review-${key}`" v-model="form.params[key]" />
+            </div>
+          </div>
+        </div>
       </div>
-      <el-form :model="form" label-width="110px">
-        <el-form-item label="机型名称"><el-input v-model="form.name" /></el-form-item>
-        <el-form-item label="品牌">
-          <el-select v-model="form.brandId" class="w-full" filterable>
-            <el-option v-for="b in brands" :key="b.id" :label="b.name" :value="b.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="发布日期">
-          <el-date-picker v-model="form.releaseDate" type="date" value-format="YYYY-MM-DD" class="w-full" />
-        </el-form-item>
-        <el-divider content-position="left">参数（可修改修正）</el-divider>
-        <el-form-item v-for="(val, key) in form.params" :key="key" :label="label(key as string)">
-          <el-input v-model="form.params[key]" />
-        </el-form-item>
-      </el-form>
+
       <template #footer>
-        <el-button @click="dialog = false">取消</el-button>
-        <el-button type="danger" plain @click="discard(current)">丢弃</el-button>
-        <el-button type="primary" @click="approve">审核通过并入库</el-button>
+        <Button variant="outline" :disabled="saving" @click="dialog = false">取消</Button>
+        <Button variant="ghost" class="text-destructive" :disabled="saving" @click="discardTarget = current">丢弃</Button>
+        <Button :disabled="saving" @click="approve">
+          <Loader2 v-if="saving" class="animate-spin" />
+          <ShieldCheck v-else />
+          {{ saving ? '入库中…' : '审核通过并入库' }}
+        </Button>
       </template>
-    </el-dialog>
+    </Dialog>
+
+    <ConfirmDialog
+      :open="!!discardTarget"
+      title="丢弃抓取数据"
+      :description="`确认丢弃「${discardTarget?.modelName ?? ''}」的抓取结果？丢弃后不可恢复。`"
+      confirm-text="丢弃"
+      destructive
+      :loading="discarding"
+      @update:open="discardTarget = null"
+      @confirm="confirmDiscard"
+    />
   </div>
 </template>

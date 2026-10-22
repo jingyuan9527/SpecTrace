@@ -27,7 +27,7 @@
 ```
 SpecTrace/
 ├── backend/         SpringBoot 3.3 + MyBatis-Plus + 内嵌采集 Agent（SQLite 单文件库）
-├── frontend/        Vue3 + Element Plus + TailwindCSS + ECharts + html2canvas
+├── frontend/        Vue3 + TypeScript + TailwindCSS + shadcn-vue + ECharts + html2canvas
 ├── sql/             旧版 MySQL 建表脚本（仅迁移参考，当前应用不再使用）
 ├── .github/workflows/docker-publish.yml   构建并推送单镜像到 GHCR
 ├── Dockerfile       前后端一体单镜像（构建上下文 = 仓库根目录）

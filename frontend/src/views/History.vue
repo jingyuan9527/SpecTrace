@@ -1,59 +1,145 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import * as echarts from 'echarts'
+import * as echarts from 'echarts/core'
+import { BarChart, LineChart as EChartsLineChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import type { EChartsType } from 'echarts/core'
 import html2canvas from 'html2canvas'
-import { ElMessage } from 'element-plus'
+import { motion } from 'motion-v'
+import { Download, LineChart, TrendingUp } from '@lucide/vue'
+import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
+import { useThemeStore } from '@/stores/theme'
+import { Button, Card, CardContent, Combobox, Empty, Skeleton, Tabs, type TabItem } from '@/components/ui'
 
-const brands = ref<any[]>([])
-const defs = ref<any[]>([])
-const brandId = ref<number>()
-const paramDefId = ref<number>()
-const view = ref<'table' | 'chart'>('chart')
-const points = ref<any[]>([])
+interface Brand {
+  id: number
+  name: string
+}
+
+interface ParamDef {
+  id: number
+  paramName: string
+  unit?: string
+}
+
+interface HistoryPoint {
+  deviceId: number
+  deviceName: string
+  releaseDate: string
+  value: string
+}
+
+const theme = useThemeStore()
+
+// 按需注册图表能力，避免把整个 ECharts 打进 History 页面 chunk
+echarts.use([EChartsLineChart, BarChart, GridComponent, TooltipComponent, CanvasRenderer])
+
+const brands = ref<Brand[]>([])
+const defs = ref<ParamDef[]>([])
+const brandId = ref<number | undefined>()
+const paramDefId = ref<number | undefined>()
+const view = ref('chart')
+const points = ref<HistoryPoint[]>([])
+const loading = ref(false)
 const capturing = ref(false)
+
+const views: TabItem[] = [
+  { value: 'chart', label: '图表' },
+  { value: 'table', label: '表格' },
+]
 
 const chartRef = ref<HTMLElement>()
 const captureRef = ref<HTMLElement>()
-let chart: echarts.ECharts | null = null
+let chart: EChartsType | null = null
+
+const brandOptions = ref<{ label: string; value: number }[]>([])
+const defOptions = ref<{ label: string; value: number }[]>([])
 
 async function load() {
   if (!brandId.value || !paramDefId.value) {
     points.value = []
     return
   }
-  points.value = await publicApi.history(brandId.value, paramDefId.value)
+  loading.value = true
+  try {
+    points.value = await publicApi.history(brandId.value, paramDefId.value)
+  } finally {
+    loading.value = false
+  }
+  // 必须等 loading 关闭、图表容器真正挂载后再初始化 ECharts
   if (view.value === 'chart') {
     await nextTick()
     renderChart()
   }
 }
 
+function cssVar(name: string, fallback: string) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return value ? `hsl(${value})` : fallback
+}
+
 function renderChart() {
-  if (!chartRef.value) return
+  if (!chartRef.value || !points.value.length) return
   if (!chart) chart = echarts.init(chartRef.value)
+
+  const dark = theme.dark
+  const primary = cssVar('--chart-1', '#3b82f6')
   const def = defs.value.find((d) => d.id === paramDefId.value)
   const numeric = points.value.map((p) => Number(p.value)).every((n) => !Number.isNaN(n))
-  chart.setOption({
-    tooltip: { trigger: 'axis' },
-    grid: { left: 50, right: 30, top: 40, bottom: 60 },
-    xAxis: { type: 'category', data: points.value.map((p) => p.deviceName), axisLabel: { rotate: 30 } },
-    yAxis: { type: 'value', name: def?.unit || '' },
-    series: [
-      {
-        name: def?.paramName || '参数',
-        type: numeric ? 'line' : 'bar',
-        smooth: true,
-        data: points.value.map((p) => (numeric ? Number(p.value) : p.value)),
-        label: { show: !numeric, position: 'top' },
-        areaStyle: numeric ? {} : undefined,
+
+  chart.setOption(
+    {
+      backgroundColor: 'transparent',
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: dark ? '#18181b' : '#ffffff',
+        borderColor: dark ? '#27272a' : '#e4e4e7',
+        textStyle: { color: dark ? '#fafafa' : '#18181b' },
       },
-    ],
-  })
+      grid: { left: 56, right: 28, top: 44, bottom: 72 },
+      xAxis: {
+        type: 'category',
+        data: points.value.map((p) => p.deviceName),
+        axisLabel: { rotate: 30, color: dark ? '#a1a1aa' : '#71717a' },
+        axisLine: { lineStyle: { color: dark ? '#3f3f46' : '#e4e4e7' } },
+      },
+      yAxis: {
+        type: 'value',
+        name: def?.unit || '',
+        nameTextStyle: { color: dark ? '#a1a1aa' : '#71717a' },
+        axisLabel: { color: dark ? '#a1a1aa' : '#71717a' },
+        splitLine: { lineStyle: { color: dark ? '#27272a' : '#f4f4f5' } },
+      },
+      series: [
+        {
+          name: def?.paramName || '参数',
+          type: numeric ? 'line' : 'bar',
+          smooth: true,
+          symbolSize: 7,
+          data: points.value.map((p) => (numeric ? Number(p.value) : p.value)),
+          label: { show: !numeric, position: 'top', color: dark ? '#a1a1aa' : '#71717a' },
+          itemStyle: { color: primary },
+          lineStyle: { width: 2 },
+          areaStyle: numeric ? { color: primary, opacity: 0.16 } : undefined,
+        },
+      ],
+    },
+    true,
+  )
+
+  chart.resize()
+  // 容器可能在入场动画结束后才完成布局，补一次 resize 触发重绘
+  window.setTimeout(() => chart?.resize(), 120)
 }
 
 onMounted(async () => {
-  ;[brands.value, defs.value] = await Promise.all([publicApi.brands(), publicApi.paramDefs()])
+  const [brandList, defList] = await Promise.all([publicApi.brands(), publicApi.paramDefs()])
+  brands.value = brandList
+  defs.value = defList
+  brandOptions.value = brandList.map((b) => ({ label: b.name, value: b.id }))
+  defOptions.value = defList.map((d) => ({ label: d.paramName, value: d.id }))
 })
 
 watch([brandId, paramDefId], load)
@@ -63,6 +149,13 @@ watch(view, async () => {
     renderChart()
   }
 })
+watch(
+  () => theme.dark,
+  async () => {
+    await nextTick()
+    renderChart()
+  },
+)
 
 function onResize() {
   chart?.resize()
@@ -71,6 +164,7 @@ window.addEventListener('resize', onResize)
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
   chart?.dispose()
+  chart = null
 })
 
 async function exportImage() {
@@ -83,7 +177,9 @@ async function exportImage() {
     link.download = `spectrace-history-${Date.now()}.png`
     link.href = canvas.toDataURL('image/png')
     link.click()
-    ElMessage.success('截图已下载')
+    toast.success('截图已下载')
+  } catch {
+    toast.error('导出失败，请重试')
   } finally {
     capturing.value = false
   }
@@ -92,52 +188,68 @@ async function exportImage() {
 
 <template>
   <div class="space-y-5">
-    <div class="flex flex-wrap items-center gap-3">
-      <h1 class="text-xl font-semibold">参数历史演变</h1>
-      <el-select v-model="brandId" placeholder="选择品牌" class="w-40">
-        <el-option v-for="b in brands" :key="b.id" :label="b.name" :value="b.id" />
-      </el-select>
-      <el-select v-model="paramDefId" placeholder="选择参数" class="w-52" filterable>
-        <el-option v-for="d in defs" :key="d.id" :label="d.paramName" :value="d.id" />
-      </el-select>
-      <el-radio-group v-model="view">
-        <el-radio-button label="chart">图表</el-radio-button>
-        <el-radio-button label="table">表格</el-radio-button>
-      </el-radio-group>
-      <el-button class="ml-auto" @click="exportImage" :disabled="!points.length">
-        <el-icon><Download /></el-icon><span class="ml-1">截图导出</span>
-      </el-button>
+    <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div>
+        <h1 class="text-xl font-semibold tracking-tight sm:text-2xl">参数历史演变</h1>
+        <p class="text-sm text-muted-foreground">观察单一参数在品牌历代机型上的变化趋势</p>
+      </div>
+      <Button variant="outline" :disabled="!points.length" @click="exportImage">
+        <Download />
+        截图导出
+      </Button>
     </div>
 
-    <el-alert v-if="!points.length" type="info" :closable="false" show-icon
-      title="请选择品牌与参数，查看该参数跨机型的历史演变（例：iPhone 屏幕尺寸演变）" />
+    <Card>
+      <CardContent class="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[200px_220px_auto]">
+        <Combobox v-model="brandId" :options="brandOptions" placeholder="选择品牌" search-placeholder="搜索品牌…" />
+        <Combobox v-model="paramDefId" :options="defOptions" placeholder="选择参数" search-placeholder="搜索参数…" />
+        <Tabs v-model="view" :items="views" class="justify-self-start" />
+      </CardContent>
+    </Card>
 
-    <div v-else ref="captureRef" class="capture-area rounded-xl border border-slate-200 dark:border-slate-700 p-6">
-      <div class="text-center mb-4">
-        <div class="font-bold">
-          {{ brands.find((b) => b.id === brandId)?.name }} ·
-          {{ defs.find((d) => d.id === paramDefId)?.paramName }} 演变
+    <div v-if="!points.length && !loading" class="rounded-xl border border-dashed">
+      <Empty
+        title="选择品牌与参数后查看演变"
+        description="例如：iPhone 的屏幕尺寸演变、某品牌电池容量的逐年变化。"
+      >
+        <template #icon><TrendingUp class="mb-1 h-8 w-8 text-muted-foreground/40" /></template>
+      </Empty>
+    </div>
+
+    <Skeleton v-else-if="loading" class="h-96 rounded-xl" />
+
+    <motion.div v-else :initial="{ opacity: 0, y: 8 }" :animate="{ opacity: 1, y: 0 }" :transition="{ duration: 0.3 }">
+      <div ref="captureRef" class="capture-area rounded-xl border bg-background p-5">
+        <div class="mb-2 text-center">
+          <div class="flex items-center justify-center gap-2 font-semibold">
+            <LineChart class="h-4 w-4 text-primary" />
+            {{ brands.find((b) => b.id === brandId)?.name }} ·
+            {{ defs.find((d) => d.id === paramDefId)?.paramName }} 演变
+          </div>
+          <p class="mt-1 text-xs text-muted-foreground">共 {{ points.length }} 个机型数据点</p>
+        </div>
+
+        <div v-show="view === 'chart'" ref="chartRef" class="h-96 w-full" />
+
+        <div v-show="view === 'table'" class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <th class="px-3 py-2 font-medium">发布时间</th>
+                <th class="px-3 py-2 font-medium">机型</th>
+                <th class="px-3 py-2 font-medium">参数值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="point in points" :key="point.deviceId" class="border-b last:border-0">
+                <td class="px-3 py-2.5 text-muted-foreground">{{ point.releaseDate }}</td>
+                <td class="px-3 py-2.5">{{ point.deviceName }}</td>
+                <td class="px-3 py-2.5 font-medium">{{ point.value }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
-
-      <div v-show="view === 'chart'" ref="chartRef" class="h-96 w-full"></div>
-
-      <table v-show="view === 'table'" class="w-full text-sm border-collapse">
-        <thead>
-          <tr class="bg-slate-100 dark:bg-slate-700">
-            <th class="p-3 text-left">发布时间</th>
-            <th class="p-3 text-left">机型</th>
-            <th class="p-3 text-left">参数值</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="p in points" :key="p.deviceId" class="border-t border-slate-100 dark:border-slate-700">
-            <td class="p-3">{{ p.releaseDate }}</td>
-            <td class="p-3">{{ p.deviceName }}</td>
-            <td class="p-3 font-medium">{{ p.value }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    </motion.div>
   </div>
 </template>

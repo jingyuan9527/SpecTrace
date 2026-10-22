@@ -49,3 +49,24 @@
 在多个等效实现方案间反复权衡而不执行，即空转。识别信号：思考中同一决策来回摇摆超过 2 轮，或反复纠结次要细节（命令写法、工具选择）而迟迟不调用工具。
 
 处置：任选一个可行方案立即执行，错了再修；遇到解决不了的问题及时问用户，不要自己无限循环。
+
+## 12. 前端技术栈与组件规范（强制）
+
+项目前端为 **Vue 3 + TypeScript + Vite + Tailwind CSS**，下列库是唯一指定实现，任何人（包括 AI）不得替换或绕过。
+
+| 能力 | 指定方案 | 禁止事项 |
+| --- | --- | --- |
+| UI 风格 | **shadcn/ui（Nova 风格）**，Vue 等价实现 **shadcn-vue**（组件源码内置于 `src/components/ui`，基于 reka-ui），页面统一从这里导入 | 引入 Element Plus、Ant Design Vue、Naive UI 等第二套组件库；页面内另起按钮/弹窗/表格样式 |
+| 图标 | **Lucide**（`@lucide/vue`） | Emoji 当图标、混用 Element Plus Icons / iconfont / 手写 SVG |
+| 动画 | **Motion**（`motion-v`） | 手写 `@keyframes`、堆叠 CSS transition 做入场/列表动画（hover 变色等微交互除外） |
+| 可调整分栏 | **react-resizable-panels**，Vue 等价实现 **reka-ui `SplitterGroup` / `SplitterPanel` / `SplitterResizeHandle`** | 手写 mousemove 拖拽分栏、固定写死左右宽度 |
+| 拖拽排序 | **dnd-kit**，Vue 等价实现 **`vue-draggable-plus`** | 手写 `dragstart` / `dragover` / `drop` |
+| 状态管理 | **Zustand**，Vue 等价实现 **Pinia** | 组件间层层 props 传递共享状态、模块级可变单例 |
+
+补充要求：
+
+1. **禁止重复造轮子**：已有依赖可以正确表达的能力，必须直接用依赖提供的组件或 API，不得自行设计实现组件、交互或行为。缺少组件时先在 `src/components/ui` 按 shadcn-vue 的写法补齐，再在页面复用。
+2. **统一入口**：页面只从 `@/components/ui` 导入基础组件；业务通用组件放 `src/components`，页面私有组件就近放页面目录。
+3. **样式写法**：使用 Tailwind 工具类 + CSS 变量设计令牌（`bg-background`、`text-muted-foreground`、`border` 等），禁止在页面里写死十六进制颜色；暗色模式只依赖 `.dark` 类，不写两套颜色逻辑。
+4. **页面结构**：新页面必须复用 `VisitorLayout` / `AdminLayout`、`PageHeader`、`ConfirmDialog`，并保证移动端可用（表格横向滚动、导航收进 Sheet、弹窗宽度自适应）。
+5. **依赖变更**：新增或替换上述任一依赖，必须先征得用户同意，并同步更新本文件与 README。

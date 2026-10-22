@@ -1,18 +1,44 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
 import html2canvas from 'html2canvas'
-import { ElMessage } from 'element-plus'
+import { motion } from 'motion-v'
+import { Copy, Download, GitCompareArrows, Image, Plus, Smartphone, X } from '@lucide/vue'
+import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
 import { useCompareStore } from '@/stores/compare'
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  Combobox,
+  Empty,
+  Separator,
+  Skeleton,
+  Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui'
+import ImageWithFallback from '@/components/ImageWithFallback.vue'
+
+interface Device {
+  id: number
+  name: string
+  thumbnail?: string
+}
 
 const compare = useCompareStore()
 const result = ref<any>(null)
 const loading = ref(false)
-const watermark = ref(false)
+const watermark = ref(true)
 const capturing = ref(false)
 const captureRef = ref<HTMLElement>()
-const candidates = ref<any[]>([])
-const pickId = ref<number>()
+const candidates = ref<Device[]>([])
+const pickId = ref<number | undefined>()
 
 async function load() {
   if (compare.count < 2) {
@@ -29,25 +55,28 @@ async function load() {
 
 onMounted(async () => {
   await load()
-  const res = await publicApi.devices({ current: 1, size: 100 })
+  const res = await publicApi.devices({ current: 1, size: 200 })
   candidates.value = res.records
 })
+
+const available = computed(() =>
+  candidates.value
+    .filter((c) => !compare.has(c.id))
+    .map((c) => ({ label: c.name, value: c.id })),
+)
+
+function addSelected() {
+  const device = candidates.value.find((c) => c.id === pickId.value)
+  if (!device) return
+  compare.add({ id: device.id, name: device.name, thumbnail: device.thumbnail })
+  pickId.value = undefined
+  load()
+}
 
 function remove(id: number) {
   compare.remove(id)
   load()
 }
-
-function addSelected() {
-  const d = candidates.value.find((c) => c.id === pickId.value)
-  if (d) {
-    compare.add({ id: d.id, name: d.name, thumbnail: d.thumbnail })
-    pickId.value = undefined
-    load()
-  }
-}
-
-const available = computed(() => candidates.value.filter((c) => !compare.has(c.id)))
 
 async function captureCanvas() {
   if (!captureRef.value) throw new Error('无可截图区域')
@@ -62,12 +91,16 @@ async function captureCanvas() {
 }
 
 async function download() {
-  const canvas = await captureCanvas()
-  const link = document.createElement('a')
-  link.download = `spectrace-compare-${Date.now()}.png`
-  link.href = canvas.toDataURL('image/png')
-  link.click()
-  ElMessage.success('截图已下载')
+  try {
+    const canvas = await captureCanvas()
+    const link = document.createElement('a')
+    link.download = `spectrace-compare-${Date.now()}.png`
+    link.href = canvas.toDataURL('image/png')
+    link.click()
+    toast.success('截图已下载')
+  } catch {
+    toast.error('导出失败，请重试')
+  }
 }
 
 async function copyToClipboard() {
@@ -75,75 +108,132 @@ async function copyToClipboard() {
     const canvas = await captureCanvas()
     const blob: Blob = await new Promise((resolve) => canvas.toBlob((b) => resolve(b as Blob), 'image/png'))
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
-    ElMessage.success('已复制到剪贴板，可直接粘贴分享')
+    toast.success('已复制到剪贴板，可直接粘贴分享')
   } catch {
-    ElMessage.error('复制失败，请改用下载图片')
+    toast.error('复制失败，请改用下载图片')
   }
 }
 </script>
 
 <template>
   <div class="space-y-5">
-    <div class="flex flex-wrap items-center gap-3">
-      <h1 class="text-xl font-semibold">机型对比</h1>
-      <el-select v-model="pickId" placeholder="添加机型" class="w-48" filterable>
-        <el-option v-for="c in available" :key="c.id" :label="c.name" :value="c.id" />
-      </el-select>
-      <el-button @click="addSelected" :disabled="!pickId">添加</el-button>
-      <div class="ml-auto flex items-center gap-3">
-        <el-switch v-model="watermark" active-text="网站水印" />
-        <el-button @click="download" :disabled="!result">
-          <el-icon><Download /></el-icon><span class="ml-1">下载图片</span>
-        </el-button>
-        <el-button type="primary" @click="copyToClipboard" :disabled="!result">
-          <el-icon><CopyDocument /></el-icon><span class="ml-1">复制图片</span>
-        </el-button>
+    <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div>
+        <h1 class="text-xl font-semibold tracking-tight sm:text-2xl">机型对比</h1>
+        <p class="text-sm text-muted-foreground">选择 2 台以上机型，差异项自动高亮</p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <Combobox v-model="pickId" :options="available" placeholder="添加机型" search-placeholder="搜索机型…" class="w-52" />
+        <Button variant="outline" :disabled="!pickId" @click="addSelected">
+          <Plus />
+          添加
+        </Button>
+        <Separator orientation="vertical" class="mx-1 hidden h-6 sm:block" />
+        <label class="flex items-center gap-2 text-sm text-muted-foreground">
+          <Switch v-model="watermark" />
+          水印
+        </label>
+        <Button variant="outline" :disabled="!result" @click="download">
+          <Download />
+          下载图片
+        </Button>
+        <Button :disabled="!result" @click="copyToClipboard">
+          <Copy />
+          复制图片
+        </Button>
       </div>
     </div>
 
-    <el-alert v-if="compare.count < 2" type="info" :closable="false" show-icon
-      title="请先从机型库选择至少 2 台机型加入对比池" />
-
-    <div v-loading="loading" v-if="result" ref="captureRef" class="capture-area relative p-6 rounded-xl border border-slate-200 dark:border-slate-700">
-      <div class="text-center mb-5">
-        <div class="text-lg font-bold">SpecTrace · 机型参数对比</div>
-        <div class="text-xs text-slate-400">{{ new Date().toLocaleDateString() }}</div>
-      </div>
-
-      <table class="w-full text-sm border-collapse">
-        <thead>
-          <tr>
-            <th class="p-3 text-left w-40 bg-slate-100 dark:bg-slate-700 sticky left-0">参数</th>
-            <th v-for="d in result.devices" :key="d.id" class="p-3 bg-slate-100 dark:bg-slate-700">
-              <div class="flex flex-col items-center gap-1">
-                <img :src="d.thumbnail" class="h-16 object-contain" />
-                <span class="font-semibold">{{ d.name }}</span>
-                <el-button v-if="!capturing" size="small" text type="danger" @click="remove(d.id)">移除</el-button>
-              </div>
-            </th>
-          </tr>
-        </thead>
-        <tbody v-for="g in result.groups" :key="g.groupId">
-          <tr>
-            <td :colspan="result.devices.length + 1" class="p-2 font-semibold bg-slate-50 dark:bg-slate-800">{{ g.groupName }}</td>
-          </tr>
-          <tr v-for="p in g.params" :key="p.paramKey" class="border-t border-slate-100 dark:border-slate-700">
-            <td class="p-3 text-slate-400">{{ p.paramName }}</td>
-            <td
-              v-for="(v, i) in p.values"
-              :key="i"
-              class="p-3 text-center"
-              :class="p.same ? 'bg-slate-50 dark:bg-slate-800 text-slate-400' : 'bg-amber-50 dark:bg-amber-500/10 font-medium'"
-            >
-              {{ v || '—' }}<span v-if="p.unit && v" class="text-slate-400 ml-1">{{ p.unit }}</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div v-if="watermark" class="absolute bottom-3 right-4 text-xs text-slate-300 select-none">SpecTrace</div>
+    <div v-if="compare.count < 2" class="rounded-xl border border-dashed">
+      <Empty
+        title="对比池至少需要 2 台机型"
+        description="从机型库勾选，或在上方搜索框添加。选择结果会自动保存在本地。"
+      >
+        <Button variant="outline" size="sm" class="mt-2" @click="$router.push({ name: 'devices' })">
+          <GitCompareArrows />
+          去机型库挑选
+        </Button>
+      </Empty>
     </div>
 
-    <el-empty v-else-if="compare.count >= 2 && !loading" description="暂无对比数据" />
+    <Skeleton v-else-if="loading" class="h-96 rounded-xl" />
+
+    <motion.div
+      v-else-if="result"
+      :initial="{ opacity: 0, y: 8 }"
+      :animate="{ opacity: 1, y: 0 }"
+      :transition="{ duration: 0.3 }"
+    >
+      <div ref="captureRef" class="capture-area overflow-hidden rounded-xl border bg-background">
+        <div class="border-b px-5 py-4 text-center">
+          <div class="flex items-center justify-center gap-2 text-base font-semibold">
+            <Image class="h-4 w-4 text-primary" />
+            SpecTrace · 机型参数对比
+          </div>
+          <p class="mt-1 text-xs text-muted-foreground">{{ new Date().toLocaleDateString('zh-CN') }}</p>
+        </div>
+
+        <div class="overflow-x-auto">
+          <Table class="min-w-[640px]">
+            <TableHeader>
+              <TableRow class="hover:bg-transparent">
+                <TableHead class="sticky left-0 z-10 w-40 bg-muted/60">参数</TableHead>
+                <TableHead v-for="device in result.devices" :key="device.id" class="bg-muted/60 text-center">
+                  <div class="flex flex-col items-center gap-1 py-1">
+                    <ImageWithFallback :src="device.thumbnail" :alt="device.name" img-class="h-14 object-contain">
+                      <template #fallback><Smartphone class="h-8 w-8 text-muted-foreground/40" /></template>
+                    </ImageWithFallback>
+                    <span class="text-sm font-semibold normal-case tracking-normal">{{ device.name }}</span>
+                    <Button
+                      v-if="!capturing"
+                      variant="ghost"
+                      size="sm"
+                      class="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                      @click="remove(device.id)"
+                    >
+                      <X class="h-3 w-3" />
+                      移除
+                    </Button>
+                  </div>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <template v-for="group in result.groups" :key="group.groupId">
+                <TableRow class="hover:bg-transparent">
+                  <TableCell :colspan="result.devices.length + 1" class="bg-muted/30 py-2 text-xs font-semibold text-muted-foreground">
+                    {{ group.groupName }}
+                  </TableCell>
+                </TableRow>
+                <TableRow v-for="param in group.params" :key="param.paramKey">
+                  <TableCell class="sticky left-0 z-10 bg-background text-muted-foreground">{{ param.paramName }}</TableCell>
+                  <TableCell
+                    v-for="(value, index) in param.values"
+                    :key="index"
+                    class="text-center"
+                    :class="param.same ? 'text-muted-foreground' : 'bg-amber-500/5 font-medium'"
+                  >
+                    {{ value || '—' }}
+                    <span v-if="param.unit && value" class="ml-1 text-xs font-normal text-muted-foreground">{{ param.unit }}</span>
+                  </TableCell>
+                </TableRow>
+              </template>
+            </TableBody>
+          </Table>
+        </div>
+
+        <div v-if="watermark" class="flex justify-end border-t px-4 py-2 text-[11px] text-muted-foreground/60">
+          SpecTrace · 参数以官方公布为准
+        </div>
+      </div>
+
+      <p class="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+        <Badge variant="warning">差异项</Badge>
+        不同机型取值不一致的参数以浅黄底色标记，便于快速定位。
+      </p>
+    </motion.div>
+
+    <Empty v-else title="暂无对比数据" description="请确认所选机型已录入参数。" />
   </div>
 </template>

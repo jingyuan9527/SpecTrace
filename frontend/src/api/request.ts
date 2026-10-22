@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
 
 const request = axios.create({
   baseURL: '/api',
@@ -19,7 +19,7 @@ request.interceptors.response.use(
     const body = response.data
     if (body && typeof body === 'object' && 'code' in body) {
       if (body.code !== 0) {
-        ElMessage.error(body.message || '请求失败')
+        toast.error(body.message || '请求失败')
         return Promise.reject(new Error(body.message))
       }
       return body.data
@@ -29,12 +29,13 @@ request.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('spectrace-token')
+      localStorage.removeItem('spectrace-user')
       if (location.hash.includes('/admin') && !location.hash.includes('/admin/login')) {
-        ElMessage.error('登录已过期，请重新登录')
+        toast.error('登录已过期，请重新登录')
         location.hash = '#/admin/login'
       }
     } else {
-      ElMessage.error(error.response?.data?.message || error.message || '网络错误')
+      toast.error(error.response?.data?.message || error.message || '网络错误')
     }
     return Promise.reject(error)
   },

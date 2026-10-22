@@ -2,22 +2,134 @@
 @tailwind components;
 @tailwind utilities;
 
-html,
-body,
-#app {
-  height: 100%;
-  margin: 0;
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 221 83% 53%;
+    --chart-1: 221 83% 53%;
+    --chart-2: 262 83% 58%;
+    --chart-3: 173 58% 39%;
+    --chart-4: 43 74% 49%;
+    --chart-5: 340 75% 55%;
+    --radius: 0.625rem;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 8% 5.5%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 8% 5.5%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 240 10% 3.9%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 217 91% 60%;
+    --chart-1: 217 91% 60%;
+    --chart-2: 263 70% 66%;
+    --chart-3: 173 58% 45%;
+    --chart-4: 43 74% 60%;
+    --chart-5: 340 75% 62%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #app {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  ::selection {
+    @apply bg-primary/20;
+  }
+
+  /* Nova 风格：细滚动条、克制的中性色 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 9999px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+@layer components {
+  /* 对比/历史截图区域：导出时保持纯色底，避免透明背景发黑 */
+  .capture-area {
+    background: hsl(var(--background));
+  }
 }
 
-/* 对比表格截图区域：截图时移除阴影与圆角，保证画面干净 */
-.capture-area {
-  background: #ffffff;
+/* splitpanes 主题对齐（布局库：等价 react-resizable-panels） */
+.splitpanes__splitter {
+  background: hsl(var(--border));
+  position: relative;
+}
+.splitpanes--vertical > .splitpanes__splitter {
+  width: 1px;
+  min-width: 1px;
+}
+.splitpanes--horizontal > .splitpanes__splitter {
+  height: 1px;
+  min-height: 1px;
+}
+.splitpanes__splitter::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  z-index: 10;
 }
 
-.dark .capture-area {
-  background: #1f2937;
+/* vue-sonner 跟随主题 */
+[data-sonner-toaster] {
+  --normal-bg: hsl(var(--popover));
+  --normal-text: hsl(var(--popover-foreground));
+  --normal-border: hsl(var(--border));
+  font-family: inherit;
 }
