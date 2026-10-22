@@ -59,6 +59,21 @@ CREATE TABLE IF NOT EXISTS device_param_value (
     CONSTRAINT uk_device_param UNIQUE (device_id, param_def_id)
 );
 
+-- 机型的存储/内存版本与官方发布价格（同一机型可有多行）
+CREATE TABLE IF NOT EXISTS device_variant (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id     BIGINT   NOT NULL,
+    storage       VARCHAR(32)  NOT NULL,
+    ram           VARCHAR(32)  DEFAULT NULL,
+    price         DECIMAL(10,2) DEFAULT NULL,
+    currency      VARCHAR(8)   NOT NULL DEFAULT 'CNY',
+    price_type    VARCHAR(16)  NOT NULL DEFAULT 'LAUNCH',
+    sort_order    INTEGER      NOT NULL DEFAULT 0,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_device_variant UNIQUE (device_id, storage, ram)
+);
+
 CREATE TABLE IF NOT EXISTS agent_task (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     model_name   VARCHAR(128) NOT NULL,
@@ -144,6 +159,7 @@ CREATE INDEX IF NOT EXISTS idx_device_release ON device (release_date);
 CREATE INDEX IF NOT EXISTS idx_device_name ON device (name);
 CREATE INDEX IF NOT EXISTS idx_dpv_device ON device_param_value (device_id);
 CREATE INDEX IF NOT EXISTS idx_dpv_def ON device_param_value (param_def_id);
+CREATE INDEX IF NOT EXISTS idx_variant_device ON device_variant (device_id);
 CREATE INDEX IF NOT EXISTS idx_task_status ON agent_task (status);
 CREATE INDEX IF NOT EXISTS idx_task_created ON agent_task (created_at);
 CREATE INDEX IF NOT EXISTS idx_pending_status ON agent_pending_data (status);

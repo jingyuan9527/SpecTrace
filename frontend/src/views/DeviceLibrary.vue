@@ -106,7 +106,10 @@ function toggleCompare(device: Device) {
     toast.info(`已移出对比池：${device.name}`)
     return
   }
-  compare.add({ id: device.id, name: device.name, thumbnail: device.thumbnail })
+  if (!compare.add({ id: device.id, name: device.name, thumbnail: device.thumbnail })) {
+    toast.warning('对比池最多 4 台机型')
+    return
+  }
   toast.success(`已加入对比池：${device.name}`)
 }
 </script>

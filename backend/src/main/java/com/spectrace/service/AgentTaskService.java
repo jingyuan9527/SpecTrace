@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -89,7 +90,23 @@ public class AgentTaskService {
             return;
         }
 
-        Map<String, Object> params = req.getParams() == null ? new LinkedHashMap<>() : req.getParams();
+        Map<String, Object> params = req.getParams() == null
+                ? new LinkedHashMap<>()
+                : new LinkedHashMap<>(req.getParams());
+
+        // 存储版本统一收口到 params 的 _variants 键，兼容 Agent 直接放在 params.variants 的情况
+        List<DeviceVariantDTO> variants = req.getVariants();
+        Object rawVariants = params.remove("variants");
+        if (rawVariants == null) {
+            rawVariants = params.remove("_variants");
+            if (variants == null && rawVariants != null) {
+                variants = objectMapper.convertValue(rawVariants, new TypeReference<List<DeviceVariantDTO>>() {
+                });
+            }
+        }
+        if (variants != null && !variants.isEmpty()) {
+            params.put("_variants", variants);
+        }
 
         AgentPendingData pending = new AgentPendingData();
         pending.setTaskId(task.getId());
@@ -139,12 +156,18 @@ public class AgentTaskService {
                 : objectMapper.readValue(data.getParamsJson(), new TypeReference<>() {
         });
         vo.setParams(params);
+        Object rawVariants = params.remove("_variants");
+        if (rawVariants != null) {
+            vo.setVariants(objectMapper.convertValue(rawVariants, new TypeReference<List<DeviceVariantDTO>>() {
+            }));
+        }
         vo.setParamNames(paramService.keyToNameMap());
         return vo;
     }
 
     /** 审核通过：把待审核数据迁移到正式机型库。 */
     @Transactional
+    @SneakyThrows
     public Long approve(Long pendingId, ApproveRequest req, Long adminId, String adminName) {
         AgentPendingData pending = pendingMapper.selectById(pendingId);
         if (pending == null) {
@@ -162,6 +185,20 @@ public class AgentTaskService {
         save.setDescription(req.getDescription());
         save.setStatus(1);
         save.setParams(req.getParams());
+
+        // 版本数据：优先管理员确认后的，否则回落到采集结果里的 _variants
+        List<DeviceVariantDTO> variants = req.getVariants();
+        if (variants == null && pending.getParamsJson() != null) {
+            Map<String, Object> stored = objectMapper.readValue(pending.getParamsJson(), new TypeReference<>() {
+            });
+            Object raw = stored.get("_variants");
+            if (raw != null) {
+                variants = objectMapper.convertValue(raw, new TypeReference<List<DeviceVariantDTO>>() {
+                });
+            }
+        }
+        save.setVariants(variants);
+
         var device = deviceService.save(save, adminId, adminName);
 
         pending.setStatus(PendingStatus.APPROVED.name());

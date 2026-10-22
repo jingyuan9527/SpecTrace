@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts/core'
 import { BarChart, LineChart as EChartsLineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
@@ -32,14 +33,23 @@ interface HistoryPoint {
 }
 
 const theme = useThemeStore()
+const route = useRoute()
+const router = useRouter()
+
+/** 路由 query 里的 id 是字符串，统一转正整数。 */
+function parseId(value: unknown) {
+  const raw = Array.isArray(value) ? value[0] : value
+  const id = Number(raw)
+  return Number.isFinite(id) && id > 0 ? id : undefined
+}
 
 // 按需注册图表能力，避免把整个 ECharts 打进 History 页面 chunk
 echarts.use([EChartsLineChart, BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 const brands = ref<Brand[]>([])
 const defs = ref<ParamDef[]>([])
-const brandId = ref<number | undefined>()
-const paramDefId = ref<number | undefined>()
+const brandId = ref<number | undefined>(parseId(route.query.brandId))
+const paramDefId = ref<number | undefined>(parseId(route.query.paramDefId))
 const view = ref('chart')
 const points = ref<HistoryPoint[]>([])
 const loading = ref(false)
@@ -140,9 +150,19 @@ onMounted(async () => {
   defs.value = defList
   brandOptions.value = brandList.map((b) => ({ label: b.name, value: b.id }))
   defOptions.value = defList.map((d) => ({ label: d.paramName, value: d.id }))
+  // 分享链接进入时选项加载完毕后再拉数据
+  if (brandId.value && paramDefId.value) await load()
 })
 
 watch([brandId, paramDefId], load)
+
+// 选择变化同步到地址栏，便于分享与刷新还原
+watch([brandId, paramDefId], () => {
+  const query: Record<string, string> = {}
+  if (brandId.value) query.brandId = String(brandId.value)
+  if (paramDefId.value) query.paramDefId = String(paramDefId.value)
+  router.replace({ query })
+})
 watch(view, async () => {
   if (view.value === 'chart') {
     await nextTick()

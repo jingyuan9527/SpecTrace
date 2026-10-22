@@ -8,16 +8,19 @@ import com.spectrace.dto.*;
 import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
 import com.spectrace.entity.DeviceParamValue;
+import com.spectrace.entity.DeviceVariant;
 import com.spectrace.entity.ParamDef;
 import com.spectrace.entity.ParamGroup;
 import com.spectrace.mapper.BrandMapper;
 import com.spectrace.mapper.DeviceMapper;
 import com.spectrace.mapper.DeviceParamValueMapper;
+import com.spectrace.mapper.DeviceVariantMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.function.Function;
@@ -29,6 +32,7 @@ public class DeviceService {
 
     private final DeviceMapper deviceMapper;
     private final DeviceParamValueMapper valueMapper;
+    private final DeviceVariantMapper variantMapper;
     private final BrandMapper brandMapper;
     private final ParamService paramService;
     private final OperationLogService logService;
@@ -66,7 +70,30 @@ public class DeviceService {
         result.put("device", device);
         result.put("brand", brand);
         result.put("params", paramValuesOf(id));
+        result.put("variants", variantsOf(id));
         return result;
+    }
+
+    /** 机型全部存储版本，按 sortOrder 升序。 */
+    public List<DeviceVariantDTO> variantsOf(Long deviceId) {
+        return variantMapper.selectList(Wrappers.<DeviceVariant>lambdaQuery()
+                        .eq(DeviceVariant::getDeviceId, deviceId)
+                        .orderByAsc(DeviceVariant::getSortOrder)
+                        .orderByAsc(DeviceVariant::getId)).stream()
+                .map(this::toVariantDTO)
+                .toList();
+    }
+
+    private DeviceVariantDTO toVariantDTO(DeviceVariant variant) {
+        DeviceVariantDTO dto = new DeviceVariantDTO();
+        dto.setId(variant.getId());
+        dto.setStorage(variant.getStorage());
+        dto.setRam(variant.getRam());
+        dto.setPrice(variant.getPrice());
+        dto.setCurrency(variant.getCurrency());
+        dto.setPriceType(variant.getPriceType());
+        dto.setSortOrder(variant.getSortOrder());
+        return dto;
     }
 
     public Map<String, String> paramValuesOf(Long deviceId) {
@@ -99,6 +126,7 @@ public class DeviceService {
             deviceMapper.updateById(device);
         }
         saveParamValues(device.getId(), req.getParams());
+        saveVariants(device.getId(), req.getVariants());
 
         logService.record(adminId, adminName, isNew ? "CREATE_DEVICE" : "UPDATE_DEVICE",
                 "device", device.getId(), device.getName());
@@ -155,8 +183,73 @@ public class DeviceService {
         }
     }
 
+    /**
+     * 全量覆盖机型的存储版本与价格：variants 为 null 时不改动，传空列表则清空。
+     * 以 id 优先、storage+ram 次之匹配既有行，避免编辑后产生重复版本。
+     */
+    @Transactional
+    public void saveVariants(Long deviceId, List<DeviceVariantDTO> variants) {
+        if (variants == null) {
+            return;
+        }
+        List<DeviceVariant> existing = variantMapper.selectList(Wrappers.<DeviceVariant>lambdaQuery()
+                .eq(DeviceVariant::getDeviceId, deviceId));
+        Map<Long, DeviceVariant> existingById = existing.stream()
+                .collect(Collectors.toMap(DeviceVariant::getId, Function.identity(), (a, b) -> a));
+
+        List<Long> keepIds = new ArrayList<>();
+        int index = 0;
+        for (DeviceVariantDTO dto : variants) {
+            if (dto == null || !StringUtils.hasText(dto.getStorage())) {
+                continue;
+            }
+            index++;
+            String storage = dto.getStorage().trim();
+            String ram = dto.getRam() == null ? "" : dto.getRam().trim();
+
+            DeviceVariant target = dto.getId() == null ? null : existingById.get(dto.getId());
+            if (target == null) {
+                target = existing.stream()
+                        .filter(v -> storage.equals(v.getStorage())
+                                && ram.equals(v.getRam() == null ? "" : v.getRam()))
+                        .findFirst().orElse(null);
+            }
+
+            if (target == null) {
+                DeviceVariant variant = new DeviceVariant();
+                variant.setDeviceId(deviceId);
+                variant.setStorage(storage);
+                variant.setRam(ram);
+                variant.setPrice(dto.getPrice());
+                variant.setCurrency(StringUtils.hasText(dto.getCurrency()) ? dto.getCurrency() : "CNY");
+                variant.setPriceType(StringUtils.hasText(dto.getPriceType()) ? dto.getPriceType() : "LAUNCH");
+                variant.setSortOrder(dto.getSortOrder() == null ? index : dto.getSortOrder());
+                variantMapper.insert(variant);
+                keepIds.add(variant.getId());
+            } else {
+                target.setStorage(storage);
+                target.setRam(ram);
+                target.setPrice(dto.getPrice());
+                target.setCurrency(StringUtils.hasText(dto.getCurrency()) ? dto.getCurrency() : "CNY");
+                target.setPriceType(StringUtils.hasText(dto.getPriceType()) ? dto.getPriceType() : "LAUNCH");
+                target.setSortOrder(dto.getSortOrder() == null ? index : dto.getSortOrder());
+                variantMapper.updateById(target);
+                keepIds.add(target.getId());
+            }
+        }
+
+        List<Long> removeIds = existing.stream()
+                .filter(v -> !keepIds.contains(v.getId()))
+                .map(DeviceVariant::getId)
+                .toList();
+        if (!removeIds.isEmpty()) {
+            variantMapper.deleteByIds(removeIds);
+        }
+    }
+
     public void delete(Long id, Long adminId, String adminName) {
         deviceMapper.deleteById(id);
+        variantMapper.delete(Wrappers.<DeviceVariant>lambdaQuery().eq(DeviceVariant::getDeviceId, id));
         logService.record(adminId, adminName, "DELETE_DEVICE", "device", id, null);
     }
 
@@ -190,6 +283,25 @@ public class DeviceService {
             vo.setBrandName(b == null ? null : b.getName());
             return vo;
         }).toList();
+
+        // deviceId -> 存储版本列表，并回填最低发布价
+        Map<Long, List<DeviceVariantDTO>> variantsByDevice = new LinkedHashMap<>();
+        variantMapper.selectList(Wrappers.<DeviceVariant>lambdaQuery()
+                        .in(DeviceVariant::getDeviceId, deviceIds)
+                        .orderByAsc(DeviceVariant::getSortOrder)
+                        .orderByAsc(DeviceVariant::getId))
+                .forEach(v -> variantsByDevice
+                        .computeIfAbsent(v.getDeviceId(), k -> new ArrayList<>())
+                        .add(toVariantDTO(v)));
+        for (CompareDeviceVO vo : deviceVOs) {
+            List<DeviceVariantDTO> list = variantsByDevice.getOrDefault(vo.getId(), List.of());
+            vo.setVariants(list);
+            vo.setMinPrice(list.stream()
+                    .map(DeviceVariantDTO::getPrice)
+                    .filter(Objects::nonNull)
+                    .min(BigDecimal::compareTo)
+                    .orElse(null));
+        }
 
         // deviceId -> paramDefId -> value
         Map<Long, Map<Long, String>> valueMap = new HashMap<>();

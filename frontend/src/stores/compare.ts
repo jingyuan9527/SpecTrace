@@ -8,6 +8,7 @@ export interface CompareDevice {
 }
 
 const STORAGE_KEY = 'spectrace-compare'
+const MAX_COMPARE = 4
 
 function restore(): CompareDevice[] {
   try {
@@ -34,11 +35,13 @@ export const useCompareStore = defineStore('compare', {
     persist() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.devices))
     },
-    add(device: CompareDevice) {
-      if (!this.devices.find((d) => d.id === device.id)) {
-        this.devices.push(device)
-        this.persist()
-      }
+    /** 返回是否真正加入；已在池中或超过上限时返回 false。 */
+    add(device: CompareDevice): boolean {
+      if (this.devices.find((d) => d.id === device.id)) return false
+      if (this.devices.length >= MAX_COMPARE) return false
+      this.devices.push(device)
+      this.persist()
+      return true
     },
     remove(id: number) {
       this.devices = this.devices.filter((d) => d.id !== id)

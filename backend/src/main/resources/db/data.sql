@@ -62,12 +62,16 @@ INSERT OR IGNORE INTO param_def (id, param_key, param_name, group_id, param_type
 
 -- 机型
 INSERT OR IGNORE INTO device (id, brand_id, name, release_date, thumbnail, description, status) VALUES
- (1, 1, 'iPhone 13', '2021-09-24', 'https://cdn.spectrace.dev/device/iphone13.jpg',  '苹果 2021 年旗舰机型', 1),
- (2, 1, 'iPhone 14', '2022-09-16', 'https://cdn.spectrace.dev/device/iphone14.jpg',  '苹果 2022 年旗舰机型', 1),
- (3, 1, 'iPhone 15', '2023-09-22', 'https://cdn.spectrace.dev/device/iphone15.jpg',  '苹果 2023 年旗舰机型', 1),
- (4, 1, 'iPhone 16', '2024-09-20', 'https://cdn.spectrace.dev/device/iphone16.jpg',  '苹果 2024 年旗舰机型', 1),
- (5, 2, '小米 14',   '2023-10-26', 'https://cdn.spectrace.dev/device/mi14.jpg',      '小米 2023 年数字旗舰', 1),
- (6, 3, '华为 Mate 60 Pro', '2023-08-29', 'https://cdn.spectrace.dev/device/mate60pro.jpg', '华为 2023 年旗舰机型', 1);
+ (1, 1, 'iPhone 13', '2021-09-24', '/devices/placeholder.svg',  '苹果 2021 年旗舰机型', 1),
+ (2, 1, 'iPhone 14', '2022-09-16', '/devices/placeholder.svg',  '苹果 2022 年旗舰机型', 1),
+ (3, 1, 'iPhone 15', '2023-09-22', '/devices/placeholder.svg',  '苹果 2023 年旗舰机型', 1),
+ (4, 1, 'iPhone 16', '2024-09-20', '/devices/placeholder.svg',  '苹果 2024 年旗舰机型', 1),
+ (5, 2, '小米 14',   '2023-10-26', '/devices/placeholder.svg',  '小米 2023 年数字旗舰', 1),
+ (6, 3, '华为 Mate 60 Pro', '2023-08-29', '/devices/placeholder.svg', '华为 2023 年旗舰机型', 1);
+
+-- 修正历史种子数据里指向失效 CDN 或为空的机型缩略图（保留管理员自定义图片）
+UPDATE device SET thumbnail = '/devices/placeholder.svg'
+ WHERE thumbnail IS NULL OR thumbnail = '' OR thumbnail LIKE 'https://cdn.spectrace.dev/%';
 
 -- 机型参数值（节选，用于演示对比与历史演变）
 INSERT OR IGNORE INTO device_param_value (device_id, param_def_id, param_value) VALUES
@@ -89,6 +93,34 @@ INSERT OR IGNORE INTO device_param_value (device_id, param_def_id, param_value) 
  -- 华为 Mate 60 Pro
  (6, 1, '2023-08-29'), (6, 3, '6.82'), (6, 5, '120'), (6, 7, '麒麟 9000S'),
  (6, 8, '12GB'), (6, 11, '5000'), (6, 12, '88'), (6, 18, '225'), (6, 20, 'IP68');
+
+-- 机型存储版本与官方发布价（按机型名关联，避免依赖固定 id；ram 用空串占位以保证唯一约束生效）
+INSERT OR IGNORE INTO device_variant (device_id, storage, ram, price, sort_order)
+SELECT d.id, v.storage, v.ram, v.price, v.sort_order
+FROM device d
+JOIN (
+    SELECT 'iPhone 13' AS name, '128GB' AS storage, '' AS ram, 5999.00 AS price, 1 AS sort_order
+    UNION ALL SELECT 'iPhone 13', '256GB', '', 6799.00, 2
+    UNION ALL SELECT 'iPhone 13', '512GB', '', 8399.00, 3
+    UNION ALL SELECT 'iPhone 14', '128GB', '', 5999.00, 1
+    UNION ALL SELECT 'iPhone 14', '256GB', '', 6899.00, 2
+    UNION ALL SELECT 'iPhone 14', '512GB', '', 8699.00, 3
+    UNION ALL SELECT 'iPhone 15', '128GB', '', 5999.00, 1
+    UNION ALL SELECT 'iPhone 15', '256GB', '', 6999.00, 2
+    UNION ALL SELECT 'iPhone 15', '512GB', '', 8999.00, 3
+    UNION ALL SELECT 'iPhone 16', '128GB', '', 5999.00, 1
+    UNION ALL SELECT 'iPhone 16', '256GB', '', 6999.00, 2
+    UNION ALL SELECT 'iPhone 16', '512GB', '', 8999.00, 3
+    UNION ALL SELECT 'iPhone 17', '256GB', '', 5999.00, 1
+    UNION ALL SELECT 'iPhone 17', '512GB', '', 7999.00, 2
+    UNION ALL SELECT '小米 14', '256GB', '8GB', 3999.00, 1
+    UNION ALL SELECT '小米 14', '256GB', '12GB', 4299.00, 2
+    UNION ALL SELECT '小米 14', '512GB', '16GB', 4599.00, 3
+    UNION ALL SELECT '小米 14', '1TB', '16GB', 4999.00, 4
+    UNION ALL SELECT '华为 Mate 60 Pro', '256GB', '12GB', 6499.00, 1
+    UNION ALL SELECT '华为 Mate 60 Pro', '512GB', '12GB', 6999.00, 2
+    UNION ALL SELECT '华为 Mate 60 Pro', '1TB', '12GB', 7999.00, 3
+) v ON v.name = d.name;
 
 -- AI 连接与模型配置（API Key 请在后台「AI 配置」中填写）
 INSERT OR IGNORE INTO ai_config (id, name, provider, base_url, api_key, enabled) VALUES

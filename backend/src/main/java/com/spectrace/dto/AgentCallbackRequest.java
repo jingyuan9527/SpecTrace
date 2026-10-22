@@ -2,6 +2,7 @@ package com.spectrace.dto;
 
 import lombok.Data;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -27,6 +28,9 @@ public class AgentCallbackRequest {
 
     /** paramKey -> value 的结构化参数 */
     private Map<String, Object> params;
+
+    /** 存储版本与官方发布价（可选，缺省时从 params.variants 读取） */
+    private List<DeviceVariantDTO> variants;
 
     /** 抓取日志（可选） */
     private String logs;

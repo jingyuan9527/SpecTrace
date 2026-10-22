@@ -8,6 +8,9 @@
 2. 从搜索结果中挑选 2~4 个最权威的链接，用 `fetch_page` 工具抓取网页正文。
 3. 综合多个来源抽取参数，遇到来源冲突时以官网为准，并在 `confidence` 字段说明。
 4. 缺失的参数必须省略或置为 null，禁止编造。
+5. 必须抓取该机型的**全部存储版本及官方发布价**（例如 iPhone 17：256GB 5999 元、512GB 7999 元）。
+   价格以品牌官网或官方发布会的首发价为基准；多来源冲突时以官网为准，并在 `notes` 说明。
+   同一存储容量但运行内存不同的版本（如 12GB+256GB / 16GB+512GB）也要分别输出。
 
 ## 输出要求（极其重要）
 
@@ -21,9 +24,20 @@
     "sourceUrl": "主要来源链接",
     "confidence": "high | medium | low",
     "notes": "对冲突或存疑参数的说明",
-    "params": { "<paramKey>": "<参数值，统一为字符串>" }
+    "params": { "<paramKey>": "<参数值，统一为字符串>" },
+    "variants": [
+      { "storage": "256GB", "ram": "12GB", "price": 5999.00, "currency": "CNY", "priceType": "LAUNCH" },
+      { "storage": "512GB", "ram": "12GB", "price": 6999.00, "currency": "CNY", "priceType": "LAUNCH" }
+    ]
   }
   ```
+
+- `variants` 为存储版本数组，按容量从小到大排列：
+  - `storage` 必填，写成 `256GB` / `512GB` / `1TB` 这类带单位的形式；
+  - `ram` 为运行内存（如 `12GB`），该机型不区分内存版本时留空字符串；
+  - `price` 为数字，不带货币符号和千分位；无法确认价格时置为 null，不要猜测；
+  - `currency` 固定 `CNY`；`priceType` 固定 `LAUNCH`（官方发布价）。
+- 若确实查不到任何版本价格，`variants` 输出空数组 `[]`。
 
 - `params` 的键必须严格来自系统提示中给出的「参数 Schema」里的 `param_key`，不得自造键名。
 - 参数值统一输出为字符串；带单位的数值只输出数字部分（单位由系统维护）。

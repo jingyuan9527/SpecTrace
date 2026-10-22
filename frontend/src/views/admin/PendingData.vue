@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
-import { ClipboardCheck, ExternalLink, Loader2, RefreshCw, ShieldCheck } from '@lucide/vue'
+import { ClipboardCheck, ExternalLink, Loader2, Plus, RefreshCw, ShieldCheck } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
 import {
@@ -47,6 +47,7 @@ const form = reactive<any>({
   thumbnail: '',
   description: '',
   params: {} as Record<string, string>,
+  variants: [] as { id?: number; storage: string; ram: string; price: string }[],
 })
 
 const statusOptions = [
@@ -101,6 +102,12 @@ async function openReview(row: any) {
     thumbnail: '',
     description: '',
     params: { ...(detail.params || {}) },
+    variants: (detail.variants || []).map((v: any) => ({
+      id: v.id,
+      storage: v.storage || '',
+      ram: v.ram || '',
+      price: v.price === null || v.price === undefined ? '' : String(v.price),
+    })),
   })
   dialog.value = true
 }
@@ -116,7 +123,21 @@ async function approve() {
   }
   saving.value = true
   try {
-    await adminApi.approvePending(current.value.id, { ...form, params: { ...form.params } })
+    const variants = form.variants
+      .filter((v: any) => v.storage.trim())
+      .map((v: any, index: number) => ({
+        id: v.id,
+        storage: v.storage.trim(),
+        ram: (v.ram || '').trim(),
+        price:
+          v.price === '' || v.price === null || v.price === undefined || Number.isNaN(Number(v.price))
+            ? null
+            : Number(v.price),
+        currency: 'CNY',
+        priceType: 'LAUNCH',
+        sortOrder: index + 1,
+      }))
+    await adminApi.approvePending(current.value.id, { ...form, params: { ...form.params }, variants })
     toast.success('审核通过，已迁移到正式机型库')
     dialog.value = false
     await load()
@@ -141,6 +162,14 @@ async function confirmDiscard() {
 
 function label(key: string) {
   return defs.value.find((d) => d.paramKey === key)?.paramName || key
+}
+
+function addVariant() {
+  form.variants.push({ storage: '', ram: '', price: '' })
+}
+
+function removeVariant(index: number) {
+  form.variants.splice(index, 1)
 }
 </script>
 
@@ -262,6 +291,43 @@ function label(key: string) {
         </div>
 
         <Separator />
+
+        <div class="space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <h3 class="text-sm font-semibold">存储版本与发布价</h3>
+              <Badge variant="secondary">{{ form.variants.length }} 个版本</Badge>
+            </div>
+            <Button variant="outline" size="sm" @click="addVariant">
+              <Plus />
+              添加版本
+            </Button>
+          </div>
+          <div v-if="form.variants.length" class="space-y-2">
+            <div
+              v-for="(variant, index) in form.variants"
+              :key="variant.id ?? index"
+              class="grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2"
+            >
+              <div class="space-y-1">
+                <Label class="text-xs">存储</Label>
+                <Input v-model="variant.storage" placeholder="如 256GB" />
+              </div>
+              <div class="space-y-1">
+                <Label class="text-xs">运行内存</Label>
+                <Input v-model="variant.ram" placeholder="可空" />
+              </div>
+              <div class="space-y-1">
+                <Label class="text-xs">发布价（元）</Label>
+                <Input v-model="variant.price" type="number" min="0" placeholder="如 5999" />
+              </div>
+              <Button variant="ghost" size="icon-sm" class="text-destructive" aria-label="删除版本" @click="removeVariant(index)">
+                ×
+              </Button>
+            </div>
+          </div>
+          <p v-else class="text-xs text-muted-foreground">未采集到版本价格，可手动添加。</p>
+        </div>
 
         <div class="space-y-3">
           <div class="flex items-center gap-2">

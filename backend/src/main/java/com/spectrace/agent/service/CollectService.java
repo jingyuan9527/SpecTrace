@@ -6,6 +6,7 @@ import com.spectrace.agent.config.AgentProperties;
 import com.spectrace.agent.tool.CollectTools;
 import com.spectrace.dto.AgentCallbackRequest;
 import com.spectrace.dto.AgentTaskPayload;
+import com.spectrace.dto.DeviceVariantDTO;
 import com.spectrace.dto.ResolvedModel;
 import com.spectrace.entity.ParamDef;
 import io.agentscope.core.agent.RuntimeContext;
@@ -25,6 +26,7 @@ import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,7 +67,9 @@ public class CollectService {
             String query = (brandName + " " + modelName + " 手机 完整参数 规格 官网").trim();
             String prompt = "请检索并抽取机型「" + modelName + "」"
                     + (brandName.isEmpty() ? "" : "（品牌：" + brandName + "）")
-                    + " 的全部可获取参数，按系统 Schema 输出 JSON。";
+                    + " 的全部可获取参数，并按系统 Schema 输出 JSON。"
+                    + "同时必须列出该机型全部存储版本及其官方发布价，写入 variants 数组"
+                    + "（每项包含 storage、ram、price、currency、priceType）。";
 
             // 每个任务使用独立的会话身份，任务之间互不共享上下文 / 记忆
             String identity = "task-" + payload.getTaskId();
@@ -124,6 +128,7 @@ public class CollectService {
             result.setSourceUrl(nullableText(data, "sourceUrl"));
             result.setStatus("SUCCESS");
             result.setParams(params);
+            result.setVariants(parseVariants(data.path("variants")));
             result.setLogs(objectMapper.writeValueAsString(Map.of(
                     "queries", List.of(query),
                     "confidence", nullableText(data, "confidence"),
@@ -207,6 +212,49 @@ public class CollectService {
         }
         String b = baseUrl.toLowerCase(java.util.Locale.ROOT);
         return b.contains("/compatible-mode") || b.endsWith("/v1") || b.contains("/v1/");
+    }
+
+    /** 解析模型输出的 variants 数组，价格无法识别时保留版本但不填价格。 */
+    private List<DeviceVariantDTO> parseVariants(JsonNode node) {
+        List<DeviceVariantDTO> variants = new ArrayList<>();
+        if (node == null || !node.isArray()) {
+            return variants;
+        }
+        for (JsonNode item : node) {
+            String storage = nullableText(item, "storage");
+            if (storage == null || storage.isBlank()) {
+                continue;
+            }
+            DeviceVariantDTO dto = new DeviceVariantDTO();
+            dto.setStorage(storage.trim());
+            dto.setRam(nullableText(item, "ram"));
+            dto.setPrice(parsePrice(item.get("price")));
+            String currency = nullableText(item, "currency");
+            dto.setCurrency(currency == null || currency.isBlank() ? "CNY" : currency.trim().toUpperCase());
+            String priceType = nullableText(item, "priceType");
+            dto.setPriceType(priceType == null || priceType.isBlank() ? "LAUNCH" : priceType.trim().toUpperCase());
+            dto.setSortOrder(variants.size() + 1);
+            variants.add(dto);
+        }
+        return variants;
+    }
+
+    private java.math.BigDecimal parsePrice(JsonNode priceNode) {
+        if (priceNode == null || priceNode.isNull()) {
+            return null;
+        }
+        if (priceNode.isNumber()) {
+            return priceNode.decimalValue();
+        }
+        String raw = priceNode.asText("").replaceAll("[^0-9.]", "");
+        if (raw.isBlank()) {
+            return null;
+        }
+        try {
+            return new java.math.BigDecimal(raw);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /** 把后台的参数定义转成给 LLM 的 Schema 说明。 */

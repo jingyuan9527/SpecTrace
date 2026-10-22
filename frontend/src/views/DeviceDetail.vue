@@ -22,6 +22,15 @@ interface ParamDef {
   unit?: string
 }
 
+interface DeviceVariant {
+  id?: number
+  storage: string
+  ram?: string
+  price?: number | null
+  currency?: string
+  priceType?: string
+}
+
 const route = useRoute()
 const router = useRouter()
 const compare = useCompareStore()
@@ -29,6 +38,7 @@ const compare = useCompareStore()
 const device = ref<any>(null)
 const brand = ref<any>(null)
 const params = ref<Record<string, string>>({})
+const variants = ref<DeviceVariant[]>([])
 const groups = ref<ParamGroup[]>([])
 const defs = ref<ParamDef[]>([])
 const loading = ref(true)
@@ -54,6 +64,7 @@ onMounted(async () => {
     device.value = detail.device
     brand.value = detail.brand
     params.value = detail.params || {}
+    variants.value = detail.variants || []
     ;[groups.value, defs.value] = await Promise.all([publicApi.paramGroups(), publicApi.paramDefs()])
   } catch {
     notFound.value = true
@@ -62,13 +73,29 @@ onMounted(async () => {
   }
 })
 
+function formatPrice(price?: number | null, currency = 'CNY') {
+  if (price === null || price === undefined) return '—'
+  const symbol = currency === 'CNY' ? '¥' : `${currency} `
+  return `${symbol}${Number(price).toLocaleString('zh-CN')}`
+}
+
+const minPrice = computed(() => {
+  const prices = variants.value
+    .map((v) => v.price)
+    .filter((p): p is number => p !== null && p !== undefined)
+  return prices.length ? Math.min(...prices) : null
+})
+
 function addCompare() {
   if (!device.value) return
   if (compare.has(device.value.id)) {
     toast.info('已在对比池')
     return
   }
-  compare.add({ id: device.value.id, name: device.value.name, thumbnail: device.value.thumbnail })
+  if (!compare.add({ id: device.value.id, name: device.value.name, thumbnail: device.value.thumbnail })) {
+    toast.warning('对比池最多 4 台机型')
+    return
+  }
   toast.success('已加入对比池')
 }
 </script>
@@ -102,6 +129,9 @@ function addCompare() {
             <div class="flex flex-col">
               <p class="text-sm font-medium text-primary">{{ brand?.name || '未知品牌' }}</p>
               <h1 class="mt-1 text-2xl font-semibold tracking-tight">{{ device.name }}</h1>
+              <p v-if="minPrice !== null" class="mt-1 text-sm text-muted-foreground">
+                <span class="text-lg font-semibold text-primary">{{ formatPrice(minPrice) }}</span> 起
+              </p>
               <p class="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
                 {{ device.description || '暂无机型简介。' }}
               </p>
@@ -124,6 +154,34 @@ function addCompare() {
           </div>
         </Card>
       </motion.div>
+
+      <Card v-if="variants.length" class="overflow-hidden">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-5 py-3">
+          <h2 class="text-sm font-semibold">存储版本与发布价</h2>
+          <span class="text-xs text-muted-foreground">
+            {{ variants.length }} 个版本
+            <template v-if="minPrice !== null"> · 起售价 {{ formatPrice(minPrice) }}</template>
+          </span>
+        </div>
+        <CardContent class="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow class="hover:bg-transparent">
+                <TableHead>存储容量</TableHead>
+                <TableHead>运行内存</TableHead>
+                <TableHead class="text-right">官方发布价</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="(variant, index) in variants" :key="variant.id ?? `${variant.storage}-${variant.ram}-${index}`">
+                <TableCell class="font-medium">{{ variant.storage }}</TableCell>
+                <TableCell class="text-muted-foreground">{{ variant.ram || '—' }}</TableCell>
+                <TableCell class="text-right font-medium">{{ formatPrice(variant.price, variant.currency) }}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       <div v-if="grouped.length" class="space-y-4">
         <Card v-for="group in grouped" :key="group.id" class="overflow-hidden">

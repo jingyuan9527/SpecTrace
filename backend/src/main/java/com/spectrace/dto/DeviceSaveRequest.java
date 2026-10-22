@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -29,4 +30,7 @@ public class DeviceSaveRequest {
     private Integer status;
 
     private Map<String, String> params;
+
+    /** 存储版本与价格；为 null 时不改动既有版本，传空列表则清空 */
+    private List<DeviceVariantDTO> variants;
 }

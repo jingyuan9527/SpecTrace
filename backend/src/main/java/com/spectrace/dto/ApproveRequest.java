@@ -3,6 +3,7 @@ package com.spectrace.dto;
 import lombok.Data;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -23,4 +24,7 @@ public class ApproveRequest {
 
     /** paramKey -> value */
     private Map<String, String> params;
+
+    /** 存储版本与发布价；不传时回落到采集结果中的版本数据 */
+    private List<DeviceVariantDTO> variants;
 }

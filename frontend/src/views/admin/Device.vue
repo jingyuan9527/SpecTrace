@@ -48,6 +48,13 @@ interface ParamDef {
   unit?: string
 }
 
+interface DeviceVariantRow {
+  id?: number
+  storage: string
+  ram: string
+  price: string
+}
+
 interface DeviceForm {
   id: number | null
   brandId?: number
@@ -57,6 +64,7 @@ interface DeviceForm {
   description: string
   status: number
   params: Record<string, string>
+  variants: DeviceVariantRow[]
 }
 
 const list = ref<any[]>([])
@@ -83,6 +91,7 @@ const form = reactive<DeviceForm>({
   description: '',
   status: 1,
   params: {},
+  variants: [],
 })
 
 const brandOptions = computed(() => brands.value.map((b) => ({ label: b.name, value: b.id })))
@@ -132,6 +141,7 @@ function resetForm() {
     description: '',
     status: 1,
     params: {},
+    variants: [],
   })
 }
 
@@ -151,6 +161,12 @@ async function openEdit(row: any) {
     description: detail.device.description || '',
     status: detail.device.status ?? 1,
     params: { ...(detail.params || {}) },
+    variants: (detail.variants || []).map((v: any) => ({
+      id: v.id,
+      storage: v.storage || '',
+      ram: v.ram || '',
+      price: v.price === null || v.price === undefined ? '' : String(v.price),
+    })),
   })
   dialog.value = true
 }
@@ -166,7 +182,21 @@ async function save() {
   }
   saving.value = true
   try {
-    await adminApi.saveDevice({ ...form, params: { ...form.params } })
+    const variants = form.variants
+      .filter((v) => v.storage.trim())
+      .map((v, index) => ({
+        id: v.id,
+        storage: v.storage.trim(),
+        ram: (v.ram || '').trim(),
+        price:
+          v.price === '' || v.price === null || v.price === undefined || Number.isNaN(Number(v.price))
+            ? null
+            : Number(v.price),
+        currency: 'CNY',
+        priceType: 'LAUNCH',
+        sortOrder: index + 1,
+      }))
+    await adminApi.saveDevice({ ...form, params: { ...form.params }, variants })
     toast.success('保存成功')
     dialog.value = false
     await load()
@@ -199,6 +229,14 @@ async function onFileChange(event: Event) {
     uploading.value = false
     if (fileInput.value) fileInput.value.value = ''
   }
+}
+
+function addVariant() {
+  form.variants.push({ storage: '', ram: '', price: '' })
+}
+
+function removeVariant(index: number) {
+  form.variants.splice(index, 1)
 }
 
 function optionsOf(def: ParamDef): string[] {
@@ -328,6 +366,44 @@ function brandName(id: number) {
             </div>
             <Switch :model-value="form.status === 1" @update:model-value="form.status = $event ? 1 : 0" />
           </div>
+        </div>
+
+        <div class="space-y-3 rounded-md border p-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 class="text-sm font-semibold">存储版本与发布价</h3>
+              <p class="text-xs text-muted-foreground">按容量从小到大排列，价格填官方首发价（元）</p>
+            </div>
+            <Button variant="outline" size="sm" @click="addVariant">
+              <Plus />
+              添加版本
+            </Button>
+          </div>
+
+          <div v-if="form.variants.length" class="space-y-2">
+            <div
+              v-for="(variant, index) in form.variants"
+              :key="variant.id ?? index"
+              class="grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2"
+            >
+              <div class="space-y-1">
+                <Label class="text-xs">存储</Label>
+                <Input v-model="variant.storage" placeholder="如 256GB" />
+              </div>
+              <div class="space-y-1">
+                <Label class="text-xs">运行内存</Label>
+                <Input v-model="variant.ram" placeholder="可空" />
+              </div>
+              <div class="space-y-1">
+                <Label class="text-xs">发布价（元）</Label>
+                <Input v-model="variant.price" type="number" min="0" placeholder="如 5999" />
+              </div>
+              <Button variant="ghost" size="icon-sm" class="text-destructive" aria-label="删除版本" @click="removeVariant(index)">
+                <Trash2 />
+              </Button>
+            </div>
+          </div>
+          <p v-else class="text-xs text-muted-foreground">尚未添加版本，访客端不会展示价格。</p>
         </div>
 
         <div v-for="group in defsByGroup" :key="group.id" class="space-y-3">
