@@ -168,6 +168,7 @@ CREATE TABLE IF NOT EXISTS admin_user (
     nickname    VARCHAR(64)  DEFAULT NULL,
     role        VARCHAR(32)  NOT NULL DEFAULT 'ADMIN',
     status      TINYINT      NOT NULL DEFAULT 1,
+    must_change_password TINYINT NOT NULL DEFAULT 0,
     created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
     deleted     TINYINT      NOT NULL DEFAULT 0

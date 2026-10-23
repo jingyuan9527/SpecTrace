@@ -36,7 +36,9 @@ const PARAMS: Record<number, Record<string, string>> = {
   9: { release_date: '2024-11-26', screen_size: '6.7', battery_capacity: '5000' },
 }
 
-export async function mockApi(page: Page) {
+export async function mockApi(page: Page, options: { mustChangePassword?: boolean } = {}) {
+  // 强制改密标记必须可变：改密接口成功后置 false，/auth/me 才会放行
+  let mustChangePassword = options.mustChangePassword === true
   const state = {
     brands: [
       { id: 1, name: 'Apple', logo: '/devices/placeholder.svg', sortOrder: 1, status: 1 },
@@ -111,11 +113,21 @@ export async function mockApi(page: Page) {
 
     // ---------- 鉴权 ----------
     if (path === '/auth/login' && method === 'POST') {
-      return ok({ token: 'e2e-token', username: 'admin', nickname: '测试管理员', role: 'SUPER_ADMIN' })
+      return ok({
+        token: 'e2e-token',
+        username: 'admin',
+        nickname: '测试管理员',
+        role: 'SUPER_ADMIN',
+        mustChangePassword,
+      })
     }
     // 后台路由守卫会用 /auth/me 校验 token，缺了它所有后台用例都会被踢回登录页
     if (path === '/auth/me') {
-      return ok({ adminId: 1, username: 'admin', authenticated: true })
+      return ok({ adminId: 1, username: 'admin', role: 'SUPER_ADMIN', mustChangePassword, authenticated: true })
+    }
+    if (path === '/auth/password' && method === 'PUT') {
+      mustChangePassword = false
+      return ok(true)
     }
 
     // ---------- 访客端 ----------

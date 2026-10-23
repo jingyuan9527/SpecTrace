@@ -30,6 +30,9 @@ public class AdminUser {
 
     private Integer status;
 
+    /** 1 = 仍在使用初始/被重置的密码，登录后必须先改密 */
+    private Integer mustChangePassword;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

@@ -65,6 +65,28 @@ test('后台：参数分组与参数定义维护', async ({ page }) => {
   await expect(page.getByRole('cell', { name: '摄像头数量' })).toBeVisible()
 })
 
+test('后台：初始密码必须先改密才能进入', async ({ page }) => {
+  await mockApi(page, { mustChangePassword: true })
+
+  await page.goto('/admin/login')
+  await page.getByLabel('用户名').fill('admin')
+  await page.getByLabel('密码').fill('admin123')
+  await page.getByRole('button', { name: '登录' }).click()
+
+  // 登录直接落到改密页，其它后台路由也会被守卫挡回来
+  await expect(page).toHaveURL(/\/admin\/change-password/)
+  await page.goto('/admin/users')
+  await expect(page).toHaveURL(/\/admin\/change-password/)
+
+  await page.getByLabel('原密码').fill('admin123')
+  await page.getByLabel('新密码', { exact: true }).fill('newpass123')
+  await page.getByLabel('确认新密码').fill('newpass123')
+  await page.getByRole('button', { name: '确认修改' }).click()
+
+  await expect(page.getByText('密码已更新')).toBeVisible()
+  await expect(page).toHaveURL(/\/admin\/devices/)
+})
+
 test('后台：纠错反馈状态流转', async ({ page }) => {
   await mockApi(page)
   await login(page)

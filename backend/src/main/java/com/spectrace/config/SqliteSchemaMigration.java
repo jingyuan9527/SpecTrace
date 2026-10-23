@@ -7,6 +7,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import java.util.HashSet;
@@ -27,6 +28,7 @@ import java.util.Set;
 public class SqliteSchemaMigration implements ApplicationRunner {
 
     private final JdbcTemplate jdbcTemplate;
+    private final PasswordEncoder passwordEncoder;
 
     @Override
     public void run(ApplicationArguments args) {
@@ -35,8 +37,32 @@ public class SqliteSchemaMigration implements ApplicationRunner {
         ensureColumn("device_param_value", "source_url", "VARCHAR(512) DEFAULT NULL");
         ensureColumn("device_param_value", "confidence", "DECIMAL(3,2) DEFAULT NULL");
         ensureColumn("feedback", "handler_note", "TEXT DEFAULT NULL");
+        ensureColumn("admin_user", "must_change_password", "TINYINT DEFAULT 0");
         // 索引必须在补列之后创建，放在 schema.sql 里会在老库上因缺列直接中断启动
         ensureIndex("CREATE INDEX IF NOT EXISTS idx_device_series ON device (series_id)");
+        flagDefaultPasswordUsers();
+    }
+
+    /**
+     * 老库升级：把仍在用初始口令的账号标记为「登录后强制改密」。
+     *
+     * <p>BCrypt 每次加盐不同，无法用 SQL 比对 hash，只能逐条 matches；管理员数量有限，
+     * 启动期一次性开销可以接受。已经改过密码的账号不会被标记，避免无谓打扰。</p>
+     */
+    private void flagDefaultPasswordUsers() {
+        try {
+            var rows = jdbcTemplate.queryForList(
+                    "SELECT id, password FROM admin_user WHERE must_change_password = 0 AND deleted = 0");
+            for (var row : rows) {
+                Object hash = row.get("password");
+                if (hash != null && passwordEncoder.matches(AdminInitializer.DEFAULT_PASSWORD, hash.toString())) {
+                    jdbcTemplate.update("UPDATE admin_user SET must_change_password = 1 WHERE id = ?", row.get("id"));
+                    log.warn("管理员仍在使用初始密码，已标记为登录后强制修改: id={}", row.get("id"));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("初始密码检查失败，跳过（不影响启动）", e);
+        }
     }
 
     private void ensureIndex(String sql) {

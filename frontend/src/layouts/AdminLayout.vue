@@ -8,6 +8,7 @@ import {
   Database,
   Flag,
   House,
+  KeyRound,
   Laptop,
   Layers,
   LogOut,
@@ -56,6 +57,13 @@ const user = computed<{ nickname?: string; username?: string }>(() => {
 })
 
 const userMenu: MenuItem[] = [
+  {
+    label: '修改密码',
+    icon: KeyRound,
+    onSelect: () => {
+      router.push('/admin/change-password')
+    },
+  },
   {
     label: '返回前台',
     icon: House,

@@ -41,6 +41,8 @@ public class AdminUserService {
         user.setNickname(body.getOrDefault("nickname", username));
         user.setRole(body.getOrDefault("role", "ADMIN"));
         user.setStatus(1);
+        // 初始密码由管理员代设，只有本人知道何时该换成自己的，首登强制修改
+        user.setMustChangePassword(1);
         adminUserMapper.insert(user);
         return user;
     }
@@ -69,6 +71,8 @@ public class AdminUserService {
             throw new BizException("账号不存在");
         }
         user.setPassword(passwordEncoder.encode(newPassword));
+        // 重置后的密码经手过第三方（管理员），必须由本人再改一次
+        user.setMustChangePassword(1);
         adminUserMapper.updateById(user);
     }
 

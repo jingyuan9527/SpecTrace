@@ -21,7 +21,8 @@ async function submit() {
     localStorage.setItem('spectrace-token', res.token)
     localStorage.setItem('spectrace-user', JSON.stringify(res))
     toast.success('登录成功')
-    router.push('/admin/devices')
+    // 初始密码或被重置的密码，先进改密页；守卫也会兜底拦截其它后台路由
+    router.push(res.mustChangePassword ? '/admin/change-password' : '/admin/devices')
   } finally {
     loading.value = false
   }
@@ -73,7 +74,7 @@ async function submit() {
             </Button>
           </form>
 
-          <p class="mt-4 text-center text-xs text-muted-foreground">默认账号 admin / admin123，首次登录后请尽快修改</p>
+          <p class="mt-4 text-center text-xs text-muted-foreground">默认账号 admin / admin123，首次登录会强制修改密码</p>
         </CardContent>
       </Card>
 

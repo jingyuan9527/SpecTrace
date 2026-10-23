@@ -59,6 +59,8 @@ export const publicApi = {
 export const authApi = {
   login: (data: { username: string; password: string }) => request.post<any, any>('/auth/login', data),
   me: () => request.get<any, any>('/auth/me', { skipAuthRedirect: true }),
+  changePassword: (data: { oldPassword: string; newPassword: string }) =>
+    request.put<any, any>('/auth/password', data),
 }
 
 // ---------- 后台 ----------

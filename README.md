@@ -71,7 +71,7 @@ mvn spring-boot:run
 - 默认使用 SQLite 文件库 `backend/data/spectrace.db`，启动时自动建表、幂等写入种子数据
 - 端口 `8080`，接口文档：http://localhost:8080/swagger-ui.html
 - 数据文件路径可用 `SPECTRACE_DB_PATH` 覆盖（例如 `SPECTRACE_DB_PATH=D:/data/spectrace.db`）
-- 初始超级管理员：`admin / admin123`（启动时以 BCrypt 写入）
+- 初始超级管理员：`admin / admin123`（启动时以 BCrypt 写入）；账号带「待改密」标记，首次登录强制跳转改密页，不修改无法进入后台；管理员在「账号权限」里重置的密码同样要求本人首登修改
 - **采集 Agent 随应用启动常驻消费任务**：先在后台「AI 配置」保存连接与模型（填好 API Key），再到「抓取任务」提交任务即可自动采集
 - 关闭内嵌 Agent：启动加 `--spectrace.agent.enabled=false`（或环境变量 `SPECTRACE_AGENT_ENABLED=false`）
 - 只处理一个任务（联调）：`mvn spring-boot:run -Dspring-boot.run.arguments=--once`
@@ -134,7 +134,7 @@ npm run dev
 2. 打开 `.env`，只改三项：`HTTP_PORT`、`SPECTRACE_DATA_DIR`、`JWT_SECRET`
 3. `docker compose up -d`
 
-然后访问 `http://<服务器IP>:<HTTP_PORT>`，后台 `/admin/login`（默认 `admin / admin123`，登录后立即改密）。
+然后访问 `http://<服务器IP>:<HTTP_PORT>`，后台 `/admin/login`（默认 `admin / admin123`，首次登录会强制跳转改密页，不修改无法进入后台）。
 
 编排文件：
 
@@ -232,6 +232,7 @@ docker run -d --name spectrace-app -p 80:8080 \
 - **SEO**：history 路由 + 详情页动态 title/description/OG；`/sitemap.xml` 输出首页、机型库、参数历史与全部在售机型（带 `lastmod`），`/robots.txt` 屏蔽后台、接口与上传目录；对外域名取 `SPECTRACE_PUBLIC_BASE_URL`，未配置时回退请求域名。
 - **AI 世代回顾**：与对比摘要共用 `AiInsightSupport` 的护栏（同来源每分钟 5 次、结果缓存默认 24 小时、失败降级、非法 JSON 退化为纯文本）；按当前所选参数与可见世代生成一段带趋势判断的回顾，缓存 key 含可见机型与取值，换区间或改参数自然失效。只允许引用给定数值支撑的「升级明显 / 提升有限 / 略有退步」，不写购买建议。
 - **后台会话校验**：进入后台路由前调用 `/api/auth/me` 确认 token 仍有效（每次整页加载校验一次，SPA 内跳转不重复请求），失效即清本地凭证回到登录页；该校验失败时静默处理，不弹全局错误。
+- **账号安全**：`admin_user.must_change_password` 标记「初始密码」与「被管理员重置的密码」，登录响应与 `/auth/me` 都返回该标记，路由守卫据此把用户锁在改密页；自助改密 `PUT /api/auth/password` 必须校验原密码（JWT 只证明持有 token，不能证明是本人），改完清除标记。老库升级由 `SqliteSchemaMigration` 补列，并只对仍能匹配初始口令的账号打标记，已改密的账号不受打扰。启动日志不再打印明文口令。
 
 ## 接口文档
 
@@ -240,7 +241,7 @@ docker run -d --name spectrace-app -p 80:8080 \
 ## 开发规约
 
 - 后端：Java 21 / Spring Boot 3.3 / MyBatis-Plus / AgentScope Java 2.0（Harness，内嵌），统一响应体 `R<T>`，全局异常处理 `GlobalExceptionHandler`；`mvn test` 跑单测（参数值解析、CSV 导入预览、世代回顾聚合、AI 摘要解析与限流）
-- 前端：`npm run build` 验证构建；`npm run typecheck` 做类型检查；`npm run test:e2e` 跑 Playwright 主链路（访客对比分享、后台审核入库、键盘登录与弹窗、键盘完成新增品牌/机型/提交抓取/审核、后台系列增改并删与拖拽排序、世代回顾参数/区间/移动端、后台账号与参数维护、纠错反馈处理）
+- 前端：`npm run build` 验证构建；`npm run typecheck` 做类型检查；`npm run test:e2e` 跑 Playwright 主链路（访客对比分享、后台审核入库、键盘登录与弹窗、键盘完成新增品牌/机型/提交抓取/审核、后台系列增改并删与拖拽排序、世代回顾参数/区间/移动端、后台账号与参数维护、纠错反馈处理、初始密码强制改密）
 - 可访问性：键盘路径已由 e2e 覆盖——全程 Tab + Enter 可完成登录、新增品牌、新增机型、提交抓取与审核通过，弹窗打开后焦点自动进入、Esc 可关闭；真机与读屏环境的人工复核仍需发布前补一次，自动化无法替代
 - 表结构变更：新增列请同时改 `db/schema.sql` 与 `SqliteSchemaMigration`（老库靠后者补列）；**新列上的索引必须放在迁移里**，`schema.sql` 在 `CREATE TABLE IF NOT EXISTS` 之后执行，老库此时还没有该列，索引语句会直接中断启动
 - 种子数据：不要引用后加列（同样会中断老库启动），需要时放到 `ApplicationRunner`（参考 `SeriesInitializer`，排在迁移之后）

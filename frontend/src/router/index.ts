@@ -22,6 +22,13 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/admin/Login.vue'),
   },
   {
+    // 独立于 AdminLayout：处于强制改密状态时，后台任何页面都会被守卫挡回来
+    path: '/admin/change-password',
+    name: 'admin-change-password',
+    component: () => import('@/views/admin/ChangePassword.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/admin',
     component: () => import('@/layouts/AdminLayout.vue'),
     meta: { requiresAuth: true },
@@ -54,25 +61,43 @@ const router = createRouter({
  */
 let sessionChecked = false
 
+function readUser(): Record<string, any> {
+  try {
+    return JSON.parse(localStorage.getItem('spectrace-user') || '{}')
+  } catch {
+    return {}
+  }
+}
+
 router.beforeEach(async (to) => {
   if (!to.meta.requiresAuth) return true
   if (!localStorage.getItem('spectrace-token')) return { name: 'admin-login' }
-  if (sessionChecked) return true
-  try {
-    // localStorage 里的 token 可能已过期或被吊销，仅凭它存在就放行会让后台先渲染再逐个请求报错
-    const me = await authApi.me()
-    sessionChecked = true
-    // 昵称 / 角色可能在后台被改过，以服务端返回为准刷新本地缓存
-    const cached = JSON.parse(localStorage.getItem('spectrace-user') || '{}')
-    localStorage.setItem(
-      'spectrace-user',
-      JSON.stringify({ ...cached, username: me.username ?? cached.username, userId: me.adminId ?? cached.userId }),
-    )
-  } catch {
-    localStorage.removeItem('spectrace-token')
-    localStorage.removeItem('spectrace-user')
-    toast.error('登录已失效，请重新登录')
-    return { name: 'admin-login' }
+  if (!sessionChecked) {
+    try {
+      // localStorage 里的 token 可能已过期或被吊销，仅凭它存在就放行会让后台先渲染再逐个请求报错
+      const me = await authApi.me()
+      sessionChecked = true
+      // 昵称 / 角色 / 强制改密标记可能在后台被改过，以服务端返回为准刷新本地缓存
+      localStorage.setItem(
+        'spectrace-user',
+        JSON.stringify({
+          ...readUser(),
+          username: me.username ?? readUser().username,
+          userId: me.adminId ?? readUser().userId,
+          role: me.role ?? readUser().role,
+          mustChangePassword: me.mustChangePassword === true,
+        }),
+      )
+    } catch {
+      localStorage.removeItem('spectrace-token')
+      localStorage.removeItem('spectrace-user')
+      toast.error('登录已失效，请重新登录')
+      return { name: 'admin-login' }
+    }
+  }
+  // 初始密码或被管理员重置过：只放行改密页，避免没改密就先逛后台
+  if (readUser().mustChangePassword === true && to.name !== 'admin-change-password') {
+    return { name: 'admin-change-password' }
   }
   return true
 })
