@@ -171,7 +171,10 @@ docker run -d --name spectrace-app -p 80:8080 \
 
 ## CI/CD（GitHub Actions）
 
-工作流：`.github/workflows/docker-publish.yml`
+工作流：
+
+- `.github/workflows/ci.yml`：PR 与主干推送跑前端 `typecheck` / `build` / e2e、后端 `mvn -B package`（含单测）；npm 与 Maven 依赖缓存，e2e 失败上传 trace / 截图 / 视频
+- `.github/workflows/docker-publish.yml`：镜像构建与发布，见下
 
 - **触发**：推送到 `main`、打 `v*` tag、手动 `workflow_dispatch`；Pull Request 仅构建校验、不推送
 - **产物**：`ghcr.io/jingyuan9527/spectrace-app`（前后端一体单镜像，含采集 Agent）
@@ -213,8 +216,8 @@ docker run -d --name spectrace-app -p 80:8080 \
 
 ## 开发规约
 
-- 后端：Java 21 / Spring Boot 3.3 / MyBatis-Plus / AgentScope Java 2.0（Harness，内嵌），统一响应体 `R<T>`，全局异常处理 `GlobalExceptionHandler`
-- 前端：`npm run build` 验证构建；`npm run typecheck` 做类型检查；`npm run test:e2e` 跑 Playwright 主链路（访客对比分享、后台审核入库、键盘登录与弹窗、键盘完成新增品牌/机型/提交抓取/审核、后台系列增改并删与拖拽排序、世代回顾参数/区间/移动端）
+- 后端：Java 21 / Spring Boot 3.3 / MyBatis-Plus / AgentScope Java 2.0（Harness，内嵌），统一响应体 `R<T>`，全局异常处理 `GlobalExceptionHandler`；`mvn test` 跑单测（参数值解析、CSV 导入预览、世代回顾聚合、AI 摘要解析与限流）
+- 前端：`npm run build` 验证构建；`npm run typecheck` 做类型检查；`npm run test:e2e` 跑 Playwright 主链路（访客对比分享、后台审核入库、键盘登录与弹窗、键盘完成新增品牌/机型/提交抓取/审核、后台系列增改并删与拖拽排序、世代回顾参数/区间/移动端、后台账号与参数维护、纠错反馈处理）
 - 可访问性：键盘路径已由 e2e 覆盖——全程 Tab + Enter 可完成登录、新增品牌、新增机型、提交抓取与审核通过，弹窗打开后焦点自动进入、Esc 可关闭；真机与读屏环境的人工复核仍需发布前补一次，自动化无法替代
 - 表结构变更：新增列请同时改 `db/schema.sql` 与 `SqliteSchemaMigration`（老库靠后者补列）；**新列上的索引必须放在迁移里**，`schema.sql` 在 `CREATE TABLE IF NOT EXISTS` 之后执行，老库此时还没有该列，索引语句会直接中断启动
 - 种子数据：不要引用后加列（同样会中断老库启动），需要时放到 `ApplicationRunner`（参考 `SeriesInitializer`，排在迁移之后）
