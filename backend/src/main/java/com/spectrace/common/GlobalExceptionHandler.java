@@ -21,6 +21,13 @@ public class GlobalExceptionHandler {
         return R.fail(e.getCode(), e.getMessage());
     }
 
+    @ExceptionHandler(RateLimitedException.class)
+    @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
+    public R<Void> handleRateLimited(RateLimitedException e) {
+        log.warn("请求被限流: {}", e.getMessage());
+        return R.fail(e.getCode(), e.getMessage());
+    }
+
     @ExceptionHandler(BindException.class)
     public R<Void> handleValid(BindException e) {
         FieldError fieldError = e.getBindingResult().getFieldError();

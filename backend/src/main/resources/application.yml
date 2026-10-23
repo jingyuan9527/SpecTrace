@@ -62,6 +62,11 @@ spectrace:
   # 站点对外域名（含协议，如 https://spectrace.example.com），用于 sitemap / robots；
   # 反向代理部署时务必配置，否则会回退到请求域名（可能拿到内网地址）
   public-base-url: ${SPECTRACE_PUBLIC_BASE_URL:}
+  # 对比页 AI 差异摘要：按需生成并缓存，未配置可用模型时前端自动隐藏入口
+  ai:
+    insight:
+      enabled: ${SPECTRACE_AI_INSIGHT_ENABLED:true}
+      cache-hours: ${SPECTRACE_AI_INSIGHT_CACHE_HOURS:24}
   # SQLite 每日备份：VACUUM INTO 生成快照并只保留最近 N 份
   backup:
     enabled: ${SPECTRACE_BACKUP_ENABLED:true}

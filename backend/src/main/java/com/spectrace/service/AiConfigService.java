@@ -139,8 +139,8 @@ public class AiConfigService {
         if (req.getModels() == null || req.getModels().isEmpty()) {
             throw new BizException("请选择要导入的模型");
         }
+        // 默认模型全局唯一（resolve 时全表取第一个），跨连接判断，避免每个连接各有一个「默认」
         boolean hasDefault = modelMapper.selectCount(Wrappers.<AiModel>lambdaQuery()
-                .eq(AiModel::getConfigId, configId)
                 .eq(AiModel::getIsDefault, 1)) > 0;
 
         for (String name : req.getModels()) {

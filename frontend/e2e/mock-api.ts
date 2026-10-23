@@ -233,6 +233,18 @@ export async function mockApi(page: Page) {
         ],
       })
     }
+    if (path === '/public/compare/insight') {
+      // 未生成时只告诉前端入口可用；生成后按真实后端的「差异不足」分支返回固定结论
+      if (method === 'GET') return ok({ available: true, failed: false, cached: false, summary: null, points: [] })
+      return ok({
+        available: true,
+        failed: false,
+        cached: false,
+        summary: '两台机型的参数高度接近，差异主要集中在屏幕尺寸，选购时按手感与预算取舍即可。',
+        points: ['屏幕尺寸相差 0.2 英寸', '电池容量与发布时间接近'],
+        generatedAt: '2026-10-23T10:00:00',
+      })
+    }
     if (path === '/public/years') return ok([2025, 2024])
     if (path === '/public/history') {
       return ok({

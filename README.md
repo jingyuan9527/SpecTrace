@@ -94,6 +94,8 @@ npm run dev
 | `AGENT_ALERT_WEBHOOK` | 空 | 告警 webhook（钉钉机器人文本消息格式），留空只写日志 |
 | `SPECTRACE_PUBLIC_BASE_URL` | 空 | 站点对外域名（含协议），用于 sitemap / robots；反向代理部署必须配置，否则回退请求域名 |
 | `SPECTRACE_UPLOAD_MAX_BYTES` | `8388608` | 单张图片硬上限（字节）；前端会先压到 500KB，超限提示裁剪 |
+| `SPECTRACE_AI_INSIGHT_ENABLED` | `true` | 是否开放对比页 AI 差异摘要（未配置模型时前端自动隐藏入口） |
+| `SPECTRACE_AI_INSIGHT_CACHE_HOURS` | `24` | 摘要缓存时长（小时），同一组机型与参数值在窗口内复用 |
 
 抓取结果写入【待审核数据表】，管理员在后台「待审核数据」中修正并审核通过后，才迁移到正式机型库。
 
@@ -199,6 +201,7 @@ docker run -d --name spectrace-app -p 80:8080 \
 - **批量导入**：后台机型页支持 CSV 导入，模板列与 `param_def` 的 `param_key` 同步生成；上传后先预览逐行校验（品牌是否存在、日期格式、重复机型），确认后逐行落库，单次上限 500 行。可选 `series` 列（兼容「系列」「产品线」）按品牌内名称匹配、不存在则自动建系列，留空视为未归类，预览会提示「将新建系列 xxx」。
 - **产品线（系列）与世代回顾**：`device_series` 按产品线人工维护，`device.series_id` 可空（未归类机型照常展示，只是不进世代回顾）；后台「系列管理」支持品牌筛选、拖拽排序、编辑、合并（机型迁移后删源系列）与删除（有机型在册时拒绝），并提供「未归类机型」逐行归类。访客端 `/evolution` 以系列为轴、按发布时间升序排列世代，支持参数多选（默认屏幕尺寸 / 电池容量 / 重量 / 起售价，上限 8）与起止世代裁剪；`launch_price` 取 `device_variant` 最低价，涨跌幅按当前可见区间计算，图表带极值标注并可整块截图导出，筛选条件同步到 URL 便于分享。
 - **图片上传**：前端 canvas 压缩到最长边 1600px 并转 WebP，超过 500KB 时逐级降质 / 降尺寸重压（最多 3×2 次），仍超限则提示裁剪而非静默失败；后端按文件头校验真实类型（JPG/PNG/WebP/GIF）并限制大小（可配置），返回访问地址与像素尺寸。
+- **AI 对比差异摘要**：对比页按需生成（不自动调用），只把「有实际取值且不同」的参数行交给默认模型，最多 30 行；输出解析为 `summary + points` 并做长度裁剪。同一组机型按机型归档后的参数值指纹缓存（默认 24 小时，换机型顺序也命中），参数变更自然失效；同来源每分钟最多 5 次生成（命中缓存也计入，超限返回 HTTP 429）。未配置可用模型时接口返回 `available=false`，前端整块入口隐藏；调用失败降级为 `failed=true` 且 HTTP 200，不阻塞对比表。开关与缓存时长见 `SPECTRACE_AI_INSIGHT_ENABLED` / `SPECTRACE_AI_INSIGHT_CACHE_HOURS`。
 - **SEO**：history 路由 + 详情页动态 title/description/OG；`/sitemap.xml` 输出首页、机型库、参数历史与全部在售机型（带 `lastmod`），`/robots.txt` 屏蔽后台、接口与上传目录；对外域名取 `SPECTRACE_PUBLIC_BASE_URL`，未配置时回退请求域名。
 
 ## 接口文档

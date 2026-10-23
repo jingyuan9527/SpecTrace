@@ -3,7 +3,20 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import html2canvas from 'html2canvas'
 import { motion } from 'motion-v'
-import { ChevronDown, ChevronRight, Copy, Download, GitCompareArrows, Image, Plus, Share2, Smartphone, X } from '@lucide/vue'
+import {
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Download,
+  GitCompareArrows,
+  Image,
+  Loader2,
+  Plus,
+  Share2,
+  Smartphone,
+  Sparkles,
+  X,
+} from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
 import { useCompareStore } from '@/stores/compare'
@@ -46,6 +59,18 @@ const candidates = ref<Device[]>([])
 const pickId = ref<number | undefined>()
 const collapsed = ref<number[]>([])
 
+interface CompareInsight {
+  available: boolean
+  failed?: boolean
+  cached?: boolean
+  summary?: string | null
+  points?: string[]
+  generatedAt?: string
+}
+
+const insight = ref<CompareInsight | null>(null)
+const insightGenerating = ref(false)
+
 /** 解析 `?ids=1,2,3`，最多取 4 个正整数。 */
 function parseIds(): number[] {
   const raw = Array.isArray(route.query.ids) ? route.query.ids[0] : route.query.ids
@@ -61,9 +86,42 @@ function syncUrl() {
   router.replace({ query: ids.length ? { ids: ids.join(',') } : {} })
 }
 
+/** 只读缓存：未配置模型时后端返回 available=false，前端整块入口隐藏。 */
+async function loadInsight() {
+  insight.value = null
+  if (compare.count < 2) {
+    return
+  }
+  try {
+    insight.value = await publicApi.compareInsight(compare.ids)
+  } catch {
+    // 摘要不是关键路径，取不到就不展示，不打扰用户
+    insight.value = null
+  }
+}
+
+/** 生成失败后端会降级为 failed=true（HTTP 200），前端不弹错误、不阻塞对比表。 */
+async function generateInsight() {
+  if (insightGenerating.value) {
+    return
+  }
+  insightGenerating.value = true
+  try {
+    insight.value = await publicApi.generateCompareInsight(compare.ids)
+  } catch (error) {
+    // 429 已由请求拦截器提示「生成过于频繁」，保留入口态即可，避免误报服务不可用
+    if ((error as { response?: { status?: number } })?.response?.status !== 429) {
+      insight.value = { available: true, failed: true }
+    }
+  } finally {
+    insightGenerating.value = false
+  }
+}
+
 async function load() {
   if (compare.count < 2) {
     result.value = null
+    insight.value = null
     return
   }
   loading.value = true
@@ -72,6 +130,7 @@ async function load() {
   } finally {
     loading.value = false
   }
+  await loadInsight()
 }
 
 onMounted(async () => {
@@ -246,6 +305,46 @@ async function copyToClipboard() {
       :animate="{ opacity: 1, y: 0 }"
       :transition="{ duration: 0.3 }"
     >
+      <Card v-if="insight?.available" class="mb-4 border-dashed">
+        <CardContent class="space-y-3 p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5 text-sm font-medium">
+              <Sparkles class="h-4 w-4 text-primary" />
+              AI 差异摘要
+              <Badge v-if="insight.cached" variant="secondary">缓存</Badge>
+            </div>
+            <Button
+              v-if="!insight.summary && !insight.failed"
+              size="sm"
+              variant="outline"
+              :disabled="insightGenerating"
+              @click="generateInsight"
+            >
+              <Loader2 v-if="insightGenerating" class="animate-spin" />
+              {{ insightGenerating ? '生成中…' : '生成摘要' }}
+            </Button>
+          </div>
+
+          <template v-if="insight.summary">
+            <p class="text-sm leading-relaxed">{{ insight.summary }}</p>
+            <ul v-if="insight.points?.length" class="space-y-1">
+              <li v-for="(point, index) in insight.points" :key="index" class="text-sm text-muted-foreground">
+                · {{ point }}
+              </li>
+            </ul>
+            <p class="text-xs text-muted-foreground">AI 生成，仅供参考；数据以上方参数表为准。</p>
+          </template>
+
+          <p v-else-if="insight.failed" class="text-sm text-muted-foreground">
+            摘要服务暂时不可用，稍后再试；不影响上方对比数据。
+          </p>
+
+          <p v-else class="text-sm text-muted-foreground">
+            根据当前差异项生成 2-3 句总结，每次生成有成本，按需点击。
+          </p>
+        </CardContent>
+      </Card>
+
       <div ref="captureRef" class="capture-area overflow-hidden rounded-xl border bg-background">
         <div class="border-b px-5 py-4 text-center">
           <div class="flex items-center justify-center gap-2 text-base font-semibold">

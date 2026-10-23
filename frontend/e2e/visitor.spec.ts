@@ -31,6 +31,11 @@ test('访客：品牌筛选到对比分享', async ({ page, context }) => {
   await expect(page.getByText('iPhone 17').first()).toBeVisible()
   await expect(page.getByText('iPhone 16').first()).toBeVisible()
 
+  // AI 差异摘要：默认只显示入口，点击后才生成
+  await expect(page.getByText('AI 差异摘要')).toBeVisible()
+  await page.getByRole('button', { name: '生成摘要' }).click()
+  await expect(page.getByText(/参数高度接近/)).toBeVisible()
+
   // 分享链接写入地址栏并复制到剪贴板
   await page.getByRole('button', { name: '分享链接' }).click()
   await expect(page).toHaveURL(/ids=\d+(,\d+)+/)

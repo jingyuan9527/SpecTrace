@@ -2,6 +2,8 @@ package com.spectrace.controller;
 
 import com.spectrace.common.PageResult;
 import com.spectrace.common.R;
+import com.spectrace.dto.CompareInsightRequest;
+import com.spectrace.dto.CompareInsightVO;
 import com.spectrace.dto.CompareResultVO;
 import com.spectrace.dto.DeviceSuggestVO;
 import com.spectrace.dto.EvolutionVO;
@@ -12,12 +14,15 @@ import com.spectrace.entity.Device;
 import com.spectrace.entity.ParamDef;
 import com.spectrace.entity.ParamGroup;
 import com.spectrace.service.BrandService;
+import com.spectrace.service.CompareInsightService;
 import com.spectrace.service.DeviceService;
 import com.spectrace.service.EvolutionService;
 import com.spectrace.service.ParamService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Arrays;
@@ -37,6 +42,7 @@ public class PublicController {
     private final ParamService paramService;
     private final DeviceService deviceService;
     private final EvolutionService evolutionService;
+    private final CompareInsightService compareInsightService;
 
     @Operation(summary = "品牌列表")
     @GetMapping("/brands")
@@ -94,6 +100,30 @@ public class PublicController {
                 .map(Long::valueOf)
                 .toList();
         return R.ok(deviceService.compare(deviceIds));
+    }
+
+    @Operation(summary = "对比差异摘要（只读缓存，用于判定入口是否展示）")
+    @GetMapping("/compare/insight")
+    public R<CompareInsightVO> compareInsight(@RequestParam("ids") String ids,
+                                              HttpServletRequest request) {
+        return R.ok(compareInsightService.insight(parseIds(ids), clientKey(request), false));
+    }
+
+    @Operation(summary = "生成对比差异摘要（按需调用模型，同组合 24 小时缓存）")
+    @PostMapping("/compare/insight")
+    public R<CompareInsightVO> generateCompareInsight(@RequestBody CompareInsightRequest req,
+                                                      HttpServletRequest request) {
+        return R.ok(compareInsightService.insight(req.getIds(), clientKey(request), true));
+    }
+
+    /** 取真实来源 IP 作为限流维度；反向代理下优先读 X-Forwarded-For 首个地址。 */
+    private String clientKey(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (StringUtils.hasText(forwarded)) {
+            return forwarded.split(",")[0].trim();
+        }
+        String remote = request.getRemoteAddr();
+        return StringUtils.hasText(remote) ? remote : "unknown";
     }
 
     @Operation(summary = "参数历史演变（支持多品牌叠加）")

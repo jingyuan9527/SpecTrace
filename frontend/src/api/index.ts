@@ -26,6 +26,10 @@ export const publicApi = {
     request.get<any[], any[]>('/public/devices/suggest', { params: { keyword, limit } }),
   deviceDetail: (id: number) => request.get<any, any>(`/public/devices/${id}`),
   compare: (ids: number[]) => request.get<any, any>('/public/compare', { params: { ids: ids.join(',') } }),
+  compareInsight: (ids: number[]) =>
+    request.get<any, any>('/public/compare/insight', { params: { ids: ids.join(',') } }),
+  generateCompareInsight: (ids: number[]) =>
+    request.post<any, any>('/public/compare/insight', { ids }),
   history: (brandIds: number[], paramDefId: number) =>
     request.get<any, any>('/public/history', { params: { brandIds: brandIds.join(','), paramDefId } }),
   years: (brandId?: number) => request.get<number[], number[]>('/public/years', { params: { brandId } }),
