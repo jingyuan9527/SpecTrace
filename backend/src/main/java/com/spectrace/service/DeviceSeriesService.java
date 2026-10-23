@@ -84,6 +84,14 @@ public class DeviceSeriesService {
         if (series.getId() == null) {
             seriesMapper.insert(series);
         } else {
+            DeviceSeries existing = seriesMapper.selectById(series.getId());
+            if (existing == null) {
+                throw new BizException("系列不存在");
+            }
+            // 品牌是系列的身份：允许改品牌会让已归类机型挂到别的品牌下，且前台按品牌筛选时凭空消失
+            if (!Objects.equals(existing.getBrandId(), series.getBrandId())) {
+                throw new BizException("系列所属品牌不可修改，如需调整请新建系列后把机型重新归类");
+            }
             seriesMapper.updateById(series);
         }
         return series;

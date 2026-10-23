@@ -22,8 +22,9 @@ test('后台：系列新增、编辑、合并、删除', async ({ page }) => {
   await expect(page.getByText('保存成功')).toBeVisible()
   await expect(page.getByRole('cell', { name: '测试系列' })).toBeVisible()
 
-  // 编辑首行
+  // 编辑首行：品牌固定，只允许改名称/排序/状态
   await page.getByRole('button', { name: '编辑' }).first().click()
+  await expect(page.getByRole('dialog').getByRole('combobox')).toBeDisabled()
   await page.getByLabel('系列名称').fill('iPhone 数字系列 Pro')
   await page.getByRole('button', { name: '保存' }).click()
   await expect(page.getByRole('cell', { name: 'iPhone 数字系列 Pro' })).toBeVisible()

@@ -359,7 +359,16 @@ function yearRange(row: Series) {
         </div>
         <div class="space-y-1.5">
           <Label for="series-brand">品牌</Label>
-          <Select id="series-brand" v-model="form.brandId" :options="brandOptions" placeholder="选择品牌" />
+          <Select
+            id="series-brand"
+            v-model="form.brandId"
+            :options="brandOptions"
+            :disabled="!!form.id"
+            placeholder="选择品牌"
+          />
+          <p v-if="form.id" class="text-xs text-muted-foreground">
+            系列已有归属品牌，不可修改；如需调整请新建系列后把机型重新归类
+          </p>
         </div>
         <div class="space-y-1.5">
           <Label for="series-sort">排序</Label>
