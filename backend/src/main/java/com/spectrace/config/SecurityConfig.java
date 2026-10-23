@@ -41,6 +41,9 @@ public class SecurityConfig {
             "/actuator/health",
             "/actuator/health/**",
             "/actuator/info",
+            // 搜索引擎入口
+            "/sitemap.xml",
+            "/robots.txt",
             "/error"
     };
 

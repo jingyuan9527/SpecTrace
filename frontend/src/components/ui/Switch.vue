@@ -10,8 +10,9 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 </script>
 
 <template>
+  <!-- reka-ui 的受控属性是 modelValue（Radix 的 checked 在这里不存在），写错开关会永远显示关闭 -->
   <SwitchRoot
-    :checked="props.modelValue"
+    :model-value="props.modelValue"
     :disabled="props.disabled"
     :class="
       cn(
@@ -19,7 +20,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
         props.class,
       )
     "
-    @update:checked="emit('update:modelValue', $event)"
+    @update:model-value="emit('update:modelValue', $event)"
   >
     <SwitchThumb
       class="pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg ring-0 transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0"

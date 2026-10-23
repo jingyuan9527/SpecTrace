@@ -31,9 +31,20 @@ public class SqliteSchemaMigration implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         // 只追加列，不改现有列定义；新增列一律允许 NULL，避免老数据升级失败
+        ensureColumn("device", "series_id", "BIGINT DEFAULT NULL");
         ensureColumn("device_param_value", "source_url", "VARCHAR(512) DEFAULT NULL");
         ensureColumn("device_param_value", "confidence", "DECIMAL(3,2) DEFAULT NULL");
         ensureColumn("feedback", "handler_note", "TEXT DEFAULT NULL");
+        // 索引必须在补列之后创建，放在 schema.sql 里会在老库上因缺列直接中断启动
+        ensureIndex("CREATE INDEX IF NOT EXISTS idx_device_series ON device (series_id)");
+    }
+
+    private void ensureIndex(String sql) {
+        try {
+            jdbcTemplate.execute(sql);
+        } catch (Exception e) {
+            log.warn("索引创建失败（表或列可能不存在）: {}", sql, e);
+        }
     }
 
     private void ensureColumn(String table, String column, String definition) {

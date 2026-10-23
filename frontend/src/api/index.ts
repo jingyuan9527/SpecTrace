@@ -29,6 +29,11 @@ export const publicApi = {
   history: (brandIds: number[], paramDefId: number) =>
     request.get<any, any>('/public/history', { params: { brandIds: brandIds.join(','), paramDefId } }),
   years: (brandId?: number) => request.get<number[], number[]>('/public/years', { params: { brandId } }),
+  series: (brandId?: number) => request.get<any[], any[]>('/public/series', { params: { brandId } }),
+  evolution: (seriesId: number, paramDefIds: number[]) =>
+    request.get<any, any>(`/public/series/${seriesId}/evolution`, {
+      params: { paramDefIds: paramDefIds.join(',') },
+    }),
   submitFeedback: (data: {
     deviceId: number
     paramDefId?: number
@@ -50,6 +55,19 @@ export const adminApi = {
   brands: () => request.get<any[], any[]>('/admin/brands'),
   saveBrand: (data: any) => (data.id ? request.put(`/admin/brands/${data.id}`, data) : request.post('/admin/brands', data)),
   deleteBrand: (id: number) => request.delete(`/admin/brands/${id}`),
+
+  series: (brandId?: number) => request.get<any[], any[]>('/admin/series', { params: { brandId } }),
+  seriesUnassigned: (brandId?: number) =>
+    request.get<any[], any[]>('/admin/series/unassigned', { params: { brandId } }),
+  assignSeries: (deviceIds: number[], seriesId?: number) =>
+    request.post<any, any>('/admin/series/assign', { deviceIds, seriesId }),
+  mergeSeries: (id: number, targetId: number) =>
+    request.post<any, any>(`/admin/series/${id}/merge`, { targetId }),
+  saveSeries: (data: any) =>
+    data.id
+      ? request.put<any, any>(`/admin/series/${data.id}`, data)
+      : request.post<any, any>('/admin/series', data),
+  deleteSeries: (id: number) => request.delete(`/admin/series/${id}`),
 
   paramGroups: () => request.get<any[], any[]>('/admin/param-groups'),
   saveParamGroup: (data: any) =>

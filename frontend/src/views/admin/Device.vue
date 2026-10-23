@@ -34,6 +34,12 @@ interface Brand {
   name: string
 }
 
+interface Series {
+  id: number
+  brandId: number
+  name: string
+}
+
 interface ParamGroup {
   id: number
   name: string
@@ -59,6 +65,7 @@ interface DeviceVariantRow {
 interface DeviceForm {
   id: number | null
   brandId?: number
+  seriesId?: number
   name: string
   releaseDate: string
   thumbnail: string
@@ -70,6 +77,7 @@ interface DeviceForm {
 
 const list = ref<any[]>([])
 const brands = ref<Brand[]>([])
+const seriesList = ref<Series[]>([])
 const groups = ref<ParamGroup[]>([])
 const defs = ref<ParamDef[]>([])
 const total = ref(0)
@@ -86,6 +94,7 @@ const fileInput = ref<HTMLInputElement>()
 const form = reactive<DeviceForm>({
   id: null,
   brandId: undefined,
+  seriesId: undefined,
   name: '',
   releaseDate: '',
   thumbnail: '',
@@ -96,6 +105,9 @@ const form = reactive<DeviceForm>({
 })
 
 const brandOptions = computed(() => brands.value.map((b) => ({ label: b.name, value: b.id })))
+const seriesOptions = computed(() =>
+  seriesList.value.filter((s) => s.brandId === form.brandId).map((s) => ({ label: s.name, value: s.id })),
+)
 const defsByGroup = computed(() =>
   groups.value
     .map((group) => ({ ...group, defs: defs.value.filter((d) => d.groupId === group.id) }))
@@ -114,13 +126,26 @@ async function load() {
 }
 
 onMounted(async () => {
-  ;[brands.value, groups.value, defs.value] = await Promise.all([
+  ;[brands.value, seriesList.value, groups.value, defs.value] = await Promise.all([
     adminApi.brands(),
+    // 系列是可选归类维度，接口异常时退化为「无系列」，不能让机型表单整体崩掉
+    adminApi.series().catch(() => [] as any[]),
     adminApi.paramGroups(),
     adminApi.paramDefs(),
   ])
+  seriesList.value ??= []
   await load()
 })
+
+// 切换品牌后原系列可能不属于新品牌，必须清空，否则后端会因跨品牌归类拒绝保存
+watch(
+  () => form.brandId,
+  (brandId) => {
+    if (form.seriesId && !seriesList.value.some((s) => s.id === form.seriesId && s.brandId === brandId)) {
+      form.seriesId = undefined
+    }
+  },
+)
 
 watch(
   () => query.current,
@@ -136,6 +161,7 @@ function resetForm() {
   Object.assign(form, {
     id: null,
     brandId: brands.value[0]?.id,
+    seriesId: undefined,
     name: '',
     releaseDate: '',
     thumbnail: '',
@@ -156,6 +182,7 @@ async function openEdit(row: any) {
   Object.assign(form, {
     id: detail.device.id,
     brandId: detail.device.brandId,
+    seriesId: detail.device.seriesId ?? undefined,
     name: detail.device.name,
     releaseDate: detail.device.releaseDate || '',
     thumbnail: detail.device.thumbnail || '',
@@ -178,6 +205,7 @@ async function openCopy(row: any) {
   Object.assign(form, {
     id: null,
     brandId: detail.device.brandId,
+    seriesId: detail.device.seriesId ?? undefined,
     name: `${detail.device.name} 副本`,
     releaseDate: '',
     thumbnail: detail.device.thumbnail || '',
@@ -261,7 +289,10 @@ async function uploadPendingImage() {
   uploadProgress.value = 0
   try {
     const compressed = await compressImage(pendingImage.value)
-    const result = await adminApi.upload(compressed, (percent) => {
+    if (compressed.exceeded) {
+      toast.warning(`压缩后仍有 ${formatBytes(compressed.file.size)}，建议裁剪后再上传`)
+    }
+    const result = await adminApi.upload(compressed.file, (percent) => {
       uploadProgress.value = percent
     })
     form.thumbnail = result.url
@@ -292,8 +323,52 @@ function optionsOf(def: ParamDef): string[] {
   }
 }
 
-function brandName(id: number) {
+function brandName(id?: number) {
+  if (!id) return '—'
   return brands.value.find((b) => b.id === id)?.name ?? '—'
+}
+
+function seriesName(id?: number) {
+  if (!id) return '—'
+  return seriesList.value.find((s) => s.id === id)?.name ?? '—'
+}
+
+// ---------- 表单内快速新建系列 ----------
+const seriesDialog = ref(false)
+const newSeriesName = ref('')
+const creatingSeries = ref(false)
+
+function openSeriesCreate() {
+  if (!form.brandId) {
+    toast.warning('请先选择品牌')
+    return
+  }
+  newSeriesName.value = ''
+  seriesDialog.value = true
+}
+
+async function createSeries() {
+  if (!form.brandId) return
+  const name = newSeriesName.value.trim()
+  if (!name) {
+    toast.warning('请填写系列名称')
+    return
+  }
+  creatingSeries.value = true
+  try {
+    const saved = await adminApi.saveSeries({
+      brandId: form.brandId,
+      name,
+      sortOrder: seriesList.value.filter((s) => s.brandId === form.brandId).length + 1,
+      status: 1,
+    })
+    seriesList.value.push(saved)
+    form.seriesId = saved.id
+    seriesDialog.value = false
+    toast.success(`已新建系列「${saved.name}」`)
+  } finally {
+    creatingSeries.value = false
+  }
 }
 
 // ---------- 批量导入 ----------
@@ -392,6 +467,7 @@ function rowMessages(row: any) {
               <TableHead class="w-20">图片</TableHead>
               <TableHead>机型名称</TableHead>
               <TableHead class="w-28">品牌</TableHead>
+              <TableHead class="w-36">系列</TableHead>
               <TableHead class="w-32">发布时间</TableHead>
               <TableHead class="w-24">状态</TableHead>
               <TableHead class="w-28 text-right">操作</TableHead>
@@ -407,6 +483,7 @@ function rowMessages(row: any) {
               </TableCell>
               <TableCell class="font-medium">{{ row.name }}</TableCell>
               <TableCell class="text-muted-foreground">{{ brandName(row.brandId) }}</TableCell>
+              <TableCell class="text-muted-foreground">{{ seriesName(row.seriesId) }}</TableCell>
               <TableCell class="text-muted-foreground">{{ row.releaseDate || '—' }}</TableCell>
               <TableCell>
                 <Badge :variant="row.status === 1 ? 'success' : 'secondary'">{{ row.status === 1 ? '上架' : '下架' }}</Badge>
@@ -444,6 +521,21 @@ function rowMessages(row: any) {
           <div class="space-y-1.5">
             <Label for="device-brand">品牌</Label>
             <Select id="device-brand" v-model="form.brandId" :options="brandOptions" placeholder="选择品牌" />
+          </div>
+          <div class="space-y-1.5">
+            <Label for="device-series">系列（可选）</Label>
+            <div class="flex items-center gap-2">
+              <Select
+                id="device-series"
+                v-model="form.seriesId"
+                :options="seriesOptions"
+                placeholder="未归类"
+                class="flex-1"
+              />
+              <Button variant="outline" size="icon" aria-label="新建系列" title="新建系列" @click="openSeriesCreate">
+                <Plus />
+              </Button>
+            </div>
           </div>
           <div class="space-y-1.5">
             <Label for="device-date">发布时间</Label>
@@ -554,7 +646,7 @@ function rowMessages(row: any) {
     <Dialog
       v-model:open="importOpen"
       title="批量导入机型"
-      description="上传 CSV 后先预览校验结果，确认无误再写入机型库；表头需包含 name、brand、releaseDate。"
+      description="上传 CSV 后先预览校验结果，确认无误再写入机型库；表头需包含 name、brand，可选 series、releaseDate。"
       class="max-w-3xl"
     >
       <div class="space-y-4">
@@ -589,6 +681,7 @@ function rowMessages(row: any) {
                   <TableHead class="w-16">行号</TableHead>
                   <TableHead class="min-w-32">机型</TableHead>
                   <TableHead class="min-w-24">品牌</TableHead>
+                  <TableHead class="min-w-28">系列</TableHead>
                   <TableHead class="w-28">发布时间</TableHead>
                   <TableHead class="w-20">参数</TableHead>
                   <TableHead class="min-w-56">校验结果</TableHead>
@@ -599,6 +692,7 @@ function rowMessages(row: any) {
                   <TableCell class="text-muted-foreground">{{ row.rowNo }}</TableCell>
                   <TableCell class="font-medium">{{ row.name || '—' }}</TableCell>
                   <TableCell class="text-muted-foreground">{{ row.brandName || '—' }}</TableCell>
+                  <TableCell class="text-muted-foreground">{{ row.seriesName || '未归类' }}</TableCell>
                   <TableCell class="text-muted-foreground">{{ row.releaseDate || '—' }}</TableCell>
                   <TableCell class="text-muted-foreground">{{ Object.keys(row.params || {}).length }}</TableCell>
                   <TableCell class="text-xs">
@@ -622,6 +716,7 @@ function rowMessages(row: any) {
         <p v-else class="text-xs leading-5 text-muted-foreground">
           列名与参数 Key 一致即视为该参数值，例如 screen_size、battery_capacity；也可用 params 列写
           <code class="rounded bg-muted px-1">screen_size=6.3;battery_capacity=3600</code>。
+          series（系列）留空表示未归类，填写后按品牌内名称匹配，不存在则自动创建。
           单次最多 500 行，品牌必须已在品牌管理中创建。
         </p>
       </div>
@@ -632,6 +727,25 @@ function rowMessages(row: any) {
           <Loader2 v-if="importing" class="animate-spin" />
           {{ importing ? '导入中…' : `确认导入 ${importPreview?.validCount ?? 0} 台` }}
         </Button>
+      </template>
+    </Dialog>
+
+    <Dialog v-model:open="seriesDialog" title="新建系列" class="max-w-sm">
+      <div class="space-y-1.5">
+        <Label for="new-series-name">系列名称</Label>
+        <Input
+          id="new-series-name"
+          v-model="newSeriesName"
+          placeholder="如 iPhone 数字系列"
+          @keyup.enter="createSeries"
+        />
+        <p class="text-xs text-muted-foreground">
+          系列归属当前品牌「{{ brandName(form.brandId) }}」，同一品牌下不可重名。
+        </p>
+      </div>
+      <template #footer>
+        <Button variant="outline" :disabled="creatingSeries" @click="seriesDialog = false">取消</Button>
+        <Button :disabled="creatingSeries" @click="createSeries">{{ creatingSeries ? '创建中…' : '创建并选中' }}</Button>
       </template>
     </Dialog>
 

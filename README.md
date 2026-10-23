@@ -2,7 +2,7 @@
 
 [![Build & Publish Docker Images](https://github.com/jingyuan9527/SpecTrace/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/jingyuan9527/SpecTrace/actions/workflows/docker-publish.yml)
 
-面向数码爱好者的手机参数数据库：收录多品牌机型参数，支持**多机型横向对比**、**单参数跨代历史演变**、**对比结果一键截图分享**；数据来源为管理员手动录入 + 内嵌 AgentScope AI Agent 自动抓取（抓取结果必须人工审核后入库）。
+面向数码爱好者的手机参数数据库：收录多品牌机型参数，支持**多机型横向对比**、**单参数跨代历史演变**、**按产品线回看世代（多参数趋势）**、**对比结果一键截图分享**；数据来源为管理员手动录入 + 内嵌 AgentScope AI Agent 自动抓取（抓取结果必须人工审核后入库）。
 
 > 仓库地址：<https://github.com/jingyuan9527/SpecTrace>
 > 容器镜像：`ghcr.io/jingyuan9527/spectrace-{backend,frontend}`，以及前后端一体化镜像 `ghcr.io/jingyuan9527/spectrace-app`
@@ -62,7 +62,7 @@ npm run dev
 ```
 
 - 访问 http://localhost:5173 ，已配置 `/api`、`/uploads` 代理到后端 8080
-- 前端使用 history 路由（无 `#`）：`/` 首页、`/devices` 机型库、`/compare` 对比、`/history` 参数历史
+- 前端使用 history 路由（无 `#`）：`/` 首页、`/devices` 机型库、`/compare` 对比、`/history` 参数历史、`/evolution` 世代回顾
 - 管理后台：`/admin/login`
 - E2E（无需后端与数据库，接口由 `e2e/mock-api.ts` 拦截）：`npx playwright install chromium` 后执行 `npm run test:e2e`；失败会保留截图、trace 与视频到 `test-results/`
 
@@ -92,6 +92,8 @@ npm run dev
 | `DASHSCOPE_API_KEY` / `DASHSCOPE_MODEL` | 空 / `qwen-max` | 后台未配置 AI 连接时的兜底 |
 | `AGENT_ALERT_THRESHOLD` | `3` | 采集任务连续失败达到该次数写 `AGENT_CONSECUTIVE_FAILURE` ERROR 日志，0 关闭 |
 | `AGENT_ALERT_WEBHOOK` | 空 | 告警 webhook（钉钉机器人文本消息格式），留空只写日志 |
+| `SPECTRACE_PUBLIC_BASE_URL` | 空 | 站点对外域名（含协议），用于 sitemap / robots；反向代理部署必须配置，否则回退请求域名 |
+| `SPECTRACE_UPLOAD_MAX_BYTES` | `8388608` | 单张图片硬上限（字节）；前端会先压到 500KB，超限提示裁剪 |
 
 抓取结果写入【待审核数据表】，管理员在后台「待审核数据」中修正并审核通过后，才迁移到正式机型库。
 
@@ -194,8 +196,10 @@ docker run -d --name spectrace-app -p 80:8080 \
 - **参数值单位解析**：`6.1英寸`、`3600mAh`、`1TB` 这类取值会拆出数值与单位，同量纲（长度/存储/电池/重量/频率/功率）自动换算到参数定义的单位后再对比；量纲不一致或无单位定义时，历史图表提示冲突并按原值展示，导入预览与审核页也会给出警告。
 - **审核 diff 与覆盖更新**：待审核详情会返回同品牌同名机型的现有参数，审核页标出「旧值 → 新值」并折叠未变化项；审核通过时若库中已有同名机型则覆盖更新参数，避免重复抓取产生重复机型。支持多选批量通过 / 批量丢弃。
 - **纠错反馈**：访客在详情页参数行点旗标即可提交建议值与说明（同来源同机型 1 分钟限流），后台「纠错反馈」列表核实后标记已处理 / 已忽略。
-- **批量导入**：后台机型页支持 CSV 导入，模板列与 `param_def` 的 `param_key` 同步生成；上传后先预览逐行校验（品牌是否存在、日期格式、重复机型），确认后逐行落库，单次上限 500 行。
-- **图片上传**：前端 canvas 压缩到最长边 1600px 并转 WebP，后端按文件头校验真实类型（JPG/PNG/WebP/GIF）并限制大小，返回访问地址与像素尺寸。
+- **批量导入**：后台机型页支持 CSV 导入，模板列与 `param_def` 的 `param_key` 同步生成；上传后先预览逐行校验（品牌是否存在、日期格式、重复机型），确认后逐行落库，单次上限 500 行。可选 `series` 列（兼容「系列」「产品线」）按品牌内名称匹配、不存在则自动建系列，留空视为未归类，预览会提示「将新建系列 xxx」。
+- **产品线（系列）与世代回顾**：`device_series` 按产品线人工维护，`device.series_id` 可空（未归类机型照常展示，只是不进世代回顾）；后台「系列管理」支持品牌筛选、拖拽排序、编辑、合并（机型迁移后删源系列）与删除（有机型在册时拒绝），并提供「未归类机型」逐行归类。访客端 `/evolution` 以系列为轴、按发布时间升序排列世代，支持参数多选（默认屏幕尺寸 / 电池容量 / 重量 / 起售价，上限 8）与起止世代裁剪；`launch_price` 取 `device_variant` 最低价，涨跌幅按当前可见区间计算，图表带极值标注并可整块截图导出，筛选条件同步到 URL 便于分享。
+- **图片上传**：前端 canvas 压缩到最长边 1600px 并转 WebP，超过 500KB 时逐级降质 / 降尺寸重压（最多 3×2 次），仍超限则提示裁剪而非静默失败；后端按文件头校验真实类型（JPG/PNG/WebP/GIF）并限制大小（可配置），返回访问地址与像素尺寸。
+- **SEO**：history 路由 + 详情页动态 title/description/OG；`/sitemap.xml` 输出首页、机型库、参数历史与全部在售机型（带 `lastmod`），`/robots.txt` 屏蔽后台、接口与上传目录；对外域名取 `SPECTRACE_PUBLIC_BASE_URL`，未配置时回退请求域名。
 
 ## 接口文档
 
@@ -204,5 +208,6 @@ docker run -d --name spectrace-app -p 80:8080 \
 ## 开发规约
 
 - 后端：Java 21 / Spring Boot 3.3 / MyBatis-Plus / AgentScope Java 2.0（Harness，内嵌），统一响应体 `R<T>`，全局异常处理 `GlobalExceptionHandler`
-- 前端：`npm run build` 验证构建；`npm run typecheck` 做类型检查；`npm run test:e2e` 跑 Playwright 主链路
-- 表结构变更：新增列请同时改 `db/schema.sql` 与 `SqliteSchemaMigration`（老库靠后者补列）
+- 前端：`npm run build` 验证构建；`npm run typecheck` 做类型检查；`npm run test:e2e` 跑 Playwright 主链路（访客对比分享、后台审核入库、键盘登录与弹窗、后台系列增改并删与拖拽排序、世代回顾参数/区间/移动端）
+- 表结构变更：新增列请同时改 `db/schema.sql` 与 `SqliteSchemaMigration`（老库靠后者补列）；**新列上的索引必须放在迁移里**，`schema.sql` 在 `CREATE TABLE IF NOT EXISTS` 之后执行，老库此时还没有该列，索引语句会直接中断启动
+- 种子数据：不要引用后加列（同样会中断老库启动），需要时放到 `ApplicationRunner`（参考 `SeriesInitializer`，排在迁移之后）

@@ -9,12 +9,14 @@ import com.spectrace.dto.*;
 import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
 import com.spectrace.entity.DeviceParamValue;
+import com.spectrace.entity.DeviceSeries;
 import com.spectrace.entity.DeviceVariant;
 import com.spectrace.entity.ParamDef;
 import com.spectrace.entity.ParamGroup;
 import com.spectrace.mapper.BrandMapper;
 import com.spectrace.mapper.DeviceMapper;
 import com.spectrace.mapper.DeviceParamValueMapper;
+import com.spectrace.mapper.DeviceSeriesMapper;
 import com.spectrace.mapper.DeviceVariantMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -37,6 +39,7 @@ public class DeviceService {
     private final DeviceParamValueMapper valueMapper;
     private final DeviceVariantMapper variantMapper;
     private final BrandMapper brandMapper;
+    private final DeviceSeriesMapper seriesMapper;
     private final ParamService paramService;
     private final OperationLogService logService;
 
@@ -224,12 +227,19 @@ public class DeviceService {
         device.setThumbnail(req.getThumbnail());
         device.setDescription(req.getDescription());
         device.setStatus(req.getStatus() == null ? 1 : req.getStatus());
+        device.setSeriesId(validSeriesId(req.getSeriesId(), req.getBrandId()));
 
         boolean isNew = req.getId() == null;
         if (isNew) {
             deviceMapper.insert(device);
         } else {
             deviceMapper.updateById(device);
+            // updateById 忽略 null，取消归类必须显式置空
+            if (req.getSeriesId() == null) {
+                deviceMapper.update(null, Wrappers.<Device>lambdaUpdate()
+                        .eq(Device::getId, device.getId())
+                        .set(Device::getSeriesId, null));
+            }
         }
         saveParamValues(device.getId(), req.getParams(), sourceUrl, req.getParamConfidence());
         saveVariants(device.getId(), req.getVariants());
@@ -237,6 +247,21 @@ public class DeviceService {
         logService.record(adminId, adminName, isNew ? "CREATE_DEVICE" : "UPDATE_DEVICE",
                 "device", device.getId(), device.getName());
         return device;
+    }
+
+    /** 系列必须存在且与机型同品牌，否则世代回顾会跨品牌串数据。 */
+    private Long validSeriesId(Long seriesId, Long brandId) {
+        if (seriesId == null) {
+            return null;
+        }
+        DeviceSeries series = seriesMapper.selectById(seriesId);
+        if (series == null) {
+            throw new BizException("系列不存在：" + seriesId);
+        }
+        if (brandId == null || !series.getBrandId().equals(brandId)) {
+            throw new BizException("系列「" + series.getName() + "」不属于所选品牌");
+        }
+        return seriesId;
     }
 
     /**

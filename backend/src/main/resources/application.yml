@@ -59,6 +59,9 @@ spectrace:
   jwt:
     secret: "spectrace-dev-secret-key-please-change-in-production-0123456789"
     expire-seconds: 86400
+  # 站点对外域名（含协议，如 https://spectrace.example.com），用于 sitemap / robots；
+  # 反向代理部署时务必配置，否则会回退到请求域名（可能拿到内网地址）
+  public-base-url: ${SPECTRACE_PUBLIC_BASE_URL:}
   # SQLite 每日备份：VACUUM INTO 生成快照并只保留最近 N 份
   backup:
     enabled: ${SPECTRACE_BACKUP_ENABLED:true}

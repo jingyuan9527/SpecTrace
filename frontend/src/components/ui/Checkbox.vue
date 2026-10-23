@@ -11,9 +11,10 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 </script>
 
 <template>
+  <!-- reka-ui 的受控属性是 modelValue（Radix 的 checked 在这里不存在），写错会退化成非受控且点不动 -->
   <CheckboxRoot
     :id="props.id"
-    :checked="props.modelValue"
+    :model-value="props.modelValue"
     :disabled="props.disabled"
     :class="
       cn(
@@ -21,7 +22,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
         props.class,
       )
     "
-    @update:checked="emit('update:modelValue', $event === true)"
+    @update:model-value="emit('update:modelValue', $event === true)"
   >
     <CheckboxIndicator class="flex items-center justify-center text-current">
       <Check class="h-3.5 w-3.5" />

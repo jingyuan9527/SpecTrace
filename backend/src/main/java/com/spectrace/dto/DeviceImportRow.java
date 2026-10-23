@@ -22,6 +22,9 @@ public class DeviceImportRow {
 
     private String brandName;
 
+    /** 所属系列名称，空表示未归类 */
+    private String seriesName;
+
     private String releaseDate;
 
     /** paramKey -> value */

@@ -9,6 +9,7 @@ import {
   Flag,
   House,
   Laptop,
+  Layers,
   LogOut,
   Menu,
   Moon,
@@ -33,6 +34,7 @@ const logoutOpen = ref(false)
 
 const menus = [
   { path: '/admin/brands', label: '品牌管理', icon: Tags },
+  { path: '/admin/series', label: '系列管理', icon: Layers },
   { path: '/admin/params', label: '参数元数据', icon: SlidersHorizontal },
   { path: '/admin/devices', label: '机型管理', icon: Smartphone },
   { path: '/admin/agent-tasks', label: '抓取任务', icon: Bot },

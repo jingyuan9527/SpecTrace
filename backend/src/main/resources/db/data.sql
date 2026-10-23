@@ -69,6 +69,9 @@ INSERT OR IGNORE INTO device (id, brand_id, name, release_date, thumbnail, descr
  (5, 2, '小米 14',   '2023-10-26', '/devices/placeholder.svg',  '小米 2023 年数字旗舰', 1),
  (6, 3, '华为 Mate 60 Pro', '2023-08-29', '/devices/placeholder.svg', '华为 2023 年旗舰机型', 1);
 
+-- 产品线（系列）种子与机型归类由 SeriesInitializer 在列迁移之后写入：
+-- device.series_id 属于后加列，老库需先补列，脚本阶段直接引用会启动失败
+
 -- 修正历史种子数据里指向失效 CDN 或为空的机型缩略图（保留管理员自定义图片）
 UPDATE device SET thumbnail = '/devices/placeholder.svg'
  WHERE thumbnail IS NULL OR thumbnail = '' OR thumbnail LIKE 'https://cdn.spectrace.dev/%';

@@ -8,6 +8,7 @@ import com.spectrace.dto.DeviceImportRow;
 import com.spectrace.dto.DeviceSaveRequest;
 import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
+import com.spectrace.entity.DeviceSeries;
 import com.spectrace.entity.ParamDef;
 import com.spectrace.mapper.BrandMapper;
 import com.spectrace.mapper.DeviceMapper;
@@ -33,9 +34,11 @@ import java.util.stream.Collectors;
 /**
  * 机型批量导入（CSV）。
  *
- * <p>CSV 约定：必需列 {@code name}（机型）与 {@code brand}（品牌名），可选 {@code releaseDate}；
- * 其余列名若与参数 Key 一致则作为该参数值，另支持 {@code params} 列以 {@code key=value;key=value} 形式批量填写。
- * 表头同时兼容中文（机型名称 / 品牌 / 发布日期）。</p>
+ * <p>CSV 约定：必需列 {@code name}（机型）与 {@code brand}（品牌名），可选 {@code series}（系列）与
+ * {@code releaseDate}；其余列名若与参数 Key 一致则作为该参数值，另支持 {@code params} 列以
+ * {@code key=value;key=value} 形式批量填写。表头同时兼容中文（机型名称 / 品牌 / 系列 / 发布日期）。</p>
+ *
+ * <p>系列按「品牌内系列名」匹配，不存在则自动创建；留空表示未归类。</p>
  */
 @Slf4j
 @Service
@@ -45,6 +48,7 @@ public class DeviceImportService {
     private static final int MAX_ROWS = 500;
     private static final Set<String> NAME_HEADERS = Set.of("name", "model", "机型名称", "机型");
     private static final Set<String> BRAND_HEADERS = Set.of("brand", "brandname", "品牌", "品牌名称");
+    private static final Set<String> SERIES_HEADERS = Set.of("series", "系列", "产品线");
     private static final Set<String> DATE_HEADERS = Set.of("releasedate", "date", "发布日期", "发布时间");
     private static final Set<String> PARAMS_HEADERS = Set.of("params", "参数");
 
@@ -55,6 +59,7 @@ public class DeviceImportService {
             DateTimeFormatter.ofPattern("yyyy年M月d日"));
 
     private final DeviceService deviceService;
+    private final DeviceSeriesService seriesService;
     private final ParamService paramService;
     private final BrandMapper brandMapper;
     private final DeviceMapper deviceMapper;
@@ -62,7 +67,7 @@ public class DeviceImportService {
     /** 生成与当前参数定义同步的导入模板（UTF-8 BOM，Excel 直接可读）。 */
     public byte[] template() {
         List<ParamDef> defs = paramService.listDefs(null, 1);
-        StringBuilder header = new StringBuilder("\uFEFFname,brand,releaseDate");
+        StringBuilder header = new StringBuilder("\uFEFFname,brand,series,releaseDate");
         for (ParamDef def : defs) {
             header.append(',').append(def.getParamKey());
         }
@@ -97,12 +102,13 @@ public class DeviceImportService {
         }
         int dateIndex = indexOf(header, DATE_HEADERS);
         int paramsIndex = indexOf(header, PARAMS_HEADERS);
+        int seriesIndex = indexOf(header, SERIES_HEADERS);
 
         // 列下标 -> 参数定义，用于逐列取值
         Map<Integer, ParamDef> paramColumns = new LinkedHashMap<>();
         List<String> unknownColumns = new ArrayList<>();
         for (int i = 0; i < header.size(); i++) {
-            if (i == nameIndex || i == brandIndex || i == dateIndex || i == paramsIndex) {
+            if (i == nameIndex || i == brandIndex || i == dateIndex || i == paramsIndex || i == seriesIndex) {
                 continue;
             }
             String key = header.get(i);
@@ -123,6 +129,7 @@ public class DeviceImportService {
         List<Brand> brands = brandMapper.selectList(null);
         Map<String, Brand> brandByName = brands.stream()
                 .collect(Collectors.toMap(b -> b.getName().trim().toLowerCase(Locale.ROOT), b -> b, (a, b) -> a));
+        Map<String, DeviceSeries> seriesByName = seriesService.nameIndex();
 
         List<DeviceImportRow> rows = new ArrayList<>();
         Set<String> seenInFile = new HashSet<>();
@@ -156,6 +163,11 @@ public class DeviceImportService {
                     : null;
             if (StringUtils.hasText(row.getBrandName()) && brand == null) {
                 row.getErrors().add("品牌不存在：" + row.getBrandName());
+            }
+            row.setSeriesName(cell(cells, seriesIndex));
+            if (StringUtils.hasText(row.getSeriesName()) && brand != null
+                    && seriesByName.get(DeviceSeriesService.key(brand.getId(), row.getSeriesName())) == null) {
+                row.getWarnings().add("将新建系列：" + row.getSeriesName());
             }
 
             if (dateIndex >= 0) {
@@ -213,14 +225,16 @@ public class DeviceImportService {
             }
             Brand brand = brandByName.get(row.getBrandName().trim().toLowerCase(Locale.ROOT));
             try {
+                DeviceSeries series = seriesService.resolveOrCreate(brand.getId(), row.getSeriesName(), seriesByName);
                 DeviceSaveRequest req = new DeviceSaveRequest();
                 req.setBrandId(brand.getId());
+                req.setSeriesId(series == null ? null : series.getId());
                 req.setName(row.getName().trim());
                 req.setReleaseDate(StringUtils.hasText(row.getReleaseDate()) ? LocalDate.parse(row.getReleaseDate()) : null);
                 req.setParams(row.getParams());
                 req.setStatus(1);
                 Device device = deviceService.save(req, adminId, adminName);
-                row.setWarnings(List.of("已导入，机型 ID " + device.getId()));
+                row.getWarnings().add("已导入，机型 ID " + device.getId());
                 created++;
             } catch (Exception e) {
                 log.error("导入机型失败: rowNo={} name={} brand={}", row.getRowNo(), row.getName(), row.getBrandName(), e);

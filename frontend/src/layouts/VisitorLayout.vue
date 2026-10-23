@@ -10,6 +10,7 @@ import {
   Moon,
   Smartphone,
   Sun,
+  TrendingUp,
 } from '@lucide/vue'
 import { useThemeStore } from '@/stores/theme'
 import { useCompareStore } from '@/stores/compare'
@@ -26,6 +27,7 @@ const tabs = [
   { name: 'devices', label: '机型库', icon: Smartphone },
   { name: 'compare', label: '机型对比', icon: GitCompareArrows },
   { name: 'history', label: '参数历史', icon: History },
+  { name: 'evolution', label: '世代回顾', icon: TrendingUp },
 ]
 
 /** 详情页属于机型库分支，导航高亮要保持在同一父级。 */

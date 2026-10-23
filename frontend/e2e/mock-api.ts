@@ -12,6 +12,14 @@ interface MockBrand {
   status: number
 }
 
+interface MockSeries {
+  id: number
+  brandId: number
+  name: string
+  sortOrder: number
+  status: number
+}
+
 interface MockDevice {
   id: number
   brandId: number
@@ -19,6 +27,7 @@ interface MockDevice {
   releaseDate: string
   thumbnail: string
   status: number
+  seriesId?: number
 }
 
 const PARAMS: Record<number, Record<string, string>> = {
@@ -33,10 +42,14 @@ export async function mockApi(page: Page) {
       { id: 1, name: 'Apple', logo: '/devices/placeholder.svg', sortOrder: 1, status: 1 },
       { id: 2, name: '华为', logo: '/devices/placeholder.svg', sortOrder: 2, status: 1 },
     ] as MockBrand[],
+    series: [
+      { id: 1, brandId: 1, name: 'iPhone 数字系列', sortOrder: 1, status: 1 },
+      { id: 2, brandId: 2, name: 'Mate 系列', sortOrder: 2, status: 1 },
+    ] as MockSeries[],
     devices: [
-      { id: 7, brandId: 1, name: 'iPhone 17', releaseDate: '2025-09-19', thumbnail: '/devices/placeholder.svg', status: 1 },
-      { id: 4, brandId: 1, name: 'iPhone 16', releaseDate: '2024-09-20', thumbnail: '/devices/placeholder.svg', status: 1 },
-      { id: 9, brandId: 2, name: 'Mate 70', releaseDate: '2024-11-26', thumbnail: '/devices/placeholder.svg', status: 1 },
+      { id: 7, brandId: 1, name: 'iPhone 17', releaseDate: '2025-09-19', thumbnail: '/devices/placeholder.svg', status: 1, seriesId: 1 },
+      { id: 4, brandId: 1, name: 'iPhone 16', releaseDate: '2024-09-20', thumbnail: '/devices/placeholder.svg', status: 1, seriesId: 1 },
+      { id: 9, brandId: 2, name: 'Mate 70', releaseDate: '2024-11-26', thumbnail: '/devices/placeholder.svg', status: 1, seriesId: 2 },
     ] as MockDevice[],
     pending: [
       {
@@ -54,6 +67,7 @@ export async function mockApi(page: Page) {
   }
   let nextBrandId = 10
   let nextDeviceId = 100
+  let nextSeriesId = 10
 
   const pageResult = (records: unknown[]) => ({
     total: records.length,
@@ -90,9 +104,80 @@ export async function mockApi(page: Page) {
       return ok([
         { id: 1, paramKey: 'release_date', paramName: '发布时间', groupId: 1, paramType: 'date' },
         { id: 3, paramKey: 'screen_size', paramName: '屏幕尺寸', groupId: 2, paramType: 'number', unit: '英寸' },
+        { id: 2, paramKey: 'launch_price', paramName: '首发价格', groupId: 1, paramType: 'number', unit: '元' },
         { id: 11, paramKey: 'battery_capacity', paramName: '电池容量', groupId: 3, paramType: 'number', unit: 'mAh' },
+        { id: 18, paramKey: 'weight', paramName: '机身重量', groupId: 4, paramType: 'number', unit: 'g' },
         { id: 7, paramKey: 'chipset', paramName: '芯片', groupId: 4, paramType: 'text' },
+        { id: 5, paramKey: 'refresh_rate', paramName: '屏幕刷新率', groupId: 2, paramType: 'number', unit: 'Hz' },
+        { id: 12, paramKey: 'charging_power', paramName: '充电功率', groupId: 3, paramType: 'number', unit: 'W' },
+        { id: 13, paramKey: 'camera_main', paramName: '主摄', groupId: 4, paramType: 'number', unit: '万像素' },
+        { id: 14, paramKey: 'ram', paramName: '运行内存', groupId: 4, paramType: 'number', unit: 'GB' },
+        { id: 15, paramKey: 'storage', paramName: '存储容量', groupId: 4, paramType: 'number', unit: 'GB' },
       ])
+    }
+    if (path === '/public/series') {
+      const brandId = Number(url.searchParams.get('brandId') || 0)
+      return ok(
+        [
+          { id: 1, brandId: 1, brandName: 'Apple', name: 'iPhone 数字系列', deviceCount: 2, startYear: 2024, endYear: 2025 },
+          { id: 2, brandId: 2, brandName: '华为', name: 'Mate 系列', deviceCount: 1, startYear: 2024, endYear: 2024 },
+        ].filter((series) => !brandId || series.brandId === brandId),
+      )
+    }
+    if (/^\/public\/series\/\d+\/evolution$/.test(path)) {
+      const seriesId = Number(path.split('/')[3])
+      const defIds = (url.searchParams.get('paramDefIds') || '')
+        .split(',')
+        .map(Number)
+        .filter(Boolean)
+      // 只有这四个参数有数值，其余按「无数据参数」返回，用于覆盖非数值参数的展示分支
+      const numericMeta: Record<number, { paramKey: string; paramName: string; unit: string; values: number[] }> = {
+        3: { paramKey: 'screen_size', paramName: '屏幕尺寸', unit: '英寸', values: [6.1, 6.3] },
+        11: { paramKey: 'battery_capacity', paramName: '电池容量', unit: 'mAh', values: [3561, 3600] },
+        18: { paramKey: 'weight', paramName: '机身重量', unit: 'g', values: [170, 172] },
+        2: { paramKey: 'launch_price', paramName: '首发价格', unit: '元', values: [5999, 5999] },
+      }
+      const isApple = seriesId === 1
+      const devices = isApple
+        ? [
+            { id: 4, name: 'iPhone 16', releaseDate: '2024-09-20', thumbnail: '/devices/placeholder.svg', launchPrice: 5999 },
+            { id: 7, name: 'iPhone 17', releaseDate: '2025-09-19', thumbnail: '/devices/placeholder.svg', launchPrice: 5999 },
+          ]
+        : [{ id: 9, name: 'Mate 70', releaseDate: '2024-11-26', thumbnail: '/devices/placeholder.svg', launchPrice: 5499 }]
+      const params = defIds.map((defId) => {
+        const meta = numericMeta[defId]
+        if (!meta) {
+          return {
+            paramDefId: defId,
+            paramName: '未收录参数',
+            numeric: false,
+            missingCount: devices.length,
+            points: devices.map((device) => ({ deviceId: device.id, raw: null, value: null, conflict: false })),
+          }
+        }
+        return {
+          paramDefId: defId,
+          paramKey: meta.paramKey,
+          paramName: meta.paramName,
+          unit: meta.unit,
+          numeric: true,
+          missingCount: 0,
+          points: devices.map((device, index) => ({
+            deviceId: device.id,
+            raw: String(meta.values[index]),
+            value: meta.values[index],
+            conflict: false,
+          })),
+        }
+      })
+      return ok({
+        seriesId,
+        seriesName: isApple ? 'iPhone 数字系列' : 'Mate 系列',
+        brandId: isApple ? 1 : 2,
+        brandName: isApple ? 'Apple' : '华为',
+        devices,
+        params,
+      })
     }
     if (path === '/public/devices/hot') return ok(state.devices.slice(0, 4))
     if (path === '/public/devices/suggest') {
@@ -181,6 +266,67 @@ export async function mockApi(page: Page) {
       if (method === 'DELETE') state.brands = state.brands.filter((brand) => brand.id !== numberId)
       return ok(true)
     }
+    if (path === '/admin/series/unassigned') {
+      return ok(
+        state.devices
+          .filter((device) => !device.seriesId)
+          .map((device) => ({ ...device, brandName: brandNameOf(device.brandId) })),
+      )
+    }
+    if (path === '/admin/series/assign' && method === 'POST') {
+      const body = request.postDataJSON()
+      const ids: number[] = body.deviceIds ?? []
+      state.devices.forEach((device) => {
+        if (ids.includes(device.id)) device.seriesId = body.seriesId ?? undefined
+      })
+      return ok(ids.length)
+    }
+    if (/^\/admin\/series\/\d+\/merge$/.test(path)) {
+      const sourceId = Number(path.split('/')[3])
+      const body = request.postDataJSON()
+      const moved = state.devices.filter((device) => device.seriesId === sourceId)
+      moved.forEach((device) => {
+        device.seriesId = body.targetId
+      })
+      state.series = state.series.filter((series) => series.id !== sourceId)
+      return ok(moved.length)
+    }
+    if (path === '/admin/series') {
+      if (method === 'POST') {
+        const body = request.postDataJSON()
+        // id 放在展开之后：真实后端会忽略请求体里的 id，mock 也要保证主键由服务端生成
+        const created: MockSeries = { sortOrder: state.series.length + 1, status: 1, ...body, id: nextSeriesId++ }
+        state.series.push(created)
+        return ok(created)
+      }
+      return ok(
+        [...state.series]
+          .sort((left, right) => left.sortOrder - right.sortOrder || left.id - right.id)
+          .map((series) => {
+            const members = state.devices.filter((device) => device.seriesId === series.id)
+            const years = members
+              .map((device) => Number(device.releaseDate.slice(0, 4)))
+              .filter((year) => Number.isFinite(year))
+            return {
+              ...series,
+              brandName: brandNameOf(series.brandId),
+              deviceCount: members.length,
+              startYear: years.length ? Math.min(...years) : null,
+              endYear: years.length ? Math.max(...years) : null,
+            }
+          }),
+      )
+    }
+    if (/^\/admin\/series\/\d+$/.test(path)) {
+      if (method === 'PUT') {
+        const body = request.postDataJSON()
+        const target = state.series.find((series) => series.id === numberId)
+        if (target) Object.assign(target, body)
+        return ok(target ?? true)
+      }
+      if (method === 'DELETE') state.series = state.series.filter((series) => series.id !== numberId)
+      return ok(true)
+    }
     if (path === '/admin/param-groups') return ok([{ id: 1, name: '基础信息', sortOrder: 1 }])
     if (path === '/admin/param-defs') {
       return ok([{ id: 1, paramKey: 'release_date', paramName: '发布时间', groupId: 1, paramType: 'date', sortOrder: 1 }])
@@ -195,6 +341,7 @@ export async function mockApi(page: Page) {
           releaseDate: body.releaseDate || '',
           thumbnail: body.thumbnail || '',
           status: 1,
+          seriesId: body.seriesId ?? undefined,
         }
         state.devices.push(created)
         return ok(created)

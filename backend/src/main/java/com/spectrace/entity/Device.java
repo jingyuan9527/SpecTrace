@@ -20,6 +20,9 @@ public class Device {
 
     private Long brandId;
 
+    /** 所属产品线，可空：未归类机型照常展示，只是不进世代回顾 */
+    private Long seriesId;
+
     private String name;
 
     private LocalDate releaseDate;

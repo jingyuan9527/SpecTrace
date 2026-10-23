@@ -18,6 +18,9 @@ public class DeviceSaveRequest {
 
     private Long brandId;
 
+    /** 所属系列；为空表示未归类 */
+    private Long seriesId;
+
     @NotBlank
     private String name;
 

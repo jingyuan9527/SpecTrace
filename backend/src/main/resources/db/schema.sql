@@ -36,9 +36,23 @@ CREATE TABLE IF NOT EXISTS param_def (
     deleted       TINYINT     NOT NULL DEFAULT 0
 );
 
+-- 产品线（系列）：人工维护的归类维度，用于「世代回顾」，未归类机型不受影响
+CREATE TABLE IF NOT EXISTS device_series (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id    BIGINT       NOT NULL,
+    name        VARCHAR(64)  NOT NULL,
+    sort_order  INT          NOT NULL DEFAULT 0,
+    status      TINYINT      NOT NULL DEFAULT 1,
+    created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    deleted     TINYINT      NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS device (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     brand_id     BIGINT       NOT NULL,
+    -- 所属产品线，可空：未归类机型照常展示，只是不进世代回顾
+    series_id    BIGINT       DEFAULT NULL,
     name         VARCHAR(128) NOT NULL,
     release_date DATE         DEFAULT NULL,
     thumbnail    VARCHAR(512) DEFAULT NULL,
@@ -177,6 +191,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_username ON admin_user (username) WHERE del
 CREATE INDEX IF NOT EXISTS idx_brand_sort ON brand (sort_order);
 CREATE INDEX IF NOT EXISTS idx_param_group ON param_def (group_id);
 CREATE INDEX IF NOT EXISTS idx_device_brand ON device (brand_id);
+-- device.series_id 是后加列，其索引由 SqliteSchemaMigration 在补列之后创建，脚本阶段引用会导致老库启动失败
+CREATE UNIQUE INDEX IF NOT EXISTS uk_series_name ON device_series (brand_id, name) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_series_brand ON device_series (brand_id);
 CREATE INDEX IF NOT EXISTS idx_device_release ON device (release_date);
 CREATE INDEX IF NOT EXISTS idx_device_name ON device (name);
 CREATE INDEX IF NOT EXISTS idx_dpv_device ON device_param_value (device_id);

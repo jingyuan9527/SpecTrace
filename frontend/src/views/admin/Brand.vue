@@ -101,7 +101,10 @@ async function onFileChange(event: Event) {
   uploading.value = true
   try {
     const compressed = await compressImage(file)
-    const result = await adminApi.upload(compressed)
+    if (compressed.exceeded) {
+      toast.warning(`压缩后仍有 ${formatBytes(compressed.file.size)}，建议裁剪后再上传`)
+    }
+    const result = await adminApi.upload(compressed.file)
     form.logo = result.url
     toast.success(`Logo 上传成功（${formatBytes(result.size)}）`)
   } finally {
