@@ -64,10 +64,34 @@ export async function mockApi(page: Page) {
       },
     ],
     tasks: [] as any[],
+    users: [
+      { id: 1, username: 'admin', nickname: '超级管理员', role: 'SUPER_ADMIN', status: 1 },
+      { id: 2, username: 'editor', nickname: '内容编辑', role: 'ADMIN', status: 1 },
+    ] as any[],
+    groups: [{ id: 1, name: '基础信息', sortOrder: 1 }] as any[],
+    defs: [
+      { id: 1, paramKey: 'release_date', paramName: '发布时间', groupId: 1, paramType: 'date', sortOrder: 1, enabled: 1 },
+    ] as any[],
+    feedback: [
+      {
+        id: 1,
+        deviceId: 7,
+        deviceName: 'iPhone 17',
+        paramName: '电池容量',
+        currentValue: '3600',
+        suggestedValue: '3650',
+        description: '官网标注 3650mAh',
+        status: 'OPEN',
+        createdAt: '2026-10-22T09:00:00',
+      },
+    ] as any[],
   }
   let nextBrandId = 10
   let nextDeviceId = 100
   let nextSeriesId = 10
+  let nextUserId = 10
+  let nextGroupId = 10
+  let nextDefId = 10
 
   const pageResult = (records: unknown[]) => ({
     total: records.length,
@@ -354,9 +378,53 @@ export async function mockApi(page: Page) {
       if (method === 'DELETE') state.series = state.series.filter((series) => series.id !== numberId)
       return ok(true)
     }
-    if (path === '/admin/param-groups') return ok([{ id: 1, name: '基础信息', sortOrder: 1 }])
+    if (path === '/admin/param-groups') {
+      if (method === 'POST') {
+        const body = request.postDataJSON()
+        const created = { id: nextGroupId++, name: body.name, sortOrder: body.sortOrder ?? state.groups.length + 1 }
+        state.groups.push(created)
+        return ok(created)
+      }
+      return ok(state.groups)
+    }
+    if (/^\/admin\/param-groups\/\d+$/.test(path)) {
+      const id = Number(path.split('/')[3])
+      if (method === 'PUT') {
+        const target = state.groups.find((group) => group.id === id)
+        if (target) Object.assign(target, request.postDataJSON())
+        return ok(target ?? true)
+      }
+      if (method === 'DELETE') state.groups = state.groups.filter((group) => group.id !== id)
+      return ok(true)
+    }
     if (path === '/admin/param-defs') {
-      return ok([{ id: 1, paramKey: 'release_date', paramName: '发布时间', groupId: 1, paramType: 'date', sortOrder: 1 }])
+      if (method === 'POST') {
+        const body = request.postDataJSON()
+        const created = {
+          id: nextDefId++,
+          paramKey: body.paramKey,
+          paramName: body.paramName,
+          groupId: body.groupId,
+          paramType: body.paramType ?? 'text',
+          unit: body.unit ?? '',
+          sortOrder: body.sortOrder ?? 99,
+          enabled: body.enabled ?? 1,
+        }
+        state.defs.push(created)
+        return ok(created)
+      }
+      const groupId = Number(url.searchParams.get('groupId') || 0)
+      return ok(state.defs.filter((def) => !groupId || def.groupId === groupId))
+    }
+    if (/^\/admin\/param-defs\/\d+$/.test(path)) {
+      const id = Number(path.split('/')[3])
+      if (method === 'PUT') {
+        const target = state.defs.find((def) => def.id === id)
+        if (target) Object.assign(target, request.postDataJSON())
+        return ok(target ?? true)
+      }
+      if (method === 'DELETE') state.defs = state.defs.filter((def) => def.id !== id)
+      return ok(true)
     }
     if (path === '/admin/devices') {
       if (method === 'POST') {
@@ -405,7 +473,46 @@ export async function mockApi(page: Page) {
     if (/^\/admin\/pending-data\/\d+\/approve$/.test(path)) return ok(7)
     if (/^\/admin\/pending-data\/\d+\/discard$/.test(path)) return ok(null)
     if (/^\/admin\/pending-data\/batch-/.test(path)) return ok({ success: 1, failed: 0, failures: [] })
-    if (path === '/admin/users' || path === '/admin/logs' || path === '/admin/feedback') return ok(pageResult([]))
+    if (path === '/admin/users') {
+      if (method === 'POST') {
+        const body = request.postDataJSON()
+        const created = {
+          id: nextUserId++,
+          username: body.username,
+          nickname: body.nickname ?? '',
+          role: body.role ?? 'ADMIN',
+          status: 1,
+        }
+        state.users.push(created)
+        return ok(created)
+      }
+      return ok(pageResult(state.users))
+    }
+    if (/^\/admin\/users\/\d+\/(role|status)$/.test(path)) {
+      const id = Number(path.split('/')[3])
+      const target = state.users.find((user) => user.id === id)
+      if (target) {
+        if (path.endsWith('/role')) target.role = url.searchParams.get('role') ?? target.role
+        else target.status = target.status === 1 ? 0 : 1
+      }
+      return ok(target ?? true)
+    }
+    if (/^\/admin\/users\/\d+\/password$/.test(path)) return ok(true)
+    if (/^\/admin\/users\/\d+$/.test(path)) {
+      if (method === 'DELETE') state.users = state.users.filter((user) => user.id !== numberId)
+      return ok(true)
+    }
+    if (path === '/admin/feedback') return ok(pageResult(state.feedback))
+    if (/^\/admin\/feedback\/\d+\/status$/.test(path)) {
+      const id = Number(path.split('/')[3])
+      const target = state.feedback.find((item) => item.id === id)
+      if (target) {
+        target.status = url.searchParams.get('status') ?? target.status
+        target.handlerNote = url.searchParams.get('note') ?? undefined
+      }
+      return ok(target ?? true)
+    }
+    if (path === '/admin/logs') return ok(pageResult([]))
     if (path === '/admin/files/upload') {
       return ok({ url: '/uploads/e2e.webp', width: 800, height: 600, size: 120_000, contentType: 'image/webp' })
     }

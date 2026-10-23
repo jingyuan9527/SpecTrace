@@ -552,6 +552,67 @@
 
 ---
 
+## P7 · 质量补强（2026-10-23 完成）
+
+> 来源：T1–T35 全量完成后的工程复盘。
+
+| 任务 | 状态 | 落地要点 |
+| --- | --- | --- |
+| T37 CI 测试校验 | ✅ | 新增 `.github/workflows/ci.yml`：PR 与主干推送跑前端 typecheck / build / e2e、后端 `mvn -B package`（含单测）；npm 与 Maven 走缓存，失败上传 trace / 截图 / 视频 |
+| T38 后端纯逻辑单测 | ✅ | 新增 23 个用例：`ParamValueParser`（换算、别名、g 消歧、冲突）、`AiInsightSupport`（解析兜底、裁剪、缓存过期、限流）、`DeviceImportService`（表头兼容、行号、重复、单位警告）、`EvolutionService`（排序、缺失点、最低价、参数上限） |
+| T39 e2e 后台页面缺口 | ✅ | 新增 `admin-quality.spec.ts` 覆盖账号新增/禁用/删除、参数分组与定义维护、纠错反馈状态流转；mock 补对应写接口 |
+
+### T37 CI 增加测试校验（优先级 1）✅
+
+**已完成（2026-10-23）**：`.github/workflows/ci.yml` 分两个 job——前端 `npm ci` → typecheck → build → `playwright install chromium` → e2e，后端 `mvn -B package`（含单测）；失败时上传 `playwright-report` 与 `test-results`，保留 7 天。
+
+**问题**：`.github/workflows` 只有 `docker-publish.yml`，PR 仅做镜像构建校验，不跑 typecheck / build / 后端编译 / e2e；目前全靠提交前手动执行，人一多必然漏。
+
+**改动**
+- 新增 PR 与 push 触发的工作流：前端 `typecheck` + `build`、后端 `mvn -DskipTests package`、e2e（Playwright 走 mock 接口，不需要数据库）
+- 依赖缓存：npm、Maven、Playwright 浏览器
+- 失败保留 e2e 的 trace / 截图 / 视频
+
+**验收**：故意引入一个类型错误，PR 检查变红且能定位到具体文件；恢复后变绿。
+
+**预估**：0.5 天
+
+---
+
+### T38 后端关键纯逻辑单测（优先级 2）✅
+
+**已完成（2026-10-23）**：`ParamValueParserTest`（7）、`AiInsightSupportTest`（5）、`DeviceImportServiceTest`（6，dryRun 分支）、`EvolutionServiceTest`（5，聚合与排序），共 23 个用例，`mvn test` 全绿。MyBatis-Plus 的 lambda 查询在脱离容器时需 `TableInfoHelper` 显式注册，测试基类已处理。
+
+**问题**：`backend/src` 只有 `main`，没有任何测试，CI 即使跑起来也只能验编译。
+
+**改动**
+- `ParamValueParser`：同量纲换算（长度 / 存储 / 电池 / 重量 / 频率 / 功率 / 倍率）、无单位、量纲冲突、非数值兜底
+- `DeviceImportService` 的 CSV 解析：表头兼容（`series` / 系列 / 产品线）、空行、错误行号、单位冲突写入 warnings
+- `EvolutionService` 聚合：发布时间排序（空值排末尾）、缺失点、`launch_price` 取变体最低价
+- `AiInsightSupport.parse`：合法 JSON、非 JSON 纯文本兜底、超长裁剪
+
+**验收**：`mvn test` 全绿，覆盖上述四类分支；不追求整体覆盖率。
+
+**预估**：1–1.5 天
+
+---
+
+### T39 e2e 后台页面缺口（优先级 3）✅
+
+**已完成（2026-10-23）**：新增 `e2e/admin-quality.spec.ts` 三个用例（账号新增/禁用/删除、参数分组与参数定义维护、纠错反馈标记已处理），`mock-api.ts` 补齐 users / param-groups / param-defs / feedback 的写接口；全量 10 条 e2e 通过。AI 配置、日志、运维三个只读页仍未加断言，优先级低。
+
+**问题**：后台 12 个页面中，参数管理、AI 配置、纠错反馈、用户、日志、运维没有用例。
+
+**改动**
+- 按风险补：用户管理（角色 / 禁用）、参数管理（影响全站展示）、纠错反馈（状态流转）
+- 其余页面（AI 配置、日志、运维）只要有入口与空态断言即可
+
+**验收**：新增用例纳入 `npm run test:e2e` 并全部通过。
+
+**预估**：1 天
+
+---
+
 ## 依赖与并行建议
 
 - T1 独立，最先做，当天可完成
@@ -570,6 +631,8 @@
 - T32 / T33 相互独立，可并行
 - T34 只动 e2e，可与前端改动并行；真机复核需在发布前安排人工
 - T35 依赖 T32 定下的口径（涨跌幅只在前端算），但接口与展示互不影响，可后置
+- T37 与 T38 互补：CI 先上能立刻拦住编译与构建类回归，单测随后自动接入同一条流水线
+- T39 与 T37 无依赖，但建议等 CI 就绪后再补，否则新用例只能靠手动跑
 
 ## 每项完成定义（DoD）
 
