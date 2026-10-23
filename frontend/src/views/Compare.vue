@@ -15,6 +15,7 @@ import {
   Share2,
   Smartphone,
   Sparkles,
+  Trash2,
   X,
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
@@ -38,6 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ImageWithFallback from '@/components/ImageWithFallback.vue'
 
 interface Device {
@@ -70,6 +72,7 @@ interface CompareInsight {
 
 const insight = ref<CompareInsight | null>(null)
 const insightGenerating = ref(false)
+const clearOpen = ref(false)
 
 /** 解析 `?ids=1,2,3`，最多取 4 个正整数。 */
 function parseIds(): number[] {
@@ -199,6 +202,15 @@ function remove(id: number) {
   load()
 }
 
+/** 清空只动本地对比池，URL 由 watch(compare.ids) 同步为空，无需手工改 query。 */
+function clearPool() {
+  compare.clear()
+  result.value = null
+  insight.value = null
+  clearOpen.value = false
+  toast.success('对比池已清空')
+}
+
 async function share() {
   syncUrl()
   await nextTick()
@@ -281,6 +293,10 @@ async function copyToClipboard() {
         <Button :disabled="!result" @click="copyToClipboard">
           <Copy />
           复制图片
+        </Button>
+        <Button variant="outline" :disabled="!compare.count" @click="clearOpen = true">
+          <Trash2 />
+          清空
         </Button>
       </div>
     </div>
@@ -443,5 +459,15 @@ async function copyToClipboard() {
     </motion.div>
 
     <Empty v-else title="暂无对比数据" description="请确认所选机型已录入参数。" />
+
+    <ConfirmDialog
+      :open="clearOpen"
+      title="清空对比池"
+      :description="`确认移除当前 ${compare.count} 台机型？只清除本地选择，不影响已录入的参数。`"
+      confirm-text="清空"
+      destructive
+      @update:open="clearOpen = $event"
+      @confirm="clearPool"
+    />
   </div>
 </template>
