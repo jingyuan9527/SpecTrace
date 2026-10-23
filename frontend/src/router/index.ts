@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { toast } from 'vue-sonner'
+import { authApi } from '@/api'
 import { resetPageMeta } from '@/lib/meta'
 
 const routes: RouteRecordRaw[] = [
@@ -46,8 +48,30 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to) => {
-  if (to.meta.requiresAuth && !localStorage.getItem('spectrace-token')) {
+/**
+ * 本会话是否已向服务端确认过 token。
+ * 整页刷新会重置，因此每次加载后台都校验一次；SPA 内跳转不重复请求，避免每个页面都多一次往返。
+ */
+let sessionChecked = false
+
+router.beforeEach(async (to) => {
+  if (!to.meta.requiresAuth) return true
+  if (!localStorage.getItem('spectrace-token')) return { name: 'admin-login' }
+  if (sessionChecked) return true
+  try {
+    // localStorage 里的 token 可能已过期或被吊销，仅凭它存在就放行会让后台先渲染再逐个请求报错
+    const me = await authApi.me()
+    sessionChecked = true
+    // 昵称 / 角色可能在后台被改过，以服务端返回为准刷新本地缓存
+    const cached = JSON.parse(localStorage.getItem('spectrace-user') || '{}')
+    localStorage.setItem(
+      'spectrace-user',
+      JSON.stringify({ ...cached, username: me.username ?? cached.username, userId: me.adminId ?? cached.userId }),
+    )
+  } catch {
+    localStorage.removeItem('spectrace-token')
+    localStorage.removeItem('spectrace-user')
+    toast.error('登录已失效，请重新登录')
     return { name: 'admin-login' }
   }
   return true

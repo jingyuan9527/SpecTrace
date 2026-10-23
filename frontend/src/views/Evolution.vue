@@ -8,7 +8,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import type { EChartsType } from 'echarts/core'
 import html2canvas from 'html2canvas'
 import { motion } from 'motion-v'
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Camera, Smartphone, TrendingUp } from '@lucide/vue'
+import { ArrowDownRight, ArrowRight, ArrowUpRight, Camera, Loader2, Smartphone, Sparkles, TrendingUp } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
 import { useThemeStore } from '@/stores/theme'
@@ -60,8 +60,6 @@ interface EvolutionParam {
   numeric: boolean
   points: EvolutionPoint[]
   missingCount: number
-  changeRate?: number | null
-  trend: 'UP' | 'DOWN' | 'FLAT' | 'UNKNOWN'
 }
 
 interface EvolutionResult {
@@ -120,6 +118,20 @@ const toIndex = ref(0)
 /** 首屏数据装载完成前不回写 URL，避免把默认值当成用户选择 */
 const ready = ref(false)
 
+interface SeriesInsight {
+  available: boolean
+  failed?: boolean
+  cached?: boolean
+  summary?: string | null
+  points?: string[]
+  generatedAt?: string
+}
+
+const insight = ref<SeriesInsight | null>(null)
+const insightGenerating = ref(false)
+/** 区间快速调整会并发请求，只让最后一次的结果落地 */
+let insightSeq = 0
+
 const brandOptions = computed(() => brands.value.map((b) => ({ label: b.name, value: b.id })))
 const brandSeries = computed(() => allSeries.value.filter((s) => s.brandId === brandId.value))
 
@@ -162,6 +174,7 @@ const conflictCount = computed(
   () => visibleParams.value.reduce((sum, param) => sum + param.visiblePoints.filter((p) => p.conflict).length, 0),
 )
 
+/** 涨跌幅与趋势的唯一算法：后端不再计算，因为只有前端知道当前裁剪出的世代区间。 */
 function trendOf(points: EvolutionPoint[], numeric: boolean) {
   const numbers = points
     .map((point) => point.value)
@@ -214,6 +227,45 @@ async function load() {
   // 图表容器依赖 v-if 结束后的真实布局，必须等渲染完成再初始化
   await nextTick()
   renderCharts()
+  await loadInsight()
+}
+
+/** 只读缓存：未配置模型时后端返回 available=false，整块入口隐藏。 */
+async function loadInsight() {
+  const seq = ++insightSeq
+  insight.value = null
+  if (!seriesId.value || visibleDevices.value.length < 2) return
+  try {
+    const result = await publicApi.seriesInsight(
+      seriesId.value,
+      visibleDevices.value.map((device) => device.id),
+      selectedDefIds.value,
+    )
+    if (seq === insightSeq) insight.value = result
+  } catch {
+    // 文案不是关键路径，取不到就不展示
+    if (seq === insightSeq) insight.value = null
+  }
+}
+
+/** 生成失败后端降级为 failed=true（HTTP 200），不弹错误、不阻塞图表。 */
+async function generateInsight() {
+  if (insightGenerating.value || !seriesId.value) return
+  insightGenerating.value = true
+  try {
+    insight.value = await publicApi.generateSeriesInsight(
+      seriesId.value,
+      visibleDevices.value.map((device) => device.id),
+      selectedDefIds.value,
+    )
+  } catch (error) {
+    // 429 由请求拦截器提示，保留入口态，避免误报服务不可用
+    if ((error as { response?: { status?: number } })?.response?.status !== 429) {
+      insight.value = { available: true, failed: true }
+    }
+  } finally {
+    insightGenerating.value = false
+  }
 }
 
 function cssVar(name: string, fallback: string) {
@@ -434,6 +486,8 @@ watch(toIndex, (value) => {
 watch([fromIndex, toIndex], async () => {
   await nextTick()
   renderCharts()
+  // load() 自己会拉一次，这里只处理用户后续调整区间
+  if (ready.value && !loading.value) void loadInsight()
 })
 
 watch(
@@ -572,6 +626,46 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
+
+      <Card v-if="insight?.available" class="border-dashed">
+        <CardContent class="space-y-3 p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5 text-sm font-medium">
+              <Sparkles class="h-4 w-4 text-primary" />
+              AI 世代回顾
+              <Badge v-if="insight.cached" variant="secondary">缓存</Badge>
+            </div>
+            <Button
+              v-if="!insight.summary && !insight.failed"
+              size="sm"
+              variant="outline"
+              :disabled="insightGenerating"
+              @click="generateInsight"
+            >
+              <Loader2 v-if="insightGenerating" class="animate-spin" />
+              {{ insightGenerating ? '生成中…' : '生成回顾' }}
+            </Button>
+          </div>
+
+          <template v-if="insight.summary">
+            <p class="text-sm leading-relaxed">{{ insight.summary }}</p>
+            <ul v-if="insight.points?.length" class="space-y-1">
+              <li v-for="(point, index) in insight.points" :key="index" class="text-sm text-muted-foreground">
+                · {{ point }}
+              </li>
+            </ul>
+            <p class="text-xs text-muted-foreground">AI 生成，仅供参考；数值以上方图表为准。</p>
+          </template>
+
+          <p v-else-if="insight.failed" class="text-sm text-muted-foreground">
+            回顾服务暂时不可用，稍后再试；不影响图表数据。
+          </p>
+
+          <p v-else class="text-sm text-muted-foreground">
+            按当前所选参数与世代区间生成一段走势回顾，每次生成有成本，按需点击。
+          </p>
+        </CardContent>
+      </Card>
 
       <!-- 截图只包含标题与图表：缩略图与横向滚动容器会让 html2canvas 测量失准，代际用文本摘要表达 -->
       <div ref="captureRef" class="capture-area space-y-4 rounded-xl border bg-background p-4 sm:p-5">

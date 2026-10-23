@@ -74,6 +74,12 @@ test('访客：世代回顾参数、区间与空状态', async ({ page }) => {
   await expect(page).toHaveURL(/paramDefIds=3,11,18,2/)
   await expect(page.locator('.capture-area canvas')).toHaveCount(4)
 
+  // AI 回顾：先只展示入口，点按钮才生成
+  await expect(page.getByText('AI 世代回顾')).toBeVisible()
+  await page.getByRole('button', { name: '生成回顾' }).click()
+  await expect(page.getByText('屏幕由 6.1 增至 6.3 英寸')).toBeVisible()
+  await expect(page.getByText('电池容量提升有限，仅增加 39mAh')).toBeVisible()
+
   // 取消重量后只剩三张图，URL 同步
   await page.getByRole('checkbox', { name: '机身重量' }).click()
   await expect(page.getByRole('checkbox', { name: '机身重量' })).not.toBeChecked()

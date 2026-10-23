@@ -8,6 +8,8 @@ import com.spectrace.dto.CompareResultVO;
 import com.spectrace.dto.DeviceSuggestVO;
 import com.spectrace.dto.EvolutionVO;
 import com.spectrace.dto.HistorySeriesVO;
+import com.spectrace.dto.SeriesInsightRequest;
+import com.spectrace.dto.SeriesInsightVO;
 import com.spectrace.dto.SeriesVO;
 import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
@@ -18,6 +20,7 @@ import com.spectrace.service.CompareInsightService;
 import com.spectrace.service.DeviceService;
 import com.spectrace.service.EvolutionService;
 import com.spectrace.service.ParamService;
+import com.spectrace.service.SeriesInsightService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -43,6 +46,7 @@ public class PublicController {
     private final DeviceService deviceService;
     private final EvolutionService evolutionService;
     private final CompareInsightService compareInsightService;
+    private final SeriesInsightService seriesInsightService;
 
     @Operation(summary = "品牌列表")
     @GetMapping("/brands")
@@ -155,6 +159,25 @@ public class PublicController {
     public R<EvolutionVO> evolution(@PathVariable Long id,
                                     @RequestParam(required = false) String paramDefIds) {
         return R.ok(evolutionService.evolution(id, parseIds(paramDefIds)));
+    }
+
+    @Operation(summary = "世代回顾文案（只读缓存，用于判定入口是否展示）")
+    @GetMapping("/series/{id}/insight")
+    public R<SeriesInsightVO> seriesInsight(@PathVariable Long id,
+                                           @RequestParam(required = false) String deviceIds,
+                                           @RequestParam(required = false) String paramDefIds,
+                                           HttpServletRequest request) {
+        return R.ok(seriesInsightService.insight(id, parseIds(deviceIds), parseIds(paramDefIds),
+                clientKey(request), false));
+    }
+
+    @Operation(summary = "生成世代回顾文案（按需调用模型）")
+    @PostMapping("/series/{id}/insight")
+    public R<SeriesInsightVO> generateSeriesInsight(@PathVariable Long id,
+                                                    @RequestBody SeriesInsightRequest req,
+                                                    HttpServletRequest request) {
+        return R.ok(seriesInsightService.insight(id, req.getDeviceIds(), req.getParamDefIds(),
+                clientKey(request), true));
     }
 
     /** 逗号分隔的 ID 串转列表，空串与非法项直接忽略。 */

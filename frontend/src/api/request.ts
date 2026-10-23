@@ -1,6 +1,13 @@
 import axios from 'axios'
 import { toast } from 'vue-sonner'
 
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    /** 路由守卫静默校验会话时置 true：失败不弹提示、不做整页跳转，由调用方自行处理 */
+    skipAuthRedirect?: boolean
+  }
+}
+
 const request = axios.create({
   baseURL: '/api',
   timeout: 30000,
@@ -27,14 +34,16 @@ request.interceptors.response.use(
     return body
   },
   (error) => {
+    // 静默校验（如路由守卫里的 /auth/me）由调用方决定如何提示与跳转
+    const silent = (error.config as { skipAuthRedirect?: boolean } | undefined)?.skipAuthRedirect
     if (error.response?.status === 401) {
       localStorage.removeItem('spectrace-token')
       localStorage.removeItem('spectrace-user')
-      if (location.pathname.startsWith('/admin') && !location.pathname.startsWith('/admin/login')) {
+      if (!silent && location.pathname.startsWith('/admin') && !location.pathname.startsWith('/admin/login')) {
         toast.error('登录已过期，请重新登录')
         location.href = '/admin/login'
       }
-    } else {
+    } else if (!silent) {
       toast.error(error.response?.data?.message || error.message || '网络错误')
     }
     return Promise.reject(error)

@@ -38,6 +38,12 @@ export const publicApi = {
     request.get<any, any>(`/public/series/${seriesId}/evolution`, {
       params: { paramDefIds: paramDefIds.join(',') },
     }),
+  seriesInsight: (seriesId: number, deviceIds: number[], paramDefIds: number[]) =>
+    request.get<any, any>(`/public/series/${seriesId}/insight`, {
+      params: { deviceIds: deviceIds.join(','), paramDefIds: paramDefIds.join(',') },
+    }),
+  generateSeriesInsight: (seriesId: number, deviceIds: number[], paramDefIds: number[]) =>
+    request.post<any, any>(`/public/series/${seriesId}/insight`, { deviceIds, paramDefIds }),
   submitFeedback: (data: {
     deviceId: number
     paramDefId?: number
@@ -52,6 +58,7 @@ export const publicApi = {
 // ---------- 鉴权 ----------
 export const authApi = {
   login: (data: { username: string; password: string }) => request.post<any, any>('/auth/login', data),
+  me: () => request.get<any, any>('/auth/me', { skipAuthRedirect: true }),
 }
 
 // ---------- 后台 ----------

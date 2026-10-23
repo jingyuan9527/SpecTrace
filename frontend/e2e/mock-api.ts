@@ -89,6 +89,10 @@ export async function mockApi(page: Page) {
     if (path === '/auth/login' && method === 'POST') {
       return ok({ token: 'e2e-token', username: 'admin', nickname: '测试管理员', role: 'SUPER_ADMIN' })
     }
+    // 后台路由守卫会用 /auth/me 校验 token，缺了它所有后台用例都会被踢回登录页
+    if (path === '/auth/me') {
+      return ok({ adminId: 1, username: 'admin', authenticated: true })
+    }
 
     // ---------- 访客端 ----------
     if (path === '/public/brands') return ok(state.brands)
@@ -177,6 +181,17 @@ export async function mockApi(page: Page) {
         brandName: isApple ? 'Apple' : '华为',
         devices,
         params,
+      })
+    }
+    if (/^\/public\/series\/\d+\/insight$/.test(path)) {
+      // GET 只读缓存：未生成过时只有 available，前端据此决定是否展示入口
+      if (method === 'GET') return ok({ available: true })
+      return ok({
+        available: true,
+        cached: false,
+        summary: '屏幕由 6.1 增至 6.3 英寸，电池容量小幅提升 39mAh。',
+        points: ['屏幕尺寸提升明显，增幅约 3.3%', '电池容量提升有限，仅增加 39mAh'],
+        generatedAt: '2026-10-23T10:00:00',
       })
     }
     if (path === '/public/devices/hot') return ok(state.devices.slice(0, 4))
