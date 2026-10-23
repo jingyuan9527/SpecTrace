@@ -62,12 +62,12 @@ INSERT OR IGNORE INTO param_def (id, param_key, param_name, group_id, param_type
 
 -- 机型
 INSERT OR IGNORE INTO device (id, brand_id, name, release_date, thumbnail, description, status) VALUES
- (1, 1, 'iPhone 13', '2021-09-24', '/devices/placeholder.svg',  '苹果 2021 年旗舰机型', 1),
- (2, 1, 'iPhone 14', '2022-09-16', '/devices/placeholder.svg',  '苹果 2022 年旗舰机型', 1),
- (3, 1, 'iPhone 15', '2023-09-22', '/devices/placeholder.svg',  '苹果 2023 年旗舰机型', 1),
- (4, 1, 'iPhone 16', '2024-09-20', '/devices/placeholder.svg',  '苹果 2024 年旗舰机型', 1),
- (5, 2, '小米 14',   '2023-10-26', '/devices/placeholder.svg',  '小米 2023 年数字旗舰', 1),
- (6, 3, '华为 Mate 60 Pro', '2023-08-29', '/devices/placeholder.svg', '华为 2023 年旗舰机型', 1);
+ (1, 1, 'iPhone 13', '2021-09-24', '/device-images/iphone-13.svg',  '苹果 2021 年旗舰机型', 1),
+ (2, 1, 'iPhone 14', '2022-09-16', '/device-images/iphone-14.svg',  '苹果 2022 年旗舰机型', 1),
+ (3, 1, 'iPhone 15', '2023-09-22', '/device-images/iphone-15.svg',  '苹果 2023 年旗舰机型', 1),
+ (4, 1, 'iPhone 16', '2024-09-20', '/device-images/iphone-16.svg',  '苹果 2024 年旗舰机型', 1),
+ (5, 2, '小米 14',   '2023-10-26', '/device-images/xiaomi-14.svg',  '小米 2023 年数字旗舰', 1),
+ (6, 3, '华为 Mate 60 Pro', '2023-08-29', '/device-images/mate-60-pro.svg', '华为 2023 年旗舰机型', 1);
 
 -- 产品线（系列）种子与机型归类由 SeriesInitializer 在列迁移之后写入：
 -- device.series_id 属于后加列，老库需先补列，脚本阶段直接引用会启动失败
@@ -75,6 +75,14 @@ INSERT OR IGNORE INTO device (id, brand_id, name, release_date, thumbnail, descr
 -- 修正历史种子数据里指向失效 CDN 或为空的机型缩略图（保留管理员自定义图片）
 UPDATE device SET thumbnail = '/devices/placeholder.svg'
  WHERE thumbnail IS NULL OR thumbnail = '' OR thumbnail LIKE 'https://cdn.spectrace.dev/%';
+
+-- 老库升级：把种子机型的通用占位图换成品牌色图，管理员自定义过的不动
+UPDATE device SET thumbnail = '/device-images/iphone-13.svg'    WHERE name = 'iPhone 13'      AND thumbnail = '/devices/placeholder.svg';
+UPDATE device SET thumbnail = '/device-images/iphone-14.svg'    WHERE name = 'iPhone 14'      AND thumbnail = '/devices/placeholder.svg';
+UPDATE device SET thumbnail = '/device-images/iphone-15.svg'    WHERE name = 'iPhone 15'      AND thumbnail = '/devices/placeholder.svg';
+UPDATE device SET thumbnail = '/device-images/iphone-16.svg'    WHERE name = 'iPhone 16'      AND thumbnail = '/devices/placeholder.svg';
+UPDATE device SET thumbnail = '/device-images/xiaomi-14.svg'    WHERE name = '小米 14'         AND thumbnail = '/devices/placeholder.svg';
+UPDATE device SET thumbnail = '/device-images/mate-60-pro.svg'  WHERE name = '华为 Mate 60 Pro' AND thumbnail = '/devices/placeholder.svg';
 
 -- 机型参数值（节选，用于演示对比与历史演变）
 INSERT OR IGNORE INTO device_param_value (device_id, param_def_id, param_value) VALUES
@@ -102,18 +110,18 @@ INSERT OR IGNORE INTO device_variant (device_id, storage, ram, price, sort_order
 SELECT d.id, v.storage, v.ram, v.price, v.sort_order
 FROM device d
 JOIN (
-    SELECT 'iPhone 13' AS name, '128GB' AS storage, '' AS ram, 5999.00 AS price, 1 AS sort_order
-    UNION ALL SELECT 'iPhone 13', '256GB', '', 6799.00, 2
-    UNION ALL SELECT 'iPhone 13', '512GB', '', 8399.00, 3
-    UNION ALL SELECT 'iPhone 14', '128GB', '', 5999.00, 1
-    UNION ALL SELECT 'iPhone 14', '256GB', '', 6899.00, 2
-    UNION ALL SELECT 'iPhone 14', '512GB', '', 8699.00, 3
-    UNION ALL SELECT 'iPhone 15', '128GB', '', 5999.00, 1
-    UNION ALL SELECT 'iPhone 15', '256GB', '', 6999.00, 2
-    UNION ALL SELECT 'iPhone 15', '512GB', '', 8999.00, 3
-    UNION ALL SELECT 'iPhone 16', '128GB', '', 5999.00, 1
-    UNION ALL SELECT 'iPhone 16', '256GB', '', 6999.00, 2
-    UNION ALL SELECT 'iPhone 16', '512GB', '', 8999.00, 3
+    SELECT 'iPhone 13' AS name, '128GB' AS storage, '4GB' AS ram, 5999.00 AS price, 1 AS sort_order
+    UNION ALL SELECT 'iPhone 13', '256GB', '4GB', 6799.00, 2
+    UNION ALL SELECT 'iPhone 13', '512GB', '4GB', 8399.00, 3
+    UNION ALL SELECT 'iPhone 14', '128GB', '6GB', 5999.00, 1
+    UNION ALL SELECT 'iPhone 14', '256GB', '6GB', 6899.00, 2
+    UNION ALL SELECT 'iPhone 14', '512GB', '6GB', 8699.00, 3
+    UNION ALL SELECT 'iPhone 15', '128GB', '6GB', 5999.00, 1
+    UNION ALL SELECT 'iPhone 15', '256GB', '6GB', 6999.00, 2
+    UNION ALL SELECT 'iPhone 15', '512GB', '6GB', 8999.00, 3
+    UNION ALL SELECT 'iPhone 16', '128GB', '8GB', 5999.00, 1
+    UNION ALL SELECT 'iPhone 16', '256GB', '8GB', 6999.00, 2
+    UNION ALL SELECT 'iPhone 16', '512GB', '8GB', 8999.00, 3
     UNION ALL SELECT 'iPhone 17', '256GB', '', 5999.00, 1
     UNION ALL SELECT 'iPhone 17', '512GB', '', 7999.00, 2
     UNION ALL SELECT '小米 14', '256GB', '8GB', 3999.00, 1
@@ -131,4 +139,10 @@ INSERT OR IGNORE INTO ai_config (id, name, provider, base_url, api_key, enabled)
 
 INSERT OR IGNORE INTO ai_model (id, config_id, model, temperature, is_default, enabled) VALUES
  (1, 1, 'qwen-max', 0.20, 1, 1);
+
+-- 待审核演示数据：给后台「待审核数据」页一份字段完整的样例；真实数据由采集 Agent 写入
+INSERT OR IGNORE INTO agent_pending_data (id, task_id, model_name, brand_name, params_json, source_url, status) VALUES
+ (1, NULL, 'iPhone 17 Pro', 'Apple',
+  '{"release_date":"2025-09-19","screen_size":"6.3英寸","refresh_rate":"120Hz","chipset":"Apple A19 Pro","ram":"12GB","battery":"3988mAh","charging":"40W","weight":"199g","ip_rating":"IP68","_variants":[{"storage":"256GB","ram":"12GB","price":8999,"currency":"CNY","priceType":"LAUNCH"},{"storage":"512GB","ram":"12GB","price":10999,"currency":"CNY","priceType":"LAUNCH"},{"storage":"1TB","ram":"12GB","price":12999,"currency":"CNY","priceType":"LAUNCH"}],"_confidence":{"screen_size":0.95,"chipset":0.9}}',
+  'https://www.apple.com.cn/iphone-17-pro/specs/', 'PENDING_REVIEW');
 

@@ -27,6 +27,11 @@ export default defineConfig({
         target: apiTarget,
         changeOrigin: true,
       },
+      // 机型图走独立前缀：与 SPA 的 /devices 路由同名会被代理吞掉，导致详情页 500
+      '/device-images': {
+        target: apiTarget,
+        changeOrigin: true,
+      },
     },
   },
 })

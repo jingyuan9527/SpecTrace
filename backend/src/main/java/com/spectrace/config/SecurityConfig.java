@@ -30,6 +30,8 @@ public class SecurityConfig {
             "/uploads/**",
             "/brands/**",
             "/devices/**",
+            // 机型缩略图：与 /devices 前端路由分开，避免静态资源路径吞掉详情页路由
+            "/device-images/**",
             // history 路由下的前端页面直接访问时返回 SPA 壳，登录态由前端路由守卫控制
             "/compare",
             "/history",
