@@ -128,6 +128,7 @@ public class CollectService {
             result.setSourceUrl(nullableText(data, "sourceUrl"));
             result.setStatus("SUCCESS");
             result.setParams(params);
+            result.setParamConfidence(parseParamConfidence(data, allowed));
             result.setVariants(parseVariants(data.path("variants")));
             result.setLogs(objectMapper.writeValueAsString(Map.of(
                     "queries", List.of(query),
@@ -237,6 +238,64 @@ public class CollectService {
             variants.add(dto);
         }
         return variants;
+    }
+
+    /**
+     * 解析置信度：优先参数级 {@code paramConfidence} 对象，
+     * 缺失时用整次抓取的 {@code confidence} 作为所有参数的统一值。
+     */
+    private Map<String, Double> parseParamConfidence(JsonNode data, Set<String> allowedKeys) {
+        Map<String, Double> confidence = new LinkedHashMap<>();
+        JsonNode node = data.path("paramConfidence");
+        if (node.isObject()) {
+            node.fields().forEachRemaining(entry -> {
+                Double value = toConfidence(entry.getValue());
+                if (allowedKeys.contains(entry.getKey()) && value != null) {
+                    confidence.put(entry.getKey(), value);
+                }
+            });
+        }
+        if (confidence.isEmpty()) {
+            Double overall = toConfidence(data.path("confidence"));
+            if (overall != null) {
+                allowedKeys.forEach(key -> confidence.put(key, overall));
+            }
+        }
+        return confidence;
+    }
+
+    /**
+     * 兼容三种置信度写法：0~1 数值、百分数、以及 persona 约定的 high/medium/low 文字等级。
+     */
+    private Double toConfidence(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        Double value = null;
+        if (node.isNumber()) {
+            value = node.asDouble();
+        } else if (node.isTextual()) {
+            String raw = node.asText("").replace("%", "").trim();
+            switch (raw.toLowerCase(java.util.Locale.ROOT)) {
+                case "high", "高" -> value = 0.9;
+                case "medium", "中" -> value = 0.7;
+                case "low", "低" -> value = 0.4;
+                default -> {
+                    try {
+                        value = Double.parseDouble(raw);
+                    } catch (NumberFormatException e) {
+                        return null;
+                    }
+                }
+            }
+        }
+        if (value == null || value.isNaN() || value.isInfinite()) {
+            return null;
+        }
+        if (value > 1 && value <= 100) {
+            value = value / 100;
+        }
+        return Math.max(0, Math.min(1, value));
     }
 
     private java.math.BigDecimal parsePrice(JsonNode priceNode) {

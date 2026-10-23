@@ -43,6 +43,7 @@ interface HistoryResponse {
   paramName: string
   unit?: string
   numeric: boolean
+  unitConflicts?: string[]
   series: HistorySeries[]
 }
 
@@ -102,6 +103,12 @@ let chart: EChartsType | null = null
 const defOptions = ref<{ label: string; value: number }[]>([])
 const brandKey = computed(() => brandIds.value.join(','))
 const totalPoints = computed(() => data.value?.series.reduce((sum, item) => sum + item.points.length, 0) ?? 0)
+const unitConflictText = computed(() => {
+  const conflicts = data.value?.unitConflicts ?? []
+  if (!conflicts.length) return ''
+  const head = conflicts.slice(0, 3).join('；')
+  return conflicts.length > 3 ? `${head} 等 ${conflicts.length} 项，已按原值展示` : `${head}，已按原值展示`
+})
 const selectedBrandNames = computed(() =>
   data.value?.series.length
     ? data.value.series.map((item) => item.brandName).join(' / ')
@@ -385,10 +392,17 @@ function exportCsv() {
 
     <motion.div v-else :initial="{ opacity: 0, y: 8 }" :animate="{ opacity: 1, y: 0 }" :transition="{ duration: 0.3 }">
       <Alert
+        v-if="data?.unitConflicts?.length"
+        variant="warning"
+        class="mb-3"
+        title="部分机型单位与参数定义不一致"
+        :description="unitConflictText"
+      />
+      <Alert
         v-if="data && !data.numeric"
         variant="info"
         class="mb-3"
-        title="部分取值不是纯数字"
+        title="部分取值无法解析为数值"
         description="图表按文本比对，无法计算数值趋势；可点击「导出 CSV」查看原始值。"
       />
 

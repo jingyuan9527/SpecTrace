@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.spectrace.common.BizException;
+import com.spectrace.common.ParamValueParser;
 import com.spectrace.common.PendingStatus;
 import com.spectrace.common.TaskStatus;
 import com.spectrace.dto.*;
@@ -13,6 +14,7 @@ import com.spectrace.entity.AgentPendingData;
 import com.spectrace.entity.AgentTask;
 import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
+import com.spectrace.entity.ParamDef;
 import com.spectrace.mapper.AgentPendingDataMapper;
 import com.spectrace.mapper.AgentTaskMapper;
 import com.spectrace.mapper.BrandMapper;
@@ -137,6 +139,10 @@ public class AgentTaskService {
         if (variants != null && !variants.isEmpty()) {
             params.put("_variants", variants);
         }
+        // 参数级置信度与版本一样收口到 params 的保留键，避免改动表结构
+        if (req.getParamConfidence() != null && !req.getParamConfidence().isEmpty()) {
+            params.put("_confidence", req.getParamConfidence());
+        }
 
         AgentPendingData pending = new AgentPendingData();
         pending.setTaskId(task.getId());
@@ -185,14 +191,57 @@ public class AgentTaskService {
                 ? new LinkedHashMap<>()
                 : objectMapper.readValue(data.getParamsJson(), new TypeReference<>() {
         });
-        vo.setParams(params);
+        // 保留键在返回前摘掉，避免前端把它们当成普通参数展示
         Object rawVariants = params.remove("_variants");
+        Object rawConfidence = params.remove("_confidence");
+        vo.setParams(params);
         if (rawVariants != null) {
             vo.setVariants(objectMapper.convertValue(rawVariants, new TypeReference<List<DeviceVariantDTO>>() {
             }));
         }
+        vo.setParamConfidence(toConfidenceMap(rawConfidence));
         vo.setParamNames(paramService.keyToNameMap());
         return vo;
+    }
+
+    /** 把存储的置信度对象统一转成 paramKey -> 0~1 的 double 映射。 */
+    private Map<String, Double> toConfidenceMap(Object raw) {
+        Map<String, Double> result = new LinkedHashMap<>();
+        if (raw == null) {
+            return result;
+        }
+        Map<String, Object> source = objectMapper.convertValue(raw, new TypeReference<>() {
+        });
+        source.forEach((key, value) -> {
+            Double parsed = parseConfidenceValue(value);
+            if (parsed != null) {
+                result.put(key, parsed);
+            }
+        });
+        return result;
+    }
+
+    private Double parseConfidenceValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        double parsed;
+        if (value instanceof Number number) {
+            parsed = number.doubleValue();
+        } else {
+            try {
+                parsed = Double.parseDouble(String.valueOf(value).replace("%", "").trim());
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        if (Double.isNaN(parsed) || Double.isInfinite(parsed)) {
+            return null;
+        }
+        if (parsed > 1 && parsed <= 100) {
+            parsed = parsed / 100;
+        }
+        return Math.max(0, Math.min(1, parsed));
     }
 
     /** 审核详情：在基础 VO 上补充库中现有数据，前端据此标出「旧值 → 新值」。 */
@@ -205,7 +254,28 @@ public class AgentTaskService {
             vo.setExistingParams(deviceService.paramValuesOf(existing.getId()));
             vo.setExistingVariants(deviceService.variantsOf(existing.getId()));
         }
+        vo.setParamWarnings(unitWarnings(vo.getParams()));
         return vo;
+    }
+
+    /** 审核页提示单位冲突，避免把「6.1寸」这类与参数定义不一致的值直接入库。 */
+    private Map<String, String> unitWarnings(Map<String, Object> params) {
+        Map<String, String> warnings = new LinkedHashMap<>();
+        if (params == null || params.isEmpty()) {
+            return warnings;
+        }
+        Map<String, ParamDef> defs = paramService.keyToDefMap();
+        params.forEach((key, value) -> {
+            ParamDef def = defs.get(key);
+            if (def == null || value == null || value.toString().isBlank()) {
+                return;
+            }
+            var parsed = ParamValueParser.parse(value.toString(), def.getUnit());
+            if (parsed.conflict()) {
+                warnings.put(key, "单位与参数定义不一致：值含「" + parsed.unit() + "」，定义为「" + def.getUnit() + "」");
+            }
+        });
+        return warnings;
     }
 
     /** 按「品牌名 + 机型名」定位库中已有记录，忽略首尾空格与大小写。 */
@@ -252,6 +322,7 @@ public class AgentTaskService {
         save.setDescription(req.getDescription());
         save.setStatus(1);
         save.setParams(req.getParams());
+        save.setParamConfidence(confidenceForApprove(pending, req.getParams()));
 
         // 库中已有同品牌同名机型时按覆盖更新处理，避免重复抓取产生重复机型；
         // 审核表单未回填的图片/简介/日期不回写，防止把已有数据清空
@@ -388,7 +459,8 @@ public class AgentTaskService {
 
         Map<String, String> params = new LinkedHashMap<>();
         stored.forEach((key, value) -> {
-            if (!"_variants".equals(key) && value != null) {
+            // 下划线开头的是保留键（_variants / _confidence），不是参数
+            if (!key.startsWith("_") && value != null) {
                 params.put(key, String.valueOf(value));
             }
         });
@@ -410,6 +482,29 @@ public class AgentTaskService {
             req.setReleaseDate(releaseDate);
         }
         return req;
+    }
+
+    /**
+     * 审核通过时的置信度：沿用采集结果，但管理员在审核页改动过的参数视为人工确认，去掉其置信度。
+     */
+    @SneakyThrows
+    private Map<String, Double> confidenceForApprove(AgentPendingData pending, Map<String, String> submitted) {
+        Map<String, Double> confidence = new LinkedHashMap<>();
+        if (pending.getParamsJson() == null) {
+            return confidence;
+        }
+        Map<String, Object> stored = objectMapper.readValue(pending.getParamsJson(), new TypeReference<>() {
+        });
+        confidence.putAll(toConfidenceMap(stored.get("_confidence")));
+        if (confidence.isEmpty() || submitted == null) {
+            return confidence;
+        }
+        confidence.keySet().removeIf(key -> {
+            Object crawled = stored.get(key);
+            String crawledValue = crawled == null ? null : String.valueOf(crawled);
+            return !java.util.Objects.equals(crawledValue, submitted.get(key));
+        });
+        return confidence;
     }
 
     private LocalDate parseDate(String value) {

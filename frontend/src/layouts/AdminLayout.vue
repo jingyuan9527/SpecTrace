@@ -5,6 +5,7 @@ import {
   Bot,
   ChevronDown,
   ClipboardCheck,
+  Database,
   Flag,
   House,
   Laptop,
@@ -40,6 +41,7 @@ const menus = [
   { path: '/admin/feedback', label: '纠错反馈', icon: Flag },
   { path: '/admin/users', label: '账号权限', icon: Users },
   { path: '/admin/logs', label: '操作日志', icon: ScrollText },
+  { path: '/admin/maintenance', label: '系统运维', icon: Database },
 ]
 
 const currentLabel = computed(() => menus.find((m) => route.path.startsWith(m.path))?.label ?? '管理后台')

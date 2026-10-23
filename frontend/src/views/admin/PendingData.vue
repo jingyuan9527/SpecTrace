@@ -108,6 +108,8 @@ watch(
 async function openReview(row: any) {
   const detail = await adminApi.pendingDetail(row.id)
   current.value = detail
+  paramConfidence.value = detail.paramConfidence || {}
+  paramWarnings.value = detail.paramWarnings || {}
   Object.assign(form, {
     brandId: brands.value.find((b) => b.name === detail.brandName)?.id,
     name: detail.modelName,
@@ -233,6 +235,21 @@ async function confirmBatch() {
   } finally {
     batchProcessing.value = false
   }
+}
+
+/** 采集置信度与单位冲突提示，均由审核详情接口返回 */
+const paramConfidence = ref<Record<string, number>>({})
+const paramWarnings = ref<Record<string, string>>({})
+
+function confidenceOf(key: string): number | null {
+  const value = paramConfidence.value[key]
+  return typeof value === 'number' ? value : null
+}
+
+function confidenceText(key: string) {
+  const value = confidenceOf(key)
+  if (value === null) return ''
+  return `抓取置信度 ${Math.round(value * 100)}%${value < 0.6 ? ' · 建议核实' : ''}`
 }
 
 const diffRows = computed(() =>
@@ -469,6 +486,14 @@ function removeVariant(index: number) {
             >
               <Label :for="`review-${row.key}`">{{ label(row.key) }}</Label>
               <Input :id="`review-${row.key}`" v-model="form.params[row.key]" />
+              <p v-if="paramWarnings[row.key]" class="text-xs text-destructive">{{ paramWarnings[row.key] }}</p>
+              <p
+                v-if="confidenceText(row.key)"
+                class="text-xs"
+                :class="(confidenceOf(row.key) ?? 1) < 0.6 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"
+              >
+                {{ confidenceText(row.key) }}
+              </p>
               <p v-if="!isNewDevice" class="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
                 <span class="line-through">{{ row.oldValue || '空' }}</span>
                 <ArrowRight class="h-3 w-3" />
@@ -487,6 +512,7 @@ function removeVariant(index: number) {
               <div v-for="row in unchangedRows" :key="row.key" class="space-y-1.5">
                 <Label :for="`review-${row.key}`" class="text-muted-foreground">{{ label(row.key) }}</Label>
                 <Input :id="`review-${row.key}`" v-model="form.params[row.key]" />
+                <p v-if="paramWarnings[row.key]" class="text-xs text-destructive">{{ paramWarnings[row.key] }}</p>
               </div>
             </div>
           </div>

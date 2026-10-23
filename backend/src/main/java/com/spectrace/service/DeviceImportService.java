@@ -2,6 +2,7 @@ package com.spectrace.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.spectrace.common.BizException;
+import com.spectrace.common.ParamValueParser;
 import com.spectrace.dto.DeviceImportResult;
 import com.spectrace.dto.DeviceImportRow;
 import com.spectrace.dto.DeviceSaveRequest;
@@ -178,6 +179,7 @@ public class DeviceImportService {
             if (paramsIndex >= 0) {
                 mergeInlineParams(row, cell(cells, paramsIndex), defByKey, defByName);
             }
+            addUnitWarnings(row, defByKey);
 
             if (StringUtils.hasText(row.getName())) {
                 String duplicateKey = (row.getBrandName() == null ? "" : row.getBrandName().trim().toLowerCase(Locale.ROOT))
@@ -230,6 +232,21 @@ public class DeviceImportService {
         result.setInvalidCount(result.getTotal() - created);
         log.info("机型导入完成: 共 {} 行，成功 {} 行，失败 {} 行", result.getTotal(), created, result.getTotal() - created);
         return result;
+    }
+
+    /** 导入预览阶段提示单位冲突，避免「6.1寸」这类值与参数定义错位后静默入库。 */
+    private void addUnitWarnings(DeviceImportRow row, Map<String, ParamDef> defByKey) {
+        row.getParams().forEach((key, value) -> {
+            ParamDef def = defByKey.get(key);
+            if (def == null || !StringUtils.hasText(value)) {
+                return;
+            }
+            var parsed = ParamValueParser.parse(value, def.getUnit());
+            if (parsed.conflict()) {
+                row.getWarnings().add("参数 " + key + " 单位与定义不一致：" + value
+                        + "（定义单位 " + def.getUnit() + "）");
+            }
+        });
     }
 
     private void mergeInlineParams(DeviceImportRow row, String raw, Map<String, ParamDef> defByKey,

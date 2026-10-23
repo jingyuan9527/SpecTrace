@@ -292,10 +292,18 @@ async function submitFeedback() {
                     {{ item.value }}
                     <span v-if="item.unit" class="ml-1 text-xs font-normal text-muted-foreground">{{ item.unit }}</span>
                     <div
-                      v-if="item.meta?.sourceUrl || item.meta?.updatedAt"
+                      v-if="item.meta?.sourceUrl || item.meta?.updatedAt || item.meta?.confidence != null"
                       class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-normal text-muted-foreground"
                     >
                       <span v-if="item.meta?.updatedAt">更新于 {{ formatTime(item.meta.updatedAt) }}</span>
+                      <span
+                        v-if="item.meta?.confidence != null"
+                        :class="item.meta.confidence < 0.6 ? 'text-amber-600 dark:text-amber-400' : ''"
+                      >
+                        置信度 {{ Math.round(item.meta.confidence * 100) }}%{{
+                          item.meta.confidence < 0.6 ? ' · 待核实' : ''
+                        }}
+                      </span>
                       <a
                         v-if="item.meta?.sourceUrl"
                         :href="item.meta.sourceUrl"

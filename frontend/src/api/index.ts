@@ -120,6 +120,9 @@ export const adminApi = {
 
   logs: (params: Record<string, unknown>) => request.get<PageResult<any>, PageResult<any>>('/admin/logs', { params }),
 
+  backups: () => request.get<any, any>('/admin/maintenance/backups'),
+  triggerBackup: () => request.post<any, any>('/admin/maintenance/backups'),
+
   upload: (file: File, onProgress?: (percent: number) => void) => {
     const form = new FormData()
     form.append('file', file)

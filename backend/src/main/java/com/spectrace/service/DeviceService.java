@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.spectrace.common.BizException;
+import com.spectrace.common.ParamValueParser;
 import com.spectrace.dto.*;
 import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -229,7 +231,7 @@ public class DeviceService {
         } else {
             deviceMapper.updateById(device);
         }
-        saveParamValues(device.getId(), req.getParams(), sourceUrl);
+        saveParamValues(device.getId(), req.getParams(), sourceUrl, req.getParamConfidence());
         saveVariants(device.getId(), req.getVariants());
 
         logService.record(adminId, adminName, isNew ? "CREATE_DEVICE" : "UPDATE_DEVICE",
@@ -243,19 +245,29 @@ public class DeviceService {
      */
     @Transactional
     public void saveParamValues(Long deviceId, Map<String, String> params) {
-        saveParamValues(deviceId, params, null);
+        saveParamValues(deviceId, params, null, null);
     }
 
     /**
      * 以 paramKey -> value 全量覆盖机型参数值，并记录来源。
      * 值发生变化时：有 sourceUrl 覆盖为抓取来源，否则清空来源（说明已被人工修正）。
      */
-    @Transactional
     public void saveParamValues(Long deviceId, Map<String, String> params, String sourceUrl) {
+        saveParamValues(deviceId, params, sourceUrl, null);
+    }
+
+    /**
+     * @param confidence paramKey -> 置信度，null 表示人工录入（写入时清空置信度）
+     */
+    @Transactional
+    public void saveParamValues(Long deviceId, Map<String, String> params, String sourceUrl,
+                                Map<String, Double> confidence) {
         if (params == null) {
             return;
         }
         Map<String, ParamDef> defMap = paramService.keyToDefMap();
+        Map<Long, String> keyByDefId = defMap.values().stream()
+                .collect(Collectors.toMap(ParamDef::getId, ParamDef::getParamKey, (a, b) -> a));
 
         // 目标参数集合：仅保留已定义且值非空白的键
         Map<Long, String> desired = new LinkedHashMap<>();
@@ -283,21 +295,38 @@ public class DeviceService {
                 .collect(Collectors.toMap(DeviceParamValue::getParamDefId, Function.identity(), (a, b) -> a));
         for (Map.Entry<Long, String> entry : desired.entrySet()) {
             DeviceParamValue current = existingByDef.get(entry.getKey());
+            String paramKey = keyByDefId.get(entry.getKey());
             if (current == null) {
                 DeviceParamValue value = new DeviceParamValue();
                 value.setDeviceId(deviceId);
                 value.setParamDefId(entry.getKey());
                 value.setParamValue(entry.getValue());
                 value.setSourceUrl(sourceUrl);
+                value.setConfidence(confidenceOf(confidence, paramKey));
                 valueMapper.insert(value);
             } else if (!entry.getValue().equals(current.getParamValue())) {
-                current.setParamValue(entry.getValue());
-                current.setSourceUrl(sourceUrl);
-                // strictUpdateFill 仅在字段为空时填充，已从库中读出的实体需显式刷新更新时间
-                current.setUpdatedAt(LocalDateTime.now());
-                valueMapper.updateById(current);
+                // 用 LambdaUpdateWrapper 显式 set：updateById 会忽略 null，人工修正后的置信度无法清空
+                valueMapper.update(null, Wrappers.<DeviceParamValue>lambdaUpdate()
+                        .eq(DeviceParamValue::getId, current.getId())
+                        .set(DeviceParamValue::getParamValue, entry.getValue())
+                        .set(DeviceParamValue::getSourceUrl, sourceUrl)
+                        .set(DeviceParamValue::getConfidence, confidenceOf(confidence, paramKey))
+                        // strictUpdateFill 仅在字段为空时填充，这里显式刷新更新时间
+                        .set(DeviceParamValue::getUpdatedAt, LocalDateTime.now()));
             }
         }
+    }
+
+    /** 置信度统一夹取到 [0,1] 并保留两位，匹配 DECIMAL(3,2) 列。 */
+    private BigDecimal confidenceOf(Map<String, Double> confidence, String paramKey) {
+        if (confidence == null || paramKey == null) {
+            return null;
+        }
+        Double raw = confidence.get(paramKey);
+        if (raw == null || raw.isNaN() || raw.isInfinite()) {
+            return null;
+        }
+        return BigDecimal.valueOf(Math.max(0, Math.min(1, raw))).setScale(2, RoundingMode.HALF_UP);
     }
 
     /**
@@ -488,6 +517,7 @@ public class DeviceService {
                 .orElseThrow(() -> new BizException("参数不存在"));
 
         List<HistorySeriesItemVO> series = new ArrayList<>();
+        List<String> unitConflicts = new ArrayList<>();
         boolean numeric = true;
         for (Long brandId : brandIds.stream().distinct().toList()) {
             Brand brand = brandMapper.selectById(brandId);
@@ -499,8 +529,16 @@ public class DeviceService {
                 continue;
             }
             for (HistoryPoint point : points) {
-                if (!isNumeric(point.getValue())) {
+                String raw = point.getValue();
+                // 把「6.1英寸」换算成定义单位下的数值，图表才能跨品牌对标
+                var parsed = ParamValueParser.parse(raw, def.getUnit());
+                if (parsed.numeric()) {
+                    point.setValue(parsed.number().stripTrailingZeros().toPlainString());
+                } else {
                     numeric = false;
+                }
+                if (parsed.conflict()) {
+                    unitConflicts.add(point.getDeviceName() + "：" + raw);
                 }
             }
             HistorySeriesItemVO item = new HistorySeriesItemVO();
@@ -515,21 +553,9 @@ public class DeviceService {
         result.setParamName(def.getParamName());
         result.setUnit(def.getUnit());
         result.setNumeric(numeric);
+        result.setUnitConflicts(unitConflicts);
         result.setSeries(series);
         return result;
-    }
-
-    /** 数值判定：允许首位正负号与小数点，其余一律按文本处理。 */
-    private boolean isNumeric(String value) {
-        if (value == null || value.isBlank()) {
-            return false;
-        }
-        try {
-            new BigDecimal(value.trim());
-            return true;
-        } catch (NumberFormatException e) {
-            return false;
-        }
     }
 
     public List<Integer> releaseYears(Long brandId) {

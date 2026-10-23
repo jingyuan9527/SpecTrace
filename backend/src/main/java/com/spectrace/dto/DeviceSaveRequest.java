@@ -31,6 +31,9 @@ public class DeviceSaveRequest {
 
     private Map<String, String> params;
 
+    /** paramKey -> 置信度（0~1）；审核通过时沿用采集结果，人工保存为 null 表示人工确认 */
+    private Map<String, Double> paramConfidence;
+
     /** 存储版本与价格；为 null 时不改动既有版本，传空列表则清空 */
     private List<DeviceVariantDTO> variants;
 }

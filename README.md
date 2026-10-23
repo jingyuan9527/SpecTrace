@@ -71,6 +71,7 @@ npm run dev
 基于 **AgentScope Java 2.0 Harness 模式**（`HarnessAgent` + `Toolkit`）：persona / 输出规约写在**工作区 `AGENTS.md`**（Harness 的「智能体定义事实来源」，运行期可直接编辑、无需改码），自定义工具 `web_search` / `fetch_page`（Jsoup 抽取正文）。
 
 - 工作区目录由 `AGENTSCOPE_WORKSPACE` 控制（默认 `.agentscope/workspace`），首次启动把内置 persona 写入其下 `AGENTS.md`
+- **persona 版本同步**：内置 `backend/src/main/resources/AGENTS.md` 升级后，启动时按内容 SHA-256 与工作区 `AGENTS.md.sha256` 比对；版本变化会把旧文件备份为 `AGENTS.md.bak-<时间戳>` 再覆盖，版本未变则保留工作区里的手工修改
 - 任务获取实现由 `spectrace.agent.queue` 决定：`memory`（默认，进程内队列，无外部服务）/ `redis`（可选，`BLPOP spectrace:agent:task`，多实例部署）；后端投递与 Agent 消费共用同一实现
 - 每个任务执行前解析一次 AI 模型参数，后台「AI 配置」改完**下个任务即生效**，无需重启
 - AI 连接（服务商 / 接口地址 / API Key）与模型在后台「AI 配置」页面维护：保存连接后可**拉取远端模型**、一次导入多个模型并设默认；创建抓取任务时可指定模型，缺省用默认模型
@@ -134,6 +135,7 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 - 停止：`docker compose down`（数据在宿主机目录，`-v` 不会删除数据；删数据＝删除 `SPECTRACE_DATA_DIR` 目录）
 - 健康检查：`GET /actuator/health`（含 liveness / readiness 探针组，可直接用于容器探针）；`/actuator/metrics` 需要登录后访问
 - 自动备份：默认每天 03:30 用 `VACUUM INTO` 生成一致性快照到 `${SPECTRACE_BACKUP_DIR}`（compose 下为 `/data/backups`），只保留最近 `SPECTRACE_BACKUP_KEEP`（默认 7）份；可用 `SPECTRACE_BACKUP_CRON` 改时间，`SPECTRACE_BACKUP_ENABLED=false` 关闭
+- 手动备份：后台「系统运维」页可立即生成快照并查看现有备份（仅超级管理员），对应接口 `GET/POST /api/admin/maintenance/backups`
 - 备份恢复：停容器后把 `spectrace-<时间戳>.db` 复制为 `SPECTRACE_DB_PATH` 指向的文件（默认 `/data/spectrace.db`）再启动即可，备份文件本身就是完整 SQLite 库
 
 > 注意：表结构由后端启动时自动创建，脚本幂等；升级不会清空已有数据。需要回滚或迁移时先备份宿主机数据目录 `SPECTRACE_DATA_DIR` 中的 `spectrace.db`。
@@ -187,7 +189,9 @@ docker run -d --name spectrace-app -p 80:8080 \
 - **内嵌采集 Agent**：`TaskQueue` 抽象（内存 / Redis 按配置切换），Agent 与后端同进程直接调用 Service，抓取结果先进待审核库，人工审核通过才迁移；无需单独服务与内部回调令牌。
 - **AI 连接与模型集中管理**：后台「AI 配置」维护多个供应商连接（服务商 / 接口地址 / API Key），支持**拉取远端模型列表**批量导入、导入多个模型并设置默认；创建抓取任务时可指定具体模型，缺省用默认模型。Agent 每任务解析并构建大模型（DashScope 原生或 OpenAI 兼容端点，兼容 DeepSeek / Kimi / vLLM / Ollama）。
 - **LLM 抽取约束**：Agent 系统提示强制按 `param_def` 定义的 `param_key` 输出 JSON，并对未知键做丢弃清洗。
-- **字段级溯源**：`device_param_value` 记录 `source_url` / `confidence` / `updated_at`，审核通过时把抓取来源写入对应参数值；人工修正会清空来源并把更新时间刷新。详情页逐行展示来源与更新时间，页头展示机型最后更新时间。
+- **字段级溯源**：`device_param_value` 记录 `source_url` / `confidence` / `updated_at`，审核通过时把抓取来源写入对应参数值；人工修正会清空来源并把更新时间刷新。详情页逐行展示来源、置信度与更新时间，页头展示机型最后更新时间。
+- **置信度链路**：Agent 输出可选 `paramConfidence`（参数级 0~1），缺省时回落到整次抓取的 `confidence`（high/medium/low 映射为 0.9/0.7/0.4）；审核页对低于 60% 的参数标注「建议核实」，管理员改过的参数按人工确认处理、清掉置信度。
+- **参数值单位解析**：`6.1英寸`、`3600mAh`、`1TB` 这类取值会拆出数值与单位，同量纲（长度/存储/电池/重量/频率/功率）自动换算到参数定义的单位后再对比；量纲不一致或无单位定义时，历史图表提示冲突并按原值展示，导入预览与审核页也会给出警告。
 - **审核 diff 与覆盖更新**：待审核详情会返回同品牌同名机型的现有参数，审核页标出「旧值 → 新值」并折叠未变化项；审核通过时若库中已有同名机型则覆盖更新参数，避免重复抓取产生重复机型。支持多选批量通过 / 批量丢弃。
 - **纠错反馈**：访客在详情页参数行点旗标即可提交建议值与说明（同来源同机型 1 分钟限流），后台「纠错反馈」列表核实后标记已处理 / 已忽略。
 - **批量导入**：后台机型页支持 CSV 导入，模板列与 `param_def` 的 `param_key` 同步生成；上传后先预览逐行校验（品牌是否存在、日期格式、重复机型），确认后逐行落库，单次上限 500 行。

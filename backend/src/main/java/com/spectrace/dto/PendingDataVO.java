@@ -19,6 +19,12 @@ public class PendingDataVO {
     private String status;
     private LocalDateTime createdAt;
     private Map<String, Object> params;
+    /** paramKey -> 采集置信度（0~1），未提供时为空 */
+    private Map<String, Double> paramConfidence;
+
+    /** paramKey -> 单位冲突提示，审核页据此提醒修正 */
+    private Map<String, String> paramWarnings;
+
     /** 采集到的存储版本与官方发布价 */
     private List<DeviceVariantDTO> variants;
     /** 每个参数对应的中文名与分组，便于前端展示 */

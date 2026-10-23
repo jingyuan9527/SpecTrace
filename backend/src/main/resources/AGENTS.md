@@ -23,6 +23,7 @@
     "brandName": "品牌名称",
     "sourceUrl": "主要来源链接",
     "confidence": "high | medium | low",
+    "paramConfidence": { "<paramKey>": 0.8 },
     "notes": "对冲突或存疑参数的说明",
     "params": { "<paramKey>": "<参数值，统一为字符串>" },
     "variants": [
@@ -41,3 +42,6 @@
 
 - `params` 的键必须严格来自系统提示中给出的「参数 Schema」里的 `param_key`，不得自造键名。
 - 参数值统一输出为字符串；带单位的数值只输出数字部分（单位由系统维护）。
+- `paramConfidence`（可选）逐个参数给出 0~1 的把握程度，键同样来自参数 Schema：
+  - 只有单一非官方来源、或来源之间互相冲突时给出（如 `0.5`）；
+  - 官网明确写出的参数可以省略，系统会回落到整次抓取的 `confidence` 等级。
