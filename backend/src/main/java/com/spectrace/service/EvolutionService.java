@@ -24,13 +24,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -219,7 +217,12 @@ public class EvolutionService {
         return vo;
     }
 
-    /** 公共部分：缺失计数、首末值、涨跌幅与趋势。 */
+    /**
+     * 公共部分：缺失计数。
+     *
+     * <p>涨跌幅与趋势刻意不在这里算：世代区间由前端裁剪，按全系列算出的值与折线对不上，
+     * 统一交给前端按可见区间计算。</p>
+     */
     private EvolutionParamVO baseParam(ParamDef def, List<EvolutionPointVO> points) {
         EvolutionParamVO vo = new EvolutionParamVO();
         vo.setParamDefId(def.getId());
@@ -228,35 +231,6 @@ public class EvolutionService {
         vo.setUnit(def.getUnit());
         vo.setPoints(points);
         vo.setMissingCount((int) points.stream().filter(point -> point.getRaw() == null).count());
-
-        List<BigDecimal> numbers = points.stream()
-                .map(EvolutionPointVO::getValue)
-                .filter(Objects::nonNull)
-                .toList();
-        if (!numbers.isEmpty()) {
-            vo.setFirstValue(numbers.get(0));
-            vo.setLastValue(numbers.get(numbers.size() - 1));
-        }
-        if (numbers.size() >= 2) {
-            vo.setTrend(trendOf(vo.getFirstValue(), vo.getLastValue(), vo));
-        } else {
-            vo.setTrend("UNKNOWN");
-        }
         return vo;
-    }
-
-    private String trendOf(BigDecimal first, BigDecimal last, EvolutionParamVO vo) {
-        if (first == null || last == null || first.signum() == 0) {
-            return "UNKNOWN";
-        }
-        BigDecimal rate = last.subtract(first)
-                .divide(first, 6, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100))
-                .setScale(2, RoundingMode.HALF_UP);
-        vo.setChangeRate(rate);
-        if (rate.abs().compareTo(new BigDecimal("0.01")) < 0) {
-            return "FLAT";
-        }
-        return rate.signum() > 0 ? "UP" : "DOWN";
     }
 }

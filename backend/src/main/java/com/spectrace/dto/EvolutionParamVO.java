@@ -2,13 +2,15 @@ package com.spectrace.dto;
 
 import lombok.Data;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * 单个参数在系列各代上的取值、涨跌幅与趋势。
+ * 单个参数在系列各代上的取值。
  *
  * <p>{@code points} 与 {@link EvolutionVO#getDevices()} 一一对应，缺失代际为 null 值点。</p>
+ *
+ * <p>涨跌幅与趋势不在此计算：用户可在前端裁剪世代区间，只有前端知道当前可见范围，
+ * 后端按全系列算出的值会与图表对不上。算法只保留在前端一处。</p>
  */
 @Data
 public class EvolutionParamVO {
@@ -27,15 +29,4 @@ public class EvolutionParamVO {
     private List<EvolutionPointVO> points;
 
     private Integer missingCount;
-
-    /** 首个与末个非缺失数值，无法计算时为 null */
-    private BigDecimal firstValue;
-
-    private BigDecimal lastValue;
-
-    /** 末值相对首值的涨跌幅（%），首值为 0 或非数值时为 null */
-    private BigDecimal changeRate;
-
-    /** UP / DOWN / FLAT / UNKNOWN */
-    private String trend;
 }
