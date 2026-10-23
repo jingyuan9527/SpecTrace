@@ -1,11 +1,32 @@
 # SpecTrace · 手机参数对比平台
 
+[![CI](https://github.com/jingyuan9527/SpecTrace/actions/workflows/ci.yml/badge.svg)](https://github.com/jingyuan9527/SpecTrace/actions/workflows/ci.yml)
 [![Build & Publish Docker Images](https://github.com/jingyuan9527/SpecTrace/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/jingyuan9527/SpecTrace/actions/workflows/docker-publish.yml)
 
 面向数码爱好者的手机参数数据库：收录多品牌机型参数，支持**多机型横向对比**、**单参数跨代历史演变**、**按产品线回看世代（多参数趋势）**、**对比结果一键截图分享**；数据来源为管理员手动录入 + 内嵌 AgentScope AI Agent 自动抓取（抓取结果必须人工审核后入库）。
 
 > 仓库地址：<https://github.com/jingyuan9527/SpecTrace>
 > 容器镜像：`ghcr.io/jingyuan9527/spectrace-{backend,frontend}`，以及前后端一体化镜像 `ghcr.io/jingyuan9527/spectrace-app`
+
+## 界面预览
+
+> 截图取自内置演示数据（6 台机型 + 1 条待审核记录）。机型缩略图为按品牌主色生成的占位图，不是真实产品照片；演示机型的参数为节选，未录入的参数在页面上不显示。
+
+| 首页：搜索、品牌导航与热门机型 | 机型库：品牌 / 年份筛选，勾选进对比 |
+| :---: | :---: |
+| ![首页](docs/screenshots/home.png) | ![机型库](docs/screenshots/devices.png) |
+
+| 机型对比：差异高亮、水印、分享链接与复制图片 | 机型详情：存储版本发布价、参数来源与更新时间 |
+| :---: | :---: |
+| ![机型对比](docs/screenshots/compare.png) | ![机型详情](docs/screenshots/detail.png) |
+
+| 参数历史：单参数跨代演变，多品牌叠加 | 世代回顾：多参数趋势 + AI 走势回顾 |
+| :---: | :---: |
+| ![参数历史](docs/screenshots/history.png) | ![世代回顾](docs/screenshots/evolution.png) |
+
+| 后台机型管理：录入、批量导入与复制 | 后台待审核：AI 抓取结果人工审核后入库 |
+| :---: | :---: |
+| ![后台机型管理](docs/screenshots/admin-devices.png) | ![后台待审核](docs/screenshots/admin-pending.png) |
 
 ## 架构
 
@@ -26,9 +47,11 @@
 
 ```
 SpecTrace/
-├── backend/         SpringBoot 3.3 + MyBatis-Plus + 内嵌采集 Agent（SQLite 单文件库）
+├── backend/         SpringBoot 3.3 + MyBatis-Plus + 内嵌采集 Agent（SQLite 单文件库，src/test 为单测）
 ├── frontend/        Vue3 + TypeScript + TailwindCSS + shadcn-vue + ECharts + html2canvas
+├── docs/screenshots/        README 界面截图（演示数据）
 ├── sql/             旧版 MySQL 建表脚本（仅迁移参考，当前应用不再使用）
+├── .github/workflows/ci.yml               PR 校验：类型检查、构建、单测与 e2e
 ├── .github/workflows/docker-publish.yml   构建并推送单镜像到 GHCR
 ├── Dockerfile       前后端一体单镜像（构建上下文 = 仓库根目录）
 ├── docker-compose.yml       应用编排（默认拉取 GHCR 单镜像，SQLite 数据落宿主机挂载目录）
@@ -61,7 +84,7 @@ npm install
 npm run dev
 ```
 
-- 访问 http://localhost:5173 ，已配置 `/api`、`/uploads` 代理到后端 8080
+- 访问 http://localhost:5173 ，已配置 `/api`、`/uploads`、`/brands`、`/device-images` 代理到后端 8080（机型图必须走独立前缀，与 SPA 的 `/devices` 路由同名会被代理吞掉）
 - 前端使用 history 路由（无 `#`）：`/` 首页、`/devices` 机型库、`/compare` 对比、`/history` 参数历史、`/evolution` 世代回顾
 - 管理后台：`/admin/login`
 - E2E（无需后端与数据库，接口由 `e2e/mock-api.ts` 拦截）：`npx playwright install chromium` 后执行 `npm run test:e2e`；失败会保留截图、trace 与视频到 `test-results/`
