@@ -4,6 +4,7 @@ import { VueDraggable } from 'vue-draggable-plus'
 import { Combine, GripVertical, Pencil, Plus, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
+import type { Brand, DeviceSeries, UnassignedDevice } from '@/types/api'
 import {
   Badge,
   Button,
@@ -26,46 +27,28 @@ import {
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
 
-interface Brand {
-  id: number
-  name: string
-}
 
-interface Series {
-  id: number | null
-  brandId: number
-  brandName?: string
-  name: string
-  sortOrder: number
-  status: number
-  deviceCount?: number
-  startYear?: number | null
-  endYear?: number | null
-}
 
-interface UnassignedDevice {
-  id: number
-  name: string
-  brandId: number
-  brandName?: string
-  releaseDate?: string
-}
+/** 编辑表单：新建时 id 为空；brandName/统计字段由列表接口附带 */
+type SeriesForm = Omit<DeviceSeries, "id" | "brandName" | "deviceCount" | "startYear" | "endYear"> & { id: number | null }
+
+
 
 const brands = ref<Brand[]>([])
-const list = ref<Series[]>([])
+const list = ref<DeviceSeries[]>([])
 const unassigned = ref<UnassignedDevice[]>([])
 const loading = ref(true)
 const saving = ref(false)
 const dialog = ref(false)
-const form = reactive<Series>({ id: null, brandId: 0, name: '', sortOrder: 0, status: 1 })
+const form = reactive<SeriesForm>({ id: null, brandId: 0, name: '', sortOrder: 0, status: 1 })
 
 const brandId = ref<number>()
-const deleteTarget = ref<Series | null>(null)
+const deleteTarget = ref<DeviceSeries | null>(null)
 const deleting = ref(false)
 const assigningId = ref<number>()
 
 const mergeDialog = ref(false)
-const mergeSource = ref<Series | null>(null)
+const mergeSource = ref<DeviceSeries | null>(null)
 const mergeTargetId = ref<number>()
 const merging = ref(false)
 
@@ -115,7 +98,7 @@ function openCreate() {
   dialog.value = true
 }
 
-function openEdit(row: Series) {
+function openEdit(row: DeviceSeries) {
   Object.assign(form, row)
   dialog.value = true
 }
@@ -162,7 +145,7 @@ async function confirmDelete() {
   }
 }
 
-function openMerge(row: Series) {
+function openMerge(row: DeviceSeries) {
   mergeSource.value = row
   mergeTargetId.value = undefined
   mergeDialog.value = true
@@ -220,7 +203,7 @@ async function saveOrder() {
   }
 }
 
-function yearRange(row: Series) {
+function yearRange(row: DeviceSeries) {
   if (!row.startYear) return '—'
   return row.startYear === row.endYear ? `${row.startYear}` : `${row.startYear}-${row.endYear}`
 }

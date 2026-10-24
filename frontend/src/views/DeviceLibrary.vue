@@ -5,23 +5,11 @@ import { motion } from 'motion-v'
 import { GitCompareArrows, Smartphone, SlidersHorizontal } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
+import type { Brand, Device } from '@/types/api'
 import { useCompareStore } from '@/stores/compare'
 import { Badge, Button, Card, CardContent, Empty, Pagination, Select, Skeleton } from '@/components/ui'
 import DeviceSearch from '@/components/DeviceSearch.vue'
 import ImageWithFallback from '@/components/ImageWithFallback.vue'
-
-interface Brand {
-  id: number
-  name: string
-}
-
-interface Device {
-  id: number
-  name: string
-  thumbnail?: string
-  releaseDate?: string
-  brandId?: number
-}
 
 const route = useRoute()
 const router = useRouter()

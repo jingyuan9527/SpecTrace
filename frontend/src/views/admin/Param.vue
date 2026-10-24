@@ -6,6 +6,7 @@ import { VueDraggable } from 'vue-draggable-plus'
 import { Check, GripVertical, Pencil, Plus, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
+import type { ParamDef, ParamGroup } from '@/types/api'
 import {
   Badge,
   Button,
@@ -28,22 +29,15 @@ import {
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
 
-interface ParamGroup {
-  id: number | null
-  name: string
-  sortOrder: number
-}
+/** 编辑表单：新建时 id 为空 */
+type GroupForm = Omit<ParamGroup, 'id'> & { id: number | null }
 
-interface ParamDef {
+/** 编辑表单：新建时 id 为空，下拉值为空串表示未选 */
+type DefForm = Omit<ParamDef, 'id' | 'groupId' | 'enumOptions' | 'unit'> & {
   id: number | null
-  paramKey: string
-  paramName: string
-  groupId?: number
-  paramType: string
+  groupId: number | undefined
   enumOptions: string
   unit: string
-  sortOrder: number
-  enabled: number
 }
 
 const groups = ref<ParamGroup[]>([])
@@ -53,11 +47,11 @@ const loading = ref(true)
 const defsLoading = ref(false)
 
 const groupDialog = ref(false)
-const groupForm = reactive<ParamGroup>({ id: null, name: '', sortOrder: 0 })
+const groupForm = reactive<GroupForm>({ id: null, name: '', sortOrder: 0 })
 const groupSaving = ref(false)
 
 const defDialog = ref(false)
-const defForm = reactive<ParamDef>({
+const defForm = reactive<DefForm>({
   id: null,
   paramKey: '',
   paramName: '',

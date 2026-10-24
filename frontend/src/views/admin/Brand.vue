@@ -4,6 +4,7 @@ import { VueDraggable } from 'vue-draggable-plus'
 import { GripVertical, ImagePlus, Loader2, Pencil, Plus, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
+import type { Brand } from '@/types/api'
 import {
   Badge,
   Button,
@@ -27,20 +28,16 @@ import PageHeader from '@/components/PageHeader.vue'
 import ImageWithFallback from '@/components/ImageWithFallback.vue'
 import { compressImage, formatBytes } from '@/lib/image'
 
-interface Brand {
-  id: number | null
-  name: string
-  logo: string
-  sortOrder: number
-  status: number
-}
+/** 编辑表单：新建时 id 为空 */
+type BrandForm = Omit<Brand, 'id' | 'logo'> & { id: number | null; logo: string }
 
 const list = ref<Brand[]>([])
+// 表单与列表同字段，但 id 可空
 const loading = ref(true)
 const dialog = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
-const form = reactive<Brand>({ id: null, name: '', logo: '', sortOrder: 0, status: 1 })
+const form = reactive<BrandForm>({ id: null, name: '', logo: '', sortOrder: 0, status: 1 })
 const deleteTarget = ref<Brand | null>(null)
 const deleting = ref(false)
 const fileInput = ref<HTMLInputElement>()

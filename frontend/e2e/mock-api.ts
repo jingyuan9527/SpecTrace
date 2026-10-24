@@ -1,35 +1,12 @@
 import type { Page, Route } from '@playwright/test'
+import type { AdminUser, Brand, Device, DeviceSeries, Feedback, ParamDef, ParamGroup, PendingData } from '../src/types/api'
 
 /**
  * E2E 用的内存版后端：拦截 /api/** 请求，让前端主链路可以脱离真实服务与数据库运行。
- * 数据结构保持与后端 VO 一致，接口按需增量实现。
+ *
+ * <p>数据结构直接引用 {@link '../src/types/api'} 的接口契约——后端 VO 改字段名时，
+ * 这里会与前端一起在 typecheck 阶段报错，避免 mock 与真实后端悄悄漂移。</p>
  */
-interface MockBrand {
-  id: number
-  name: string
-  logo?: string
-  sortOrder: number
-  status: number
-}
-
-interface MockSeries {
-  id: number
-  brandId: number
-  name: string
-  sortOrder: number
-  status: number
-}
-
-interface MockDevice {
-  id: number
-  brandId: number
-  name: string
-  releaseDate: string
-  thumbnail: string
-  status: number
-  seriesId?: number
-}
-
 const PARAMS: Record<number, Record<string, string>> = {
   7: { release_date: '2025-09-19', screen_size: '6.3', battery_capacity: '3600' },
   4: { release_date: '2024-09-20', screen_size: '6.1', battery_capacity: '3561' },
@@ -43,16 +20,17 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
     brands: [
       { id: 1, name: 'Apple', logo: '/devices/placeholder.svg', sortOrder: 1, status: 1 },
       { id: 2, name: '华为', logo: '/devices/placeholder.svg', sortOrder: 2, status: 1 },
-    ] as MockBrand[],
+    ] as Brand[],
     series: [
       { id: 1, brandId: 1, name: 'iPhone 数字系列', sortOrder: 1, status: 1 },
       { id: 2, brandId: 2, name: 'Mate 系列', sortOrder: 2, status: 1 },
-    ] as MockSeries[],
+    ] as DeviceSeries[],
     devices: [
       { id: 7, brandId: 1, name: 'iPhone 17', releaseDate: '2025-09-19', thumbnail: '/devices/placeholder.svg', status: 1, seriesId: 1 },
       { id: 4, brandId: 1, name: 'iPhone 16', releaseDate: '2024-09-20', thumbnail: '/devices/placeholder.svg', status: 1, seriesId: 1 },
       { id: 9, brandId: 2, name: 'Mate 70', releaseDate: '2024-11-26', thumbnail: '/devices/placeholder.svg', status: 1, seriesId: 2 },
-    ] as MockDevice[],
+    ] as Device[],
+    // 列表行附带 params，供审核详情直接复用
     pending: [
       {
         id: 1,
@@ -64,16 +42,16 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         createdAt: '2026-10-22T10:00:00',
         params: { release_date: '2026-09-18', screen_size: '6.4' },
       },
-    ],
+    ] as (PendingData & { params: Record<string, string> })[],
     tasks: [] as any[],
     users: [
       { id: 1, username: 'admin', nickname: '超级管理员', role: 'SUPER_ADMIN', status: 1 },
       { id: 2, username: 'editor', nickname: '内容编辑', role: 'ADMIN', status: 1 },
-    ] as any[],
-    groups: [{ id: 1, name: '基础信息', sortOrder: 1 }] as any[],
+    ] as AdminUser[],
+    groups: [{ id: 1, name: '基础信息', sortOrder: 1 }] as ParamGroup[],
     defs: [
       { id: 1, paramKey: 'release_date', paramName: '发布时间', groupId: 1, paramType: 'date', sortOrder: 1, enabled: 1 },
-    ] as any[],
+    ] as ParamDef[],
     feedback: [
       {
         id: 1,
@@ -86,7 +64,7 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         status: 'OPEN',
         createdAt: '2026-10-22T09:00:00',
       },
-    ] as any[],
+    ] as Feedback[],
   }
   let nextBrandId = 10
   let nextDeviceId = 100
@@ -358,7 +336,7 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
       if (method === 'POST') {
         const body = request.postDataJSON()
         // id 放在展开之后：真实后端会忽略请求体里的 id，mock 也要保证主键由服务端生成
-        const created: MockSeries = { sortOrder: state.series.length + 1, status: 1, ...body, id: nextSeriesId++ }
+        const created: DeviceSeries = { sortOrder: state.series.length + 1, status: 1, ...body, id: nextSeriesId++ }
         state.series.push(created)
         return ok(created)
       }
@@ -368,8 +346,8 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
           .map((series) => {
             const members = state.devices.filter((device) => device.seriesId === series.id)
             const years = members
-              .map((device) => Number(device.releaseDate.slice(0, 4)))
-              .filter((year) => Number.isFinite(year))
+              .map((device) => Number((device.releaseDate ?? '').slice(0, 4)))
+              .filter((year) => Number.isFinite(year) && year > 0)
             return {
               ...series,
               brandName: brandNameOf(series.brandId),
@@ -529,7 +507,9 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
       return ok({ url: '/uploads/e2e.webp', width: 800, height: 600, size: 120_000, contentType: 'image/webp' })
     }
 
-    return ok(null)
+    // 未 mock 的接口直接失败：静默 ok(null) 会让「真实后端新增/改名接口而 mock 未跟上」在测试里隐形
+    console.error(`[mock-api] 未实现的接口: ${method} ${path}`)
+    return route.fulfill({ status: 404, json: { code: 404, message: `[mock-api] 未实现的接口: ${method} ${path}` } })
   }
 
   function brandNameOf(brandId: number) {

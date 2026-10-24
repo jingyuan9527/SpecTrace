@@ -5,6 +5,7 @@ import { motion } from 'motion-v'
 import { ArrowLeft, CalendarDays, Clock3, Flag, GitCompareArrows, Link2, Loader2, Smartphone } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
+import type { DeviceVariant, ParamDef, ParamGroup, ParamMeta } from '@/types/api'
 import { absoluteUrl, setPageMeta } from '@/lib/meta'
 import { formatTime } from '@/lib/utils'
 import { useCompareStore } from '@/stores/compare'
@@ -27,34 +28,6 @@ import {
   Textarea,
 } from '@/components/ui'
 import ImageWithFallback from '@/components/ImageWithFallback.vue'
-
-interface ParamGroup {
-  id: number
-  name: string
-}
-
-interface ParamDef {
-  id: number
-  groupId: number
-  paramKey: string
-  paramName: string
-  unit?: string
-}
-
-interface DeviceVariant {
-  id?: number
-  storage: string
-  ram?: string
-  price?: number | null
-  currency?: string
-  priceType?: string
-}
-
-interface ParamMeta {
-  sourceUrl?: string | null
-  confidence?: number | null
-  updatedAt?: string | null
-}
 
 const route = useRoute()
 const router = useRouter()
@@ -112,9 +85,10 @@ onMounted(async () => {
   }
 })
 
-function formatPrice(price?: number | null, currency = 'CNY') {
+function formatPrice(price?: number | null, currency?: string | null) {
   if (price === null || price === undefined) return '—'
-  const symbol = currency === 'CNY' ? '¥' : `${currency} `
+  const code = currency ?? 'CNY'
+  const symbol = code === 'CNY' ? '¥' : `${code} `
   return `${symbol}${Number(price).toLocaleString('zh-CN')}`
 }
 

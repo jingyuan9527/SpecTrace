@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { Bot, ExternalLink, Loader2, RefreshCw, RotateCcw, Send, Terminal } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
+import type { AiModel } from '@/types/api'
 import { usePagedList } from '@/composables/usePagedList'
 import { formatTime } from '@/lib/utils'
 import {
@@ -29,12 +30,7 @@ import {
 } from '@/components/ui'
 import PageHeader from '@/components/PageHeader.vue'
 
-interface AiModel {
-  id: number
-  configName: string
-  model: string
-  isDefault: number
-}
+
 
 const aiModels = ref<AiModel[]>([])
 const submitting = ref(false)
@@ -246,7 +242,7 @@ async function createTask() {
   }
 }
 
-function modelLabel(id: number | null) {
+function modelLabel(id: number | null | undefined) {
   if (!id) return '默认模型'
   const model = aiModels.value.find((m) => m.id === id)
   return model ? `${model.configName} / ${model.model}` : `#${id}`

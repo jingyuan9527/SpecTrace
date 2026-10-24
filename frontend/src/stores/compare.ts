@@ -3,8 +3,8 @@ import { defineStore } from 'pinia'
 export interface CompareDevice {
   id: number
   name: string
-  brandName?: string
-  thumbnail?: string
+  brandName?: string | null
+  thumbnail?: string | null
 }
 
 const STORAGE_KEY = 'spectrace-compare'

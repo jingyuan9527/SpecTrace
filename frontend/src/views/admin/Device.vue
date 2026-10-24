@@ -4,6 +4,7 @@ import { Copy, Download, FileUp, ImagePlus, Loader2, Pencil, Plus, Search, Smart
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
 import { usePagedList } from '@/composables/usePagedList'
+import type { ParamDef } from '@/types/api'
 import {
   Badge,
   Button,
@@ -44,16 +45,6 @@ interface Series {
 interface ParamGroup {
   id: number
   name: string
-}
-
-interface ParamDef {
-  id: number
-  groupId: number
-  paramKey: string
-  paramName: string
-  paramType: string
-  enumOptions?: string
-  unit?: string
 }
 
 interface DeviceVariantRow {
@@ -231,7 +222,8 @@ async function save() {
         priceType: 'LAUNCH',
         sortOrder: index + 1,
       }))
-    await adminApi.saveDevice({ ...form, params: { ...form.params }, variants })
+    // brandId 已在上方非空校验，这里断言给请求类型
+    await adminApi.saveDevice({ ...form, brandId: form.brandId, params: { ...form.params }, variants })
     toast.success('保存成功')
     dialog.value = false
     await load()
@@ -312,7 +304,7 @@ function brandName(id?: number) {
   return brands.value.find((b) => b.id === id)?.name ?? '—'
 }
 
-function seriesName(id?: number) {
+function seriesName(id?: number | null) {
   if (!id) return '—'
   return seriesList.value.find((s) => s.id === id)?.name ?? '—'
 }
