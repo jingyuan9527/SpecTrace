@@ -8,9 +8,11 @@ import com.spectrace.dto.LoginResponse;
 import com.spectrace.entity.AdminUser;
 import com.spectrace.mapper.AdminUserMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -18,16 +20,31 @@ public class AuthService {
     private final AdminUserMapper adminUserMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final LoginAttemptGuard loginGuard;
+    private final OperationLogService logService;
 
     public LoginResponse login(LoginRequest req) {
+        String username = req.getUsername() == null ? "" : req.getUsername().trim();
+        long retryAfter = loginGuard.retryAfterSeconds(username);
+        if (retryAfter > 0) {
+            log.warn("登录已锁定 username={} retryAfter={}s", username, retryAfter);
+            throw new BizException(429, "登录失败次数过多，请 " + retryAfter + " 秒后再试");
+        }
         AdminUser user = adminUserMapper.selectOne(
-                Wrappers.<AdminUser>lambdaQuery().eq(AdminUser::getUsername, req.getUsername()));
+                Wrappers.<AdminUser>lambdaQuery().eq(AdminUser::getUsername, username));
         if (user == null || !passwordEncoder.matches(req.getPassword(), user.getPassword())) {
+            loginGuard.recordFailure(username);
+            // 审计落在操作日志里，便于追溯爆破来源；对外不区分「账号不存在 / 密码错误」
+            logService.record(null, username, "LOGIN_FAILED", "admin_user", user == null ? null : user.getId(),
+                    user == null ? "账号不存在" : "密码错误");
+            log.warn("登录失败 username={} exists={}", username, user != null);
             throw new BizException(401, "用户名或密码错误");
         }
         if (user.getStatus() == null || user.getStatus() != 1) {
+            logService.record(null, username, "LOGIN_FAILED", "admin_user", user.getId(), "账号已禁用");
             throw new BizException(403, "账号已被禁用");
         }
+        loginGuard.reset(username);
         LoginResponse resp = new LoginResponse();
         resp.setToken(jwtUtil.generate(user.getId(), user.getUsername(), user.getRole()));
         resp.setUserId(user.getId());

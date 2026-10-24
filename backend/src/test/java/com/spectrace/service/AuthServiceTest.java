@@ -32,16 +32,21 @@ class AuthServiceTest {
     private AdminUserMapper adminUserMapper;
     @Mock
     private JwtUtil jwtUtil;
+    @Mock
+    private OperationLogService operationLogService;
 
     /** 用真实编码器，避免 mock 掉 matches 后把校验逻辑也一起跳过 */
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+
+    /** 用真实锁定器，保证「连续失败 → 锁定」的计数语义被原样覆盖 */
+    private final LoginAttemptGuard loginGuard = new LoginAttemptGuard();
 
     private AuthService service;
     private AdminUser user;
 
     @BeforeEach
     void setUp() {
-        service = new AuthService(adminUserMapper, passwordEncoder, jwtUtil);
+        service = new AuthService(adminUserMapper, passwordEncoder, jwtUtil, loginGuard, operationLogService);
 
         user = new AdminUser();
         user.setId(1L);
@@ -99,5 +104,30 @@ class AuthServiceTest {
 
         user.setMustChangePassword(0);
         assertThat(service.login(req).getMustChangePassword()).isFalse();
+    }
+
+    @Test
+    @DisplayName("连续失败达到阈值后登录被锁定，锁定期内正确密码也拒绝")
+    void locksAfterRepeatedFailures() {
+        when(adminUserMapper.selectOne(any())).thenReturn(null);
+        LoginRequest req = new LoginRequest();
+        req.setUsername("admin");
+        req.setPassword("bad-pass");
+
+        for (int i = 0; i < 5; i++) {
+            assertThatThrownBy(() -> service.login(req))
+                    .isInstanceOf(BizException.class)
+                    .hasMessageContaining("用户名或密码错误");
+        }
+        assertThatThrownBy(() -> service.login(req))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("失败次数过多");
+
+        // 锁定期内即使密码正确也拒绝，防止绕过
+        when(adminUserMapper.selectOne(any())).thenReturn(user);
+        req.setPassword("admin123");
+        assertThatThrownBy(() -> service.login(req))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("失败次数过多");
     }
 }
