@@ -8,7 +8,7 @@ import type { AdminUser, Brand, Device, DeviceSeries, Feedback, ParamDef, ParamG
  * 这里会与前端一起在 typecheck 阶段报错，避免 mock 与真实后端悄悄漂移。</p>
  */
 const PARAMS: Record<number, Record<string, string>> = {
-  7: { release_date: '2025-09-19', screen_size: '6.3', battery_capacity: '3600' },
+  7: { release_date: '2025-09-19', screen_size: '6.3', battery_capacity: '3600', chipset: 'A19 Pro' },
   4: { release_date: '2024-09-20', screen_size: '6.1', battery_capacity: '3561' },
   9: { release_date: '2024-11-26', screen_size: '6.7', battery_capacity: '5000' },
 }
@@ -223,11 +223,27 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
     }
     if (/^\/public\/devices\/\d+$/.test(path)) {
       const device = state.devices.find((item) => item.id === numberId)!
+      // 与真实后端同口径：系列只取已上架成员，按发布时间升序（含本机）
+      const members = state.devices
+        .filter((item) => item.seriesId && item.seriesId === device.seriesId && item.status === 1)
+        .sort((left, right) => (left.releaseDate ?? '').localeCompare(right.releaseDate ?? ''))
+      const series = state.series.find((item) => item.id === device.seriesId)
       return ok({
         device,
         brand: state.brands.find((brand) => brand.id === device.brandId),
+        series: series ? { id: series.id, name: series.name } : null,
+        seriesDevices: members.map((item) => ({
+          id: item.id,
+          name: item.name,
+          thumbnail: item.thumbnail,
+          releaseDate: item.releaseDate,
+          launchPrice: 5999,
+        })),
         params: PARAMS[device.id] ?? {},
-        paramMeta: { screen_size: { sourceUrl: 'https://example.com/spec', updatedAt: '2026-10-20T09:00:00' } },
+        paramMeta: {
+          screen_size: { paramDefId: 3, sourceUrl: 'https://example.com/spec', updatedAt: '2026-10-20T09:00:00' },
+          battery_capacity: { paramDefId: 11, updatedAt: '2026-10-20T09:00:00' },
+        },
         lastUpdated: '2026-10-20T09:00:00',
         variants: [{ id: 1, storage: '256GB', price: 5999, currency: 'CNY', priceType: 'LAUNCH' }],
       })
@@ -352,10 +368,28 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
               ...series,
               brandName: brandNameOf(series.brandId),
               deviceCount: members.length,
+              // 后台完善度口径与真实后端一致：含草稿，有任一参数值即计入
+              paramDeviceCount: members.filter(
+                (device) => Object.keys(PARAMS[device.id] ?? {}).length > 0,
+              ).length,
               startYear: years.length ? Math.min(...years) : null,
               endYear: years.length ? Math.max(...years) : null,
             }
           }),
+      )
+    }
+    if (/^\/admin\/series\/\d+\/devices-without-params$/.test(path)) {
+      const seriesId = Number(path.split('/')[3])
+      return ok(
+        state.devices
+          .filter((device) => device.seriesId === seriesId && Object.keys(PARAMS[device.id] ?? {}).length === 0)
+          .map((device) => ({
+            id: device.id,
+            name: device.name,
+            status: device.status,
+            releaseDate: device.releaseDate,
+            thumbnail: device.thumbnail,
+          })),
       )
     }
     if (/^\/admin\/series\/\d+$/.test(path)) {
@@ -425,7 +459,7 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
           name: body.name,
           releaseDate: body.releaseDate || '',
           thumbnail: body.thumbnail || '',
-          status: 1,
+          status: body.status ?? 1,
           seriesId: body.seriesId ?? undefined,
         }
         state.devices.push(created)
