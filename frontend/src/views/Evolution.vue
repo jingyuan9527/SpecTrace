@@ -53,6 +53,9 @@ const brandId = ref<number>()
 const seriesId = ref<number>()
 const selectedDefIds = ref<number[]>([])
 const data = ref<EvolutionResult | null>(null)
+
+// 访客页不引入整套鉴权状态：与路由守卫同口径，本地有 token 即视为管理员，决定「去补抓」按钮显隐
+const isAdmin = computed(() => !!localStorage.getItem('spectrace-token'))
 const loading = ref(false)
 const capturing = ref(false)
 const fromIndex = ref(0)
@@ -510,7 +513,16 @@ watch([seriesId, defKey], syncQuery)
           <p class="mt-1 text-xs text-muted-foreground">共 {{ data.devices.length }} 代 · {{ generationSummary }}</p>
         </div>
 
-        <div v-if="!hasChart" class="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+        <!-- 稀疏系列（不足 2 代）不画单点图：单点折线无趋势可言，改为收录进度叙事引导补数 -->
+        <div v-if="visibleDevices.length < 2" class="rounded-lg border border-dashed px-4 py-8 text-center">
+          <p class="text-sm text-muted-foreground">该系列已收录 {{ data.devices.length }} 代，数据持续收录中</p>
+          <p class="mt-1 text-xs text-muted-foreground">收录更多世代后，这里会展示多参数趋势图</p>
+          <Button v-if="isAdmin" variant="outline" size="sm" class="mt-3" @click="router.push({ name: 'admin-agent-tasks' })">
+            去后台补抓
+          </Button>
+        </div>
+
+        <div v-else-if="!hasChart" class="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
           所选参数暂无可绘制的数值，勾选屏幕尺寸、电池容量等数值型参数试试
         </div>
 

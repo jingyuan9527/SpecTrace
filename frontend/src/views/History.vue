@@ -345,7 +345,10 @@ function exportCsv() {
             <LineChart class="h-4 w-4 text-primary" />
             {{ selectedBrandNames }} · {{ data?.paramName }} 演变
           </div>
-          <p class="mt-1 text-xs text-muted-foreground">共 {{ totalPoints }} 个机型数据点</p>
+          <!-- 单点曲线无趋势可言，把稀疏表达为收录进度而非让它显得像坏数据 -->
+          <p class="mt-1 text-xs text-muted-foreground">
+            {{ totalPoints <= 1 ? '已收录 1 款 · 数据持续收录中' : `共 ${totalPoints} 个机型数据点` }}
+          </p>
         </div>
 
         <div v-show="view === 'chart'" :ref="charts.bind('main')" class="h-96 w-full" />

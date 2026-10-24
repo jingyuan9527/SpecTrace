@@ -2,10 +2,10 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { motion } from 'motion-v'
-import { ArrowLeft, CalendarDays, Clock3, Flag, GitCompareArrows, Link2, Loader2, Smartphone } from '@lucide/vue'
+import { ArrowLeft, CalendarDays, Clock3, Flag, GitCompareArrows, LineChart, Link2, Loader2, Smartphone, TrendingUp } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
-import type { DeviceVariant, ParamDef, ParamGroup, ParamMeta } from '@/types/api'
+import type { DeviceVariant, EvolutionDevice, ParamDef, ParamGroup, ParamMeta, SeriesBrief } from '@/types/api'
 import { absoluteUrl, setPageMeta } from '@/lib/meta'
 import { formatTime } from '@/lib/utils'
 import { useCompareStore } from '@/stores/compare'
@@ -35,6 +35,8 @@ const compare = useCompareStore()
 
 const device = ref<any>(null)
 const brand = ref<any>(null)
+const series = ref<SeriesBrief | null>(null)
+const seriesDevices = ref<EvolutionDevice[]>([])
 const params = ref<Record<string, string>>({})
 const paramMeta = ref<Record<string, ParamMeta>>({})
 const lastUpdated = ref<string | null>(null)
@@ -63,6 +65,8 @@ onMounted(async () => {
     const detail = await publicApi.deviceDetail(id)
     device.value = detail.device
     brand.value = detail.brand
+    series.value = detail.series || null
+    seriesDevices.value = detail.seriesDevices || []
     params.value = detail.params || {}
     paramMeta.value = detail.paramMeta || {}
     lastUpdated.value = detail.lastUpdated || null
@@ -98,6 +102,27 @@ const minPrice = computed(() => {
     .filter((p): p is number => p !== null && p !== undefined)
   return prices.length ? Math.min(...prices) : null
 })
+
+// 防御式入口：系列下已收录 ≥2 代才有回顾价值，单机系列只展示「收录中」文案
+const evolutionAvailable = computed(() => seriesDevices.value.length >= 2)
+
+function openEvolution() {
+  if (!series.value) return
+  router.push({ name: 'evolution', query: { seriesId: String(series.value.id) } })
+}
+
+/** 参数历史入口：仅数值型参数（值以数字开头）做跨代比较才有意义，纯文本参数不展示 */
+function isNumericValue(value: string) {
+  return /^\d/.test(value.trim())
+}
+
+function openParamHistory(paramDefId?: number | null) {
+  if (!device.value || !paramDefId) return
+  router.push({
+    name: 'history',
+    query: { brandId: String(device.value.brandId), paramDefId: String(paramDefId) },
+  })
+}
 
 function addCompare() {
   if (!device.value) return
@@ -209,6 +234,42 @@ async function submitFeedback() {
         </Card>
       </motion.div>
 
+      <Card v-if="series" class="overflow-hidden">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-5 py-3">
+          <h2 class="text-sm font-semibold">
+            所属系列 · <span class="text-primary">{{ series.name }}</span>
+          </h2>
+          <Button v-if="evolutionAvailable" variant="outline" size="sm" @click="openEvolution">
+            <TrendingUp />
+            世代回顾
+          </Button>
+          <span v-else class="text-xs text-muted-foreground">已收录 {{ seriesDevices.length }} 代 · 数据持续收录中</span>
+        </div>
+        <CardContent class="p-0">
+          <!-- 移动端横向滚动浏览同系列机型，当前机型高亮锁定 -->
+          <div class="flex gap-3 overflow-x-auto p-4">
+            <button
+              v-for="item in seriesDevices"
+              :key="item.id"
+              type="button"
+              class="w-28 shrink-0 space-y-1.5 rounded-lg border p-2.5 text-center transition-colors"
+              :class="item.id === device.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/60'"
+              :aria-current="item.id === device.id ? 'true' : undefined"
+              :disabled="item.id === device.id"
+              @click="router.push({ name: 'device-detail', params: { id: item.id } })"
+            >
+              <div class="flex h-14 items-center justify-center">
+                <ImageWithFallback :src="item.thumbnail" :alt="item.name" img-class="max-h-12 object-contain">
+                  <template #fallback><Smartphone class="h-6 w-6 text-muted-foreground/40" /></template>
+                </ImageWithFallback>
+              </div>
+              <div class="truncate text-xs font-medium">{{ item.name }}</div>
+              <div class="text-xs text-muted-foreground">{{ item.releaseDate?.slice(0, 4) || '年份待补充' }}</div>
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card v-if="variants.length" class="overflow-hidden">
         <div class="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-5 py-3">
           <h2 class="text-sm font-semibold">存储版本与发布价</h2>
@@ -291,16 +352,29 @@ async function submitFeedback() {
                     </div>
                   </TableCell>
                   <TableCell class="text-right align-top">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      class="text-muted-foreground hover:text-foreground"
-                      aria-label="报告参数错误"
-                      title="报告参数错误"
-                      @click="openFeedback(item)"
-                    >
-                      <Flag />
-                    </Button>
+                    <div class="flex items-center justify-end gap-0.5">
+                      <Button
+                        v-if="item.meta?.paramDefId && isNumericValue(item.value)"
+                        variant="ghost"
+                        size="icon-sm"
+                        class="text-muted-foreground hover:text-foreground"
+                        aria-label="查看参数历史"
+                        title="查看该参数的历史演变"
+                        @click="openParamHistory(item.meta?.paramDefId)"
+                      >
+                        <LineChart />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        class="text-muted-foreground hover:text-foreground"
+                        aria-label="报告参数错误"
+                        title="报告参数错误"
+                        @click="openFeedback(item)"
+                      >
+                        <Flag />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               </TableBody>
