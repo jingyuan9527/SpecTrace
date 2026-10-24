@@ -59,7 +59,7 @@ public class EvolutionService {
     /** 系列列表：带机型数与起止年份，供筛选下拉直接展示规模。brandId 为空表示全量，key 需归一避免 null。 */
     @Cacheable(cacheNames = CacheConfig.SERIES_LIST, key = "#brandId ?: 'all'")
     public List<SeriesVO> seriesList(Long brandId) {
-        return seriesService.listOverview(brandId, 1);
+        return seriesService.listOverview(brandId, 1, true);
     }
 
     /**
@@ -114,8 +114,10 @@ public class EvolutionService {
     }
 
     private List<Device> devicesOf(Long seriesId) {
+        // 只取已上架机型：草稿（系列发现产物）对访客不可见，且详情页系列条同口径，两边数量必须一致
         List<Device> devices = new ArrayList<>(deviceMapper.selectList(Wrappers.<Device>lambdaQuery()
-                .eq(Device::getSeriesId, seriesId)));
+                .eq(Device::getSeriesId, seriesId)
+                .eq(Device::getStatus, 1)));
         devices.sort(Comparator.comparing(Device::getReleaseDate, Comparator.nullsLast(Comparator.naturalOrder()))
                 .thenComparing(Device::getId));
         return devices;

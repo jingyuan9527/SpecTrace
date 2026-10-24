@@ -94,8 +94,20 @@ export interface DeviceSeries {
   /** 后台列表附带字段 */
   brandName?: string
   deviceCount?: number
+  /** 已有参数值的机型数，完善度 = paramDeviceCount / deviceCount */
+  paramDeviceCount?: number
   startYear?: number | null
   endYear?: number | null
+}
+
+/** 系列内缺参数的机型（含草稿），「补抓缺参机型」的目标 */
+export interface SeriesMissingDevice {
+  id: number
+  name: string
+  /** 0 草稿 1 上架 */
+  status: number
+  releaseDate?: string | null
+  thumbnail?: string | null
 }
 
 export interface AdminUser {
@@ -245,14 +257,23 @@ export interface DeviceSuggest {
 }
 
 export interface ParamMeta {
+  paramDefId?: number | null
   sourceUrl?: string | null
   confidence?: number | null
   updatedAt?: string | null
 }
 
+/** 机型详情附带的最小系列信息，未归类为 null */
+export interface SeriesBrief {
+  id: number
+  name: string
+}
+
 export interface DeviceDetail {
   device: Device
   brand?: Brand | null
+  series?: SeriesBrief | null
+  seriesDevices: EvolutionDevice[]
   params: Record<string, string>
   paramMeta: Record<string, ParamMeta>
   lastUpdated?: string | null

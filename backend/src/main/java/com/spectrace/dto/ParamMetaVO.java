@@ -11,6 +11,9 @@ import java.time.LocalDateTime;
 @Data
 public class ParamMetaVO {
 
+    /** 参数定义 ID，详情页参数行据此拼接「参数历史」链接 */
+    private Long paramDefId;
+
     private String sourceUrl;
 
     private BigDecimal confidence;

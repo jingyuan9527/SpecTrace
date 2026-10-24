@@ -5,14 +5,17 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.spectrace.common.BizException;
 import com.spectrace.config.CacheConfig;
+import com.spectrace.dto.SeriesMissingDeviceVO;
 import com.spectrace.dto.SeriesSuggestVO;
 import com.spectrace.dto.SeriesVO;
 import com.spectrace.dto.UnassignedDeviceVO;
 import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
+import com.spectrace.entity.DeviceParamValue;
 import com.spectrace.entity.DeviceSeries;
 import com.spectrace.mapper.BrandMapper;
 import com.spectrace.mapper.DeviceMapper;
+import com.spectrace.mapper.DeviceParamValueMapper;
 import com.spectrace.mapper.DeviceSeriesMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +31,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -44,6 +48,7 @@ public class DeviceSeriesService {
     private final DeviceSeriesMapper seriesMapper;
     private final DeviceMapper deviceMapper;
     private final BrandMapper brandMapper;
+    private final DeviceParamValueMapper valueMapper;
     private final AiChatService aiChatService;
     private final ObjectMapper objectMapper;
 
@@ -65,7 +70,7 @@ public class DeviceSeriesService {
     }
 
     @Transactional
-    @CacheEvict(cacheNames = CacheConfig.SERIES_LIST, allEntries = true)
+    @CacheEvict(cacheNames = {CacheConfig.SERIES_LIST, CacheConfig.DEVICE_DETAIL}, allEntries = true)
     public DeviceSeries save(DeviceSeries series) {
         if (!StringUtils.hasText(series.getName())) {
             throw new BizException("系列名称不能为空");
@@ -107,7 +112,7 @@ public class DeviceSeriesService {
 
     /** 删除系列：有机型在册时拒绝，引导先合并或迁移，避免机型被静默解绑。 */
     @Transactional
-    @CacheEvict(cacheNames = CacheConfig.SERIES_LIST, allEntries = true)
+    @CacheEvict(cacheNames = {CacheConfig.SERIES_LIST, CacheConfig.DEVICE_DETAIL}, allEntries = true)
     public void delete(Long id) {
         if (seriesMapper.selectById(id) == null) {
             throw new BizException("系列不存在");
@@ -120,17 +125,32 @@ public class DeviceSeriesService {
         log.info("删除系列: id={}", id);
     }
 
-    /** 系列概览：带品牌名、机型数与起止年份，后台管理与前台筛选共用。 */
-    public List<SeriesVO> listOverview(Long brandId, Integer status) {
+    /**
+     * 系列概览：带品牌名、机型数与起止年份，后台管理与前台筛选共用。
+     *
+     * @param publishedOnly 前台口径只统计已上架机型；后台完善度看板含草稿（草稿同样需要补参数）
+     */
+    public List<SeriesVO> listOverview(Long brandId, Integer status, boolean publishedOnly) {
         List<DeviceSeries> series = list(brandId, status);
         if (series.isEmpty()) {
             return List.of();
         }
         List<Long> seriesIds = series.stream().map(DeviceSeries::getId).toList();
-        Map<Long, List<Device>> devicesBySeries = deviceMapper.selectList(Wrappers.<Device>lambdaQuery()
-                        .select(Device::getId, Device::getSeriesId, Device::getReleaseDate)
-                        .in(Device::getSeriesId, seriesIds)).stream()
+        var deviceQuery = Wrappers.<Device>lambdaQuery()
+                .select(Device::getId, Device::getSeriesId, Device::getReleaseDate)
+                .in(Device::getSeriesId, seriesIds);
+        if (publishedOnly) {
+            deviceQuery.eq(Device::getStatus, 1);
+        }
+        Map<Long, List<Device>> devicesBySeries = deviceMapper.selectList(deviceQuery).stream()
                 .collect(Collectors.groupingBy(Device::getSeriesId));
+
+        // 完善度口径：与 deviceCount 同集合（含草稿），统计已有至少一条参数值的机型
+        List<Long> allDeviceIds = devicesBySeries.values().stream()
+                .flatMap(List::stream)
+                .map(Device::getId)
+                .toList();
+        Set<Long> deviceIdsWithParams = deviceIdsWithParams(allDeviceIds);
 
         Map<Long, Brand> brandMap = brandMapper.selectBatchIds(
                         series.stream().map(DeviceSeries::getBrandId).distinct().toList()).stream()
@@ -155,11 +175,58 @@ public class DeviceSeriesService {
             vo.setSortOrder(item.getSortOrder());
             vo.setStatus(item.getStatus());
             vo.setDeviceCount(devices.size());
+            vo.setParamDeviceCount((int) devices.stream()
+                    .filter(d -> deviceIdsWithParams.contains(d.getId()))
+                    .count());
             vo.setStartYear(years.isEmpty() ? null : years.get(0));
             vo.setEndYear(years.isEmpty() ? null : years.get(years.size() - 1));
             result.add(vo);
         }
         return result;
+    }
+
+    /** 已有至少一条参数值的机型 ID 集合，供完善度统计与缺参清单共用。 */
+    private Set<Long> deviceIdsWithParams(List<Long> deviceIds) {
+        if (deviceIds.isEmpty()) {
+            return Set.of();
+        }
+        var query = Wrappers.<DeviceParamValue>query()
+                .select("DISTINCT device_id")
+                .in("device_id", deviceIds);
+        return valueMapper.selectObjs(query).stream()
+                .filter(Objects::nonNull)
+                .map(id -> ((Number) id).longValue())
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * 系列内缺参数的机型（含草稿），供「补抓缺参机型」圈定目标。
+     * 草稿机型是系列发现链路的产物，同样需要抓详情补参数，因此不按上架状态过滤。
+     */
+    public List<SeriesMissingDeviceVO> devicesWithoutParams(Long seriesId) {
+        DeviceSeries series = seriesMapper.selectById(seriesId);
+        if (series == null) {
+            throw new BizException("系列不存在：" + seriesId);
+        }
+        List<Device> devices = deviceMapper.selectList(Wrappers.<Device>lambdaQuery()
+                .eq(Device::getSeriesId, seriesId)
+                .orderByDesc(Device::getReleaseDate));
+        if (devices.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> withParams = deviceIdsWithParams(devices.stream().map(Device::getId).toList());
+        return devices.stream()
+                .filter(d -> !withParams.contains(d.getId()))
+                .map(d -> {
+                    SeriesMissingDeviceVO vo = new SeriesMissingDeviceVO();
+                    vo.setId(d.getId());
+                    vo.setName(d.getName());
+                    vo.setStatus(d.getStatus());
+                    vo.setReleaseDate(d.getReleaseDate());
+                    vo.setThumbnail(d.getThumbnail());
+                    return vo;
+                })
+                .toList();
     }
 
     /** 未归类机型：后台逐个选择系列即时归类。 */
@@ -193,7 +260,7 @@ public class DeviceSeriesService {
 
     /** 归类：seriesId 为空表示取消归类；系列必须与机型同品牌。 */
     @Transactional
-    @CacheEvict(cacheNames = CacheConfig.SERIES_LIST, allEntries = true)
+    @CacheEvict(cacheNames = {CacheConfig.SERIES_LIST, CacheConfig.DEVICE_DETAIL}, allEntries = true)
     public int assign(List<Long> deviceIds, Long seriesId) {
         if (deviceIds == null || deviceIds.isEmpty()) {
             throw new BizException("请选择要归类的机型");
@@ -222,7 +289,7 @@ public class DeviceSeriesService {
 
     /** 合并系列：机型迁到目标系列后删除源系列，两个系列必须同品牌。 */
     @Transactional
-    @CacheEvict(cacheNames = CacheConfig.SERIES_LIST, allEntries = true)
+    @CacheEvict(cacheNames = {CacheConfig.SERIES_LIST, CacheConfig.DEVICE_DETAIL}, allEntries = true)
     public int merge(Long sourceId, Long targetId) {
         if (targetId == null || Objects.equals(sourceId, targetId)) {
             throw new BizException("请选择不同的目标系列");

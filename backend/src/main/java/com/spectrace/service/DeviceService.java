@@ -131,7 +131,7 @@ public class DeviceService {
     }
 
     /**
-     * 机型详情：主表 + 参数值（paramKey -> value）+ 字段级溯源 + 最后更新时间。
+     * 机型详情：主表 + 参数值（paramKey -> value）+ 字段级溯源 + 最后更新时间 + 系列归属。
      * paramMeta 与 params 并行返回，避免改变既有参数结构导致管理端编辑表单失效。
      */
     @Cacheable(cacheNames = CacheConfig.DEVICE_DETAIL, key = "#id")
@@ -147,11 +147,72 @@ public class DeviceService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("device", device);
         result.put("brand", brand);
+        result.put("series", seriesOf(device));
+        result.put("seriesDevices", seriesDevicesOf(device));
         result.put("params", toParamValues(values, defMap));
         result.put("paramMeta", toParamMeta(values, defMap));
         result.put("lastUpdated", lastUpdated(device, values));
         result.put("variants", variantsOf(id));
         return result;
+    }
+
+    /** 机型所属系列，未归类返回 null，前端据此隐藏系列条。 */
+    private SeriesBriefVO seriesOf(Device device) {
+        if (device.getSeriesId() == null) {
+            return null;
+        }
+        DeviceSeries series = seriesMapper.selectById(device.getSeriesId());
+        if (series == null || series.getStatus() == null || series.getStatus() != 1) {
+            log.debug("机型 {} 的系列 {} 不存在或已停用，按未归类返回", device.getId(), device.getSeriesId());
+            return null;
+        }
+        SeriesBriefVO vo = new SeriesBriefVO();
+        vo.setId(series.getId());
+        vo.setName(series.getName());
+        return vo;
+    }
+
+    /** 同系列已上架机型序列（含本机），口径与世代回顾一致：发布时间升序、空值排末尾。 */
+    private List<EvolutionDeviceVO> seriesDevicesOf(Device device) {
+        if (device.getSeriesId() == null) {
+            return List.of();
+        }
+        List<Device> siblings = deviceMapper.selectList(Wrappers.<Device>lambdaQuery()
+                .eq(Device::getSeriesId, device.getSeriesId())
+                .eq(Device::getStatus, 1));
+        siblings.sort(Comparator.comparing(Device::getReleaseDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Device::getId));
+        Map<Long, BigDecimal> lowestPrices = lowestPricesOf(siblings.stream().map(Device::getId).toList());
+        return siblings.stream()
+                .map(item -> {
+                    EvolutionDeviceVO vo = new EvolutionDeviceVO();
+                    vo.setId(item.getId());
+                    vo.setName(item.getName());
+                    vo.setThumbnail(item.getThumbnail());
+                    vo.setReleaseDate(item.getReleaseDate());
+                    vo.setLaunchPrice(lowestPrices.get(item.getId()));
+                    return vo;
+                })
+                .toList();
+    }
+
+    /** deviceId -> 最低变体价格，与 EvolutionService 同口径：取该机型所有变体价格的最低值。 */
+    private Map<Long, BigDecimal> lowestPricesOf(List<Long> deviceIds) {
+        if (deviceIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, BigDecimal> prices = new HashMap<>();
+        variantMapper.selectList(Wrappers.<DeviceVariant>lambdaQuery()
+                        .select(DeviceVariant::getDeviceId, DeviceVariant::getPrice)
+                        .in(DeviceVariant::getDeviceId, deviceIds))
+                .forEach(variant -> {
+                    if (variant.getPrice() == null) {
+                        return;
+                    }
+                    prices.merge(variant.getDeviceId(), variant.getPrice(),
+                            (current, candidate) -> current.compareTo(candidate) <= 0 ? current : candidate);
+                });
+        return prices;
     }
 
     private Map<Long, ParamDef> defMap() {
@@ -184,6 +245,7 @@ public class DeviceService {
                 continue;
             }
             ParamMetaVO vo = new ParamMetaVO();
+            vo.setParamDefId(value.getParamDefId());
             vo.setSourceUrl(value.getSourceUrl());
             vo.setConfidence(value.getConfidence());
             vo.setUpdatedAt(value.getUpdatedAt());

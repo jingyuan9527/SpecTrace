@@ -42,6 +42,7 @@ import type {
   SeriesCreateResult,
   SeriesDiscoveryDetail,
   SeriesItem,
+  SeriesMissingDevice,
   SeriesSaveRequest,
   UnassignedDevice,
   UploadResult,
@@ -111,6 +112,8 @@ export const adminApi = {
     request.post<unknown, number>('/admin/series/assign', { deviceIds, seriesId }),
   mergeSeries: (id: number, targetId: number) =>
     request.post<unknown, number>(`/admin/series/${id}/merge`, { targetId }),
+  seriesMissingDevices: (id: number) =>
+    request.get<unknown, SeriesMissingDevice[]>(`/admin/series/${id}/devices-without-params`),
   saveSeries: (data: SeriesSaveRequest) =>
     data.id
       ? request.put<unknown, DeviceSeries>(`/admin/series/${data.id}`, data)

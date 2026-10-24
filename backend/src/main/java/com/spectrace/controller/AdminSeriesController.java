@@ -3,6 +3,7 @@ package com.spectrace.controller;
 import com.spectrace.common.R;
 import com.spectrace.dto.AssignSeriesRequest;
 import com.spectrace.dto.MergeSeriesRequest;
+import com.spectrace.dto.SeriesMissingDeviceVO;
 import com.spectrace.dto.SeriesSuggestVO;
 import com.spectrace.dto.SeriesVO;
 import com.spectrace.dto.UnassignedDeviceVO;
@@ -30,7 +31,7 @@ public class AdminSeriesController {
     @Operation(summary = "系列列表（含机型数与起止年份）")
     @GetMapping
     public R<List<SeriesVO>> list(@RequestParam(required = false) Long brandId) {
-        return R.ok(seriesService.listOverview(brandId, null));
+        return R.ok(seriesService.listOverview(brandId, null, false));
     }
 
     @Operation(summary = "AI 推荐品牌产品线系列划分（候选名，同名已存在会标注）")
@@ -43,6 +44,12 @@ public class AdminSeriesController {
     @GetMapping("/unassigned")
     public R<List<UnassignedDeviceVO>> unassigned(@RequestParam(required = false) Long brandId) {
         return R.ok(seriesService.unassigned(brandId));
+    }
+
+    @Operation(summary = "系列内缺参数的机型（补抓目标清单，含草稿）")
+    @GetMapping("/{id}/devices-without-params")
+    public R<List<SeriesMissingDeviceVO>> devicesWithoutParams(@PathVariable Long id) {
+        return R.ok(seriesService.devicesWithoutParams(id));
     }
 
     @Operation(summary = "机型归类（seriesId 为空表示取消归类）")

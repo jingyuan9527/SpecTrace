@@ -23,6 +23,9 @@ public class SeriesVO {
 
     private Integer deviceCount;
 
+    /** 系列内已有参数值的机型数（与 deviceCount 同口径、含草稿），完善度 = paramDeviceCount / deviceCount */
+    private Integer paramDeviceCount;
+
     /** 系列内最早/最晚发布年份，无机型或日期全空时为 null */
     private Integer startYear;
 
