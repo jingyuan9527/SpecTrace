@@ -13,6 +13,10 @@ spring:
   datasource:
     url: jdbc:sqlite:${SPECTRACE_DB_PATH:./data/spectrace.db}?journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL&foreign_keys=on
     driver-class-name: org.sqlite.JDBC
+    hikari:
+      # SQLite WAL 同一时刻只允许一个写者：池越大并发写连接越多，busy_timeout 排队与
+      # SQLITE_BUSY 概率反而越高；收敛到 4 足够 Web + Agent 抓取并发，读不受影响
+      maximum-pool-size: 4
   sql:
     init:
       mode: always
