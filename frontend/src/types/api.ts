@@ -197,6 +197,24 @@ export interface ConnectivityTest {
   error?: string | null
 }
 
+/** 采集搜索源配置（Key 只回是否已配置） */
+export interface SearchConfig {
+  provider: string
+  tavilyApiKeySet: boolean
+  searxngBaseUrl?: string | null
+  searxngTokenSet: boolean
+  serperApiKeySet: boolean
+  updatedAt?: string
+}
+
+export interface SearchTestResult {
+  success: boolean
+  engine: string
+  count: number
+  latencyMs: number
+  error?: string | null
+}
+
 // ---------- 访客端 VO ----------
 export interface DeviceSuggest {
   id: number

@@ -35,6 +35,8 @@ import type {
   PendingData,
   PendingDataDetail,
   RetentionOverview,
+  SearchConfig,
+  SearchTestResult,
   SeriesCreateResult,
   SeriesDiscoveryDetail,
   SeriesItem,
@@ -169,6 +171,16 @@ export const adminApi = {
     }),
   importAiModels: (configId: number, data: { models: string[]; temperature?: number }) =>
     request.post<unknown, void>(`/admin/ai-configs/${configId}/import-models`, data),
+  // 采集搜索源（Tavily / SearXNG / Serper / DuckDuckGo 路由，Key 留空表示不修改）
+  getSearchConfig: () => request.get<unknown, SearchConfig>('/admin/search-config'),
+  saveSearchConfig: (data: {
+    provider: string
+    tavilyApiKey?: string
+    searxngBaseUrl?: string
+    searxngToken?: string
+    serperApiKey?: string
+  }) => request.put<unknown, SearchConfig>('/admin/search-config', data),
+  testSearchConfig: () => request.post<unknown, SearchTestResult>('/admin/search-config/test'),
   // AI 模型
   aiModels: () => request.get<unknown, AiModel[]>('/admin/ai-models'),
   setDefaultAiModel: (id: number) => request.post<unknown, void>(`/admin/ai-models/${id}/default`),

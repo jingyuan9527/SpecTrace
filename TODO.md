@@ -917,6 +917,23 @@
 
 ---
 
+### T63 采集搜索源可配置（Tavily / SearXNG / Serper）✅（2026-10-24 用户批准）
+
+**决策**：Serper 一并搬进后台（env 作默认值）；SearXNG 自建、Token 非必选；单选引擎 + 失败自动回落；Tavily 必做。
+
+**改动**
+- 新表 `agent_search_config`（单行）：provider（system/tavily/searxng）+ 各引擎 Key / 地址 / Token，后台改完下个任务热生效
+- 新 `WebSearchService`：四引擎统一入口（Tavily POST / SearXNG `format=json`+token 查询参数 / Serper / DuckDuckGo jsoup），所选引擎失败自动回落 DDG，DDG 也失败返回空结果不抛异常；Tavily 与 SearXNG 返回 snippet
+- `CollectTools.webSearch` 改为委托新服务（工具层只保留预算闸门 / 缓存 / 任务日志语义），任务日志带实际引擎名
+- 新接口 `GET/PUT /api/admin/search-config`（Key 留空不改、回显只带已配置标记）与 `POST /search-config/test`（真实搜一次返回引擎/条数/延迟）；写 SAVE_SEARCH_CONFIG / TEST_SEARCH_CONFIG 操作日志
+- AI 配置页顶部新增「采集搜索源」卡片：引擎徽标与配置摘要、编辑弹窗（按引擎显隐字段）、一键测试
+
+**验证**：编译 + 28 测试、typecheck/build/e2e 11 全绿；冒烟——默认配置返回 system；searxng 坏地址保存后测试，日志出现「搜索引擎 searxng 失败，回落 DuckDuckGo」证明路由与回落链路；tavily 缺 Key / 非法 provider 均被 400 拦截。
+
+**遗留**：Tavily / SearXNG 真实可用性待生产配置后用「测试」按钮验证（本机无法连通外网搜索引擎）。
+
+---
+
 ## 依赖与并行建议
 
 - T1 独立，最先做，当天可完成

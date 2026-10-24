@@ -170,6 +170,18 @@ CREATE TABLE IF NOT EXISTS ai_model (
     deleted      TINYINT      NOT NULL DEFAULT 0
 );
 
+-- 采集搜索源配置（单行，id=1）：选 Tavily / SearXNG 后失败自动回落 DuckDuckGo
+CREATE TABLE IF NOT EXISTS agent_search_config (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider         VARCHAR(16)  NOT NULL DEFAULT 'system',
+    tavily_api_key   VARCHAR(255) DEFAULT NULL,
+    searxng_base_url VARCHAR(255) DEFAULT NULL,
+    searxng_token    VARCHAR(255) DEFAULT NULL,
+    serper_api_key   VARCHAR(255) DEFAULT NULL,
+    created_at       DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    updated_at       DATETIME     DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS admin_user (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     username    VARCHAR(64)  NOT NULL,

@@ -1,11 +1,12 @@
 package com.spectrace.agent.tool;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.spectrace.agent.CrawlSession;
 import com.spectrace.agent.TaskLogContext;
 import com.spectrace.agent.config.AgentProperties;
 import com.spectrace.service.AgentTaskLogService;
+import com.spectrace.service.SearchConfigService;
+import com.spectrace.service.WebSearchService;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import lombok.RequiredArgsConstructor;
@@ -13,16 +14,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
-import org.jsoup.select.Elements;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 
-import java.net.URLDecoder;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -50,8 +43,9 @@ public class CollectTools {
 
     private final AgentProperties props;
     private final ObjectMapper objectMapper;
-    private final RestClient.Builder restClientBuilder;
     private final AgentTaskLogService taskLogService;
+    private final SearchConfigService searchConfigService;
+    private final WebSearchService webSearchService;
 
     /**
      * 搜索机型参数相关的权威网页。
@@ -78,18 +72,11 @@ public class CollectTools {
         }
         sleepCrawlInterval();
         long start = System.currentTimeMillis();
-        String json;
-        try {
-            json = props.getSerperApiKey() != null && !props.getSerperApiKey().isBlank()
-                    ? searchSerper(query)
-                    : searchDuckDuckGo(query);
-        } catch (Exception e) {
-            log.warn("搜索失败 query={}: {}", query, e.getMessage());
-            taskLog("WARN", "搜索失败：" + query + "，" + e.getMessage());
-            return "[]";
-        }
-        taskLog("INFO", "搜索「" + query + "」返回 " + resultCount(json) + " 条结果（"
-                + (System.currentTimeMillis() - start) + " ms）");
+        // 引擎路由与失败回落在 WebSearchService 内完成（后台「搜索源」配置，热生效）
+        WebSearchService.Outcome outcome = webSearchService.search(searchConfigService.resolve(), query);
+        taskLog("INFO", "搜索「" + query + "」经 " + outcome.engine() + " 返回 " + outcome.results().size()
+                + " 条结果（" + (System.currentTimeMillis() - start) + " ms）");
+        String json = toJson(outcome.results());
         CrawlSession.cache(cacheKey, json);
         return json;
     }
@@ -199,94 +186,12 @@ public class CollectTools {
         }
     }
 
-    private int resultCount(String json) {
-        try {
-            JsonNode node = objectMapper.readTree(json);
-            return node.isArray() ? node.size() : 0;
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-
-    private String searchSerper(String query) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("q", query);
-        body.put("num", props.getSearchResultLimit());
-
-        JsonNode data = restClientBuilder.build()
-                .post()
-                .uri("https://google.serper.dev/search")
-                .header("X-API-KEY", props.getSerperApiKey())
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(body)
-                .retrieve()
-                .body(JsonNode.class);
-
-        List<Map<String, Object>> results = new ArrayList<>();
-        if (data != null) {
-            for (JsonNode item : data.path("organic")) {
-                if (results.size() >= props.getSearchResultLimit()) {
-                    break;
-                }
-                results.add(item(item.path("title").asText(null),
-                        item.path("link").asText(null),
-                        item.path("snippet").asText(null)));
-            }
-        }
-        return toJson(results);
-    }
-
-    private String searchDuckDuckGo(String query) {
-        String url = "https://html.duckduckgo.com/html/?q="
-                + URLEncoder.encode(query, StandardCharsets.UTF_8);
-
-        List<Map<String, Object>> results = new ArrayList<>();
-        try {
-            Document doc = Jsoup.connect(url).userAgent(UA).timeout(20000).get();
-            Elements links = doc.select("a.result__a");
-            for (Element link : links) {
-                if (results.size() >= props.getSearchResultLimit()) {
-                    break;
-                }
-                results.add(item(link.text(), decodeDuckDuckGoUrl(link.attr("href")), ""));
-            }
-        } catch (Exception e) {
-            log.warn("DuckDuckGo 搜索失败 query={}: {}", query, e.getMessage());
-        }
-        return toJson(results);
-    }
-
     private String toJson(List<Map<String, Object>> results) {
         try {
             return objectMapper.writeValueAsString(results);
         } catch (Exception e) {
             return "[]";
         }
-    }
-
-    private Map<String, Object> item(String title, String url, String snippet) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("title", title);
-        m.put("url", url);
-        m.put("snippet", snippet);
-        return m;
-    }
-
-    /** DuckDuckGo 结果链接为跳转地址，尽量还原真实目标 URL。 */
-    private String decodeDuckDuckGoUrl(String href) {
-        if (href == null) {
-            return null;
-        }
-        int idx = href.indexOf("uddg=");
-        if (idx < 0) {
-            return href;
-        }
-        String encoded = href.substring(idx + "uddg=".length());
-        int amp = encoded.indexOf('&');
-        if (amp >= 0) {
-            encoded = encoded.substring(0, amp);
-        }
-        return URLDecoder.decode(encoded, StandardCharsets.UTF_8);
     }
 
     /** 抓取风控：每次外网请求前休眠固定间隔。 */

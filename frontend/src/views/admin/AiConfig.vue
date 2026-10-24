@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import {
   ChevronDown,
   CloudDownload,
+  Globe,
   KeyRound,
   Loader2,
   Pencil,
@@ -15,7 +16,7 @@ import {
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
-import type { ConnectivityTest } from '@/types/api'
+import type { ConnectivityTest, SearchConfig, SearchTestResult } from '@/types/api'
 import {
   Badge,
   Button,
@@ -54,6 +55,68 @@ const loading = ref(true)
 const modelsMap = reactive<Record<number, any[]>>({})
 const expanded = ref<number[]>([])
 const loadingModels = ref<number[]>([])
+
+// ---- 采集搜索源（Tavily / SearXNG / Serper / DuckDuckGo） ----
+const searchConfig = ref<SearchConfig | null>(null)
+const searchTestResult = ref<SearchTestResult | null>(null)
+const searchDialog = ref(false)
+const searchSaving = ref(false)
+const searchTesting = ref(false)
+const searchForm = reactive({
+  provider: 'system',
+  tavilyApiKey: '',
+  searxngBaseUrl: '',
+  searxngToken: '',
+  serperApiKey: '',
+})
+const searchEngineOptions = [
+  { label: '系统默认（配 Serper Key 用 Google，否则 DuckDuckGo）', value: 'system' },
+  { label: 'Tavily（API Key，返回内容摘要）', value: 'tavily' },
+  { label: 'SearXNG（自建实例，需开启 JSON 输出）', value: 'searxng' },
+]
+const engineLabels: Record<string, string> = { system: '系统默认', tavily: 'Tavily', searxng: 'SearXNG' }
+
+async function loadSearchConfig() {
+  searchConfig.value = await adminApi.getSearchConfig()
+}
+
+function openSearchEdit() {
+  Object.assign(searchForm, {
+    provider: searchConfig.value?.provider ?? 'system',
+    tavilyApiKey: '',
+    searxngBaseUrl: searchConfig.value?.searxngBaseUrl ?? '',
+    searxngToken: '',
+    serperApiKey: '',
+  })
+  searchDialog.value = true
+}
+
+async function saveSearch() {
+  searchSaving.value = true
+  try {
+    searchConfig.value = await adminApi.saveSearchConfig({ ...searchForm })
+    toast.success('搜索源配置已保存，下个抓取任务生效')
+    searchDialog.value = false
+  } finally {
+    searchSaving.value = false
+  }
+}
+
+async function testSearch() {
+  if (searchTesting.value) return
+  searchTesting.value = true
+  try {
+    const result = await adminApi.testSearchConfig()
+    searchTestResult.value = result
+    if (result.success) {
+      toast.success(`${engineLabels[result.engine] ?? result.engine} 连通正常，返回 ${result.count} 条（${result.latencyMs} ms）`)
+    } else {
+      toast.error(`搜索测试失败：${result.error ?? '未知错误'}`)
+    }
+  } finally {
+    searchTesting.value = false
+  }
+}
 
 const presets: Record<string, { label: string; baseUrl: string }> = {
   dashscope: { label: '阿里云百炼 DashScope', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
@@ -110,6 +173,8 @@ async function load() {
   } finally {
     loading.value = false
   }
+  // 搜索源配置独立加载，失败不影响 AI 连接列表
+  loadSearchConfig().catch(() => {})
 }
 
 onMounted(load)
@@ -306,7 +371,50 @@ async function confirmDeleteModel() {
       <Skeleton v-for="i in 3" :key="i" class="h-24 rounded-xl" />
     </div>
 
-    <div v-else-if="connections.length" class="space-y-3">
+    <template v-else>
+      <Card v-if="searchConfig">
+        <CardContent class="p-4">
+          <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <Globe class="h-4 w-4 text-muted-foreground" />
+            </span>
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-sm font-semibold">采集搜索源</span>
+                <Badge variant="outline">{{ engineLabels[searchConfig.provider] ?? searchConfig.provider }}</Badge>
+              </div>
+              <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span>Tavily Key：{{ searchConfig.tavilyApiKeySet ? '已配置' : '未配置' }}</span>
+                <span v-if="searchConfig.searxngBaseUrl">
+                  SearXNG：{{ searchConfig.searxngBaseUrl }}{{ searchConfig.searxngTokenSet ? '（含 Token）' : '' }}
+                </span>
+                <span>Serper Key：{{ searchConfig.serperApiKeySet ? '已配置' : '未配置' }}</span>
+              </div>
+              <p
+                v-if="searchTestResult"
+                class="mt-1 text-xs"
+                :class="searchTestResult.success ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'"
+              >
+                上次测试：{{ engineLabels[searchTestResult.engine] ?? searchTestResult.engine }}
+                {{ searchTestResult.success ? `返回 ${searchTestResult.count} 条（${searchTestResult.latencyMs} ms）` : `失败——${searchTestResult.error}` }}
+              </p>
+            </div>
+            <div class="flex shrink-0 flex-wrap items-center gap-1.5">
+              <Button variant="outline" size="sm" :disabled="searchTesting" @click="testSearch">
+                <Loader2 v-if="searchTesting" class="animate-spin" />
+                <PlugZap v-else />
+                测试
+              </Button>
+              <Button variant="outline" size="sm" @click="openSearchEdit">
+                <Pencil />
+                编辑
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div v-if="connections.length" class="space-y-3">
       <Card v-for="row in connections" :key="row.id">
         <CardContent class="p-0">
           <div class="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
@@ -425,6 +533,57 @@ async function confirmDeleteModel() {
         新增连接
       </Button>
     </Empty>
+    </template>
+
+    <Dialog v-model:open="searchDialog" title="采集搜索源" description="配好即用：所选引擎失败时自动回落 DuckDuckGo，改完下个任务生效" class="max-w-xl">
+      <div class="space-y-4">
+        <div class="space-y-1.5">
+          <Label>搜索引擎</Label>
+          <Select v-model="searchForm.provider" :options="searchEngineOptions" />
+        </div>
+        <div v-if="searchForm.provider === 'tavily'" class="space-y-1.5">
+          <Label for="tavily-key">Tavily API Key</Label>
+          <Input
+            id="tavily-key"
+            v-model="searchForm.tavilyApiKey"
+            type="password"
+            :placeholder="searchConfig?.tavilyApiKeySet ? '已配置，留空表示不修改' : 'tvly-…，免费档每月 1000 次'"
+            autocomplete="off"
+          />
+        </div>
+        <template v-if="searchForm.provider === 'searxng'">
+          <div class="space-y-1.5">
+            <Label for="searxng-url">实例地址</Label>
+            <Input id="searxng-url" v-model="searchForm.searxngBaseUrl" placeholder="如 http://192.168.1.10:8080（需开启 JSON 输出）" />
+          </div>
+          <div class="space-y-1.5">
+            <Label for="searxng-token">访问 Token（可选）</Label>
+            <Input
+              id="searxng-token"
+              v-model="searchForm.searxngToken"
+              type="password"
+              :placeholder="searchConfig?.searxngTokenSet ? '已配置，留空表示不修改' : '实例未启用鉴权可留空'"
+              autocomplete="off"
+            />
+          </div>
+        </template>
+        <div class="space-y-1.5">
+          <Label for="serper-key">Serper API Key（Google 结果，可选）</Label>
+          <Input
+            id="serper-key"
+            v-model="searchForm.serperApiKey"
+            type="password"
+            :placeholder="searchConfig?.serperApiKeySet ? '已配置，留空表示不修改' : '留空则沿用环境变量 SERPER_API_KEY'"
+            autocomplete="off"
+          />
+          <p class="text-xs text-muted-foreground">在「系统默认」下生效；也可作为 Tavily / SearXNG 的备选一并保存</p>
+        </div>
+      </div>
+      <template #footer>
+        <Button variant="outline" :disabled="searchSaving" @click="searchDialog = false">取消</Button>
+        <Button :disabled="searchSaving" @click="saveSearch">{{ searchSaving ? '保存中…' : '保存' }}</Button>
+      </template>
+    </Dialog>
 
     <Dialog v-model:open="dialog" :title="form.id ? '编辑连接' : '新增连接'" class="max-w-xl">
       <div class="grid gap-4 sm:grid-cols-2">
