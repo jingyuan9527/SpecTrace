@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.spectrace.common.BizException;
 import com.spectrace.common.ParamValueParser;
@@ -48,6 +49,7 @@ public class AgentTaskService {
     private final DeviceService deviceService;
     private final ParamService paramService;
     private final OperationLogService logService;
+    private final AgentTaskLogService taskLogService;
     private final ObjectMapper objectMapper;
 
     /** 管理员提交抓取任务。 */
@@ -114,6 +116,7 @@ public class AgentTaskService {
 
         boolean failed = "FAILED".equalsIgnoreCase(req.getStatus());
         if (failed) {
+            taskLogService.error(task.getId(), "抓取失败：" + (req.getError() == null ? "未知错误" : req.getError()));
             task.setStatus(TaskStatus.FAILED.name());
             task.setErrorMsg(req.getError());
             task.setDurationMs(req.getDurationMs());
@@ -144,14 +147,9 @@ public class AgentTaskService {
             params.put("_confidence", req.getParamConfidence());
         }
 
-        AgentPendingData pending = new AgentPendingData();
-        pending.setTaskId(task.getId());
-        pending.setModelName(req.getModelName() != null ? req.getModelName() : task.getModelName());
-        pending.setBrandName(req.getBrandName() != null ? req.getBrandName() : task.getBrandName());
-        pending.setSourceUrl(req.getSourceUrl());
-        pending.setParamsJson(objectMapper.writeValueAsString(params));
-        pending.setStatus(PendingStatus.PENDING_REVIEW.name());
-        pendingMapper.insert(pending);
+        appendSummaryLogs(task.getId(), req.getLogs());
+        AgentPendingData pending = savePending(task, req, params);
+        taskLogService.info(task.getId(), "结果已写入待审核 #" + pending.getId());
 
         task.setStatus(TaskStatus.PENDING_REVIEW.name());
         task.setSourceUrl(req.getSourceUrl());
@@ -159,6 +157,120 @@ public class AgentTaskService {
         task.setDurationMs(req.getDurationMs());
         task.setUpdatedAt(LocalDateTime.now());
         taskMapper.updateById(task);
+    }
+
+    /**
+     * 写入待审核数据。
+     *
+     * <p>同一任务重复回调时复用原行，保证回调幂等；同品牌同机型已有待审核记录时用最新抓取覆盖，
+     * 否则「同一机型抓两次」就会在待审核队列里堆成两条看起来一样的数据。
+     */
+    private AgentPendingData savePending(AgentTask task, AgentCallbackRequest req, Map<String, Object> params)
+            throws Exception {
+        String modelName = req.getModelName() != null ? req.getModelName() : task.getModelName();
+        String brandName = req.getBrandName() != null ? req.getBrandName() : task.getBrandName();
+
+        AgentPendingData reused = findReusablePending(task.getId(), modelName, brandName);
+        if (reused != null) {
+            Long previousTaskId = reused.getTaskId();
+            if (previousTaskId != null && !previousTaskId.equals(task.getId())) {
+                // 旧任务的结果已被本次抓取覆盖，状态同步置为丢弃，避免任务列表永远停在「待审核」
+                updateStatus(previousTaskId, TaskStatus.DISCARDED, null);
+                log.info("待审核记录被同机型新抓取覆盖: pendingId={} oldTaskId={} newTaskId={}",
+                        reused.getId(), previousTaskId, task.getId());
+                taskLogService.info(task.getId(), "同机型已有待审核记录 #" + reused.getId()
+                        + "，本次结果覆盖该记录，旧任务 #" + previousTaskId + " 已置为丢弃");
+            }
+            reused.setTaskId(task.getId());
+            reused.setModelName(modelName);
+            reused.setBrandName(brandName);
+            reused.setSourceUrl(req.getSourceUrl());
+            reused.setParamsJson(objectMapper.writeValueAsString(params));
+            // 记录代表「最近一次抓取结果」，时间跟着刷新，列表按新鲜度排序才不会把刚抓到的沉到底部
+            reused.setCreatedAt(LocalDateTime.now());
+            reused.setUpdatedAt(LocalDateTime.now());
+            pendingMapper.updateById(reused);
+            return reused;
+        }
+
+        AgentPendingData pending = new AgentPendingData();
+        pending.setTaskId(task.getId());
+        pending.setModelName(modelName);
+        pending.setBrandName(brandName);
+        pending.setSourceUrl(req.getSourceUrl());
+        pending.setParamsJson(objectMapper.writeValueAsString(params));
+        pending.setStatus(PendingStatus.PENDING_REVIEW.name());
+        pendingMapper.insert(pending);
+        return pending;
+    }
+
+    private AgentPendingData findReusablePending(Long taskId, String modelName, String brandName) {
+        AgentPendingData byTask = pendingMapper.selectOne(Wrappers.<AgentPendingData>lambdaQuery()
+                .eq(AgentPendingData::getTaskId, taskId)
+                .eq(AgentPendingData::getStatus, PendingStatus.PENDING_REVIEW.name())
+                .last("LIMIT 1"));
+        if (byTask != null) {
+            return byTask;
+        }
+        var query = Wrappers.<AgentPendingData>lambdaQuery()
+                .eq(AgentPendingData::getStatus, PendingStatus.PENDING_REVIEW.name())
+                .eq(AgentPendingData::getModelName, modelName == null ? "" : modelName.trim());
+        if (StringUtils.hasText(brandName)) {
+            query.eq(AgentPendingData::getBrandName, brandName.trim());
+        } else {
+            query.isNull(AgentPendingData::getBrandName);
+        }
+        return pendingMapper.selectOne(query.last("LIMIT 1"));
+    }
+
+    /**
+     * 把采集端回传的日志摘要拆成可读行。
+     *
+     * <p>摘要是一次性 JSON（搜索词 / 置信度 / 备注 / 被丢弃的未知参数），直接甩给前端不好读；
+     * 格式无法识别时原样保留，避免丢信息。
+     */
+    private void appendSummaryLogs(Long taskId, String logs) {
+        if (!StringUtils.hasText(logs)) {
+            return;
+        }
+        try {
+            JsonNode node = objectMapper.readTree(logs);
+            if (node == null || !node.isObject()) {
+                taskLogService.info(taskId, "采集摘要：" + logs);
+                return;
+            }
+            String queries = joinTextArray(node.path("queries"));
+            if (StringUtils.hasText(queries)) {
+                taskLogService.info(taskId, "搜索词：" + queries);
+            }
+            String confidence = node.path("confidence").asText("");
+            if (StringUtils.hasText(confidence)) {
+                taskLogService.info(taskId, "整体置信度：" + confidence);
+            }
+            String notes = node.path("notes").asText("");
+            if (StringUtils.hasText(notes)) {
+                taskLogService.info(taskId, "采集备注：" + notes);
+            }
+            String dropped = joinTextArray(node.path("droppedUnknownKeys"));
+            if (StringUtils.hasText(dropped)) {
+                taskLogService.warn(taskId, "以下参数不在参数定义中，已丢弃：" + dropped);
+            }
+        } catch (Exception e) {
+            taskLogService.info(taskId, "采集摘要：" + logs);
+        }
+    }
+
+    private String joinTextArray(JsonNode node) {
+        if (node == null || !node.isArray()) {
+            return "";
+        }
+        List<String> values = new ArrayList<>();
+        node.forEach(item -> {
+            if (!item.isNull()) {
+                values.add(item.asText());
+            }
+        });
+        return String.join("、", values);
     }
 
     public IPage<AgentPendingData> pagePending(long current, long size, String status) {

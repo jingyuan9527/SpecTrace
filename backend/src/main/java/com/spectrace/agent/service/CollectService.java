@@ -2,6 +2,7 @@ package com.spectrace.agent.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.spectrace.agent.TaskLogContext;
 import com.spectrace.agent.config.AgentProperties;
 import com.spectrace.agent.tool.CollectTools;
 import com.spectrace.dto.AgentCallbackRequest;
@@ -9,6 +10,7 @@ import com.spectrace.dto.AgentTaskPayload;
 import com.spectrace.dto.DeviceVariantDTO;
 import com.spectrace.dto.ResolvedModel;
 import com.spectrace.entity.ParamDef;
+import com.spectrace.service.AgentTaskLogService;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
@@ -46,13 +48,31 @@ public class CollectService {
 
     private final CollectTools collectTools;
     private final AgentProperties props;
+    private final AgentTaskLogService taskLogService;
     private final ObjectMapper objectMapper;
 
     /**
      * 执行一次采集，返回可写入待审核库的结构化结果。
+     *
+     * <p>采集期间把任务 id 绑定到当前线程，工具调用（搜索 / 抓网页）才能把过程日志记到对应任务上。
      */
     public AgentCallbackRequest collect(AgentTaskPayload payload, List<ParamDef> schemaDefs,
                                         ResolvedModel aiConfig) {
+        TaskLogContext.bind(payload.getTaskId());
+        try {
+            taskLogService.info(payload.getTaskId(), String.format("开始采集：%s %s，AI 模型 %s/%s，参数定义 %d 项",
+                    nullToEmpty(payload.getBrandName()), nullToEmpty(payload.getModelName()),
+                    aiConfig == null ? "-" : aiConfig.getProvider(),
+                    aiConfig == null ? "-" : aiConfig.getModel(),
+                    schemaDefs == null ? 0 : schemaDefs.size()));
+            return doCollect(payload, schemaDefs, aiConfig);
+        } finally {
+            TaskLogContext.clear();
+        }
+    }
+
+    private AgentCallbackRequest doCollect(AgentTaskPayload payload, List<ParamDef> schemaDefs,
+                                           ResolvedModel aiConfig) {
         String modelName = payload.getModelName() == null ? "" : payload.getModelName();
         String brandName = payload.getBrandName() == null ? "" : payload.getBrandName();
 
@@ -130,11 +150,15 @@ public class CollectService {
             result.setParams(params);
             result.setParamConfidence(parseParamConfidence(data, allowed));
             result.setVariants(parseVariants(data.path("variants")));
-            result.setLogs(objectMapper.writeValueAsString(Map.of(
-                    "queries", List.of(query),
-                    "confidence", nullableText(data, "confidence"),
-                    "notes", nullableText(data, "notes"),
-                    "droppedUnknownKeys", dropped)));
+            // 用可变 Map 而非 Map.of：模型不返回 confidence / notes 时值为 null，Map.of 会直接抛 NPE
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("queries", List.of(query));
+            summary.put("confidence", nullableText(data, "confidence"));
+            summary.put("notes", nullableText(data, "notes"));
+            summary.put("droppedUnknownKeys", dropped);
+            result.setLogs(objectMapper.writeValueAsString(summary));
+            taskLogService.info(payload.getTaskId(),
+                    "抽取完成：识别参数 " + params.size() + " 项，丢弃未知参数 " + dropped.size() + " 项");
             return result;
         } catch (Exception e) {
             log.error("采集失败 taskId={}", payload.getTaskId(), e);
@@ -142,6 +166,7 @@ public class CollectService {
             String error = message.contains("Timeout") || message.contains("timeout")
                     ? "抓取超时（>" + props.getTaskTimeoutSeconds() + "s）"
                     : e.getClass().getSimpleName() + ": " + message;
+            taskLogService.error(payload.getTaskId(), "采集异常：" + error);
             AgentCallbackRequest result = new AgentCallbackRequest();
             result.setTaskId(payload.getTaskId());
             result.setModelName(modelName);
@@ -340,6 +365,10 @@ public class CollectService {
             throw new IllegalArgumentException("模型未输出 JSON");
         }
         return objectMapper.readTree(cleaned.substring(start, end + 1));
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private String textOrFallback(JsonNode node, String field, String fallback) {

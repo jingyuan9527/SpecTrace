@@ -2,7 +2,9 @@ package com.spectrace.agent.tool;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.spectrace.agent.TaskLogContext;
 import com.spectrace.agent.config.AgentProperties;
+import com.spectrace.service.AgentTaskLogService;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +44,7 @@ public class CollectTools {
     private final AgentProperties props;
     private final ObjectMapper objectMapper;
     private final RestClient.Builder restClientBuilder;
+    private final AgentTaskLogService taskLogService;
 
     /**
      * 搜索机型参数相关的权威网页。
@@ -57,15 +60,20 @@ public class CollectTools {
             @ToolParam(name = "query", description = "搜索关键词，例如 \"iPhone 17 参数 规格 官网\"")
             String query) {
         sleepCrawlInterval();
+        long start = System.currentTimeMillis();
+        String json;
         try {
-            if (props.getSerperApiKey() != null && !props.getSerperApiKey().isBlank()) {
-                return searchSerper(query);
-            }
-            return searchDuckDuckGo(query);
+            json = props.getSerperApiKey() != null && !props.getSerperApiKey().isBlank()
+                    ? searchSerper(query)
+                    : searchDuckDuckGo(query);
         } catch (Exception e) {
             log.warn("搜索失败 query={}: {}", query, e.getMessage());
+            taskLog("WARN", "搜索失败：" + query + "，" + e.getMessage());
             return "[]";
         }
+        taskLog("INFO", "搜索「" + query + "」返回 " + resultCount(json) + " 条结果（"
+                + (System.currentTimeMillis() - start) + " ms）");
+        return json;
     }
 
     /**
@@ -82,6 +90,7 @@ public class CollectTools {
             @ToolParam(name = "url", description = "目标网页地址")
             String url) {
         sleepCrawlInterval();
+        long start = System.currentTimeMillis();
         try {
             Document doc = Jsoup.connect(url)
                     .userAgent(UA)
@@ -94,10 +103,36 @@ public class CollectTools {
             text = text.replaceAll("[ \\t\\x0B\\f\\r]+", " ")
                     .replaceAll("\\n{3,}", "\n\n")
                     .trim();
-            return text.length() > MAX_CHARS ? text.substring(0, MAX_CHARS) : text;
+            String content = text.length() > MAX_CHARS ? text.substring(0, MAX_CHARS) : text;
+            taskLog("INFO", "抓取网页成功：" + url + "（正文 " + content.length() + " 字，"
+                    + (System.currentTimeMillis() - start) + " ms）");
+            return content;
         } catch (Exception e) {
             log.warn("抓取网页失败 {}: {}", url, e.getMessage());
+            taskLog("WARN", "抓取网页失败：" + url + "，" + e.getMessage());
             return "抓取失败: " + e.getMessage();
+        }
+    }
+
+    /** 记录到当前采集任务；脱离采集线程（手工调用工具）时静默跳过，避免日志串到别的任务。 */
+    private void taskLog(String level, String message) {
+        Long taskId = TaskLogContext.currentTaskId();
+        if (taskId == null) {
+            return;
+        }
+        if ("WARN".equals(level)) {
+            taskLogService.warn(taskId, message);
+        } else {
+            taskLogService.info(taskId, message);
+        }
+    }
+
+    private int resultCount(String json) {
+        try {
+            JsonNode node = objectMapper.readTree(json);
+            return node.isArray() ? node.size() : 0;
+        } catch (Exception e) {
+            return 0;
         }
     }
 

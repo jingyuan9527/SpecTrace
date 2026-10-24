@@ -6,6 +6,7 @@ import com.spectrace.dto.AgentCallbackRequest;
 import com.spectrace.dto.AgentTaskPayload;
 import com.spectrace.dto.ResolvedModel;
 import com.spectrace.entity.ParamDef;
+import com.spectrace.service.AgentTaskLogService;
 import com.spectrace.service.AgentTaskService;
 import com.spectrace.service.AiConfigService;
 import com.spectrace.service.ParamService;
@@ -40,6 +41,7 @@ public class CollectorWorker implements ApplicationRunner {
     private final TaskQueue taskQueue;
     private final CollectService collectService;
     private final AgentTaskService agentTaskService;
+    private final AgentTaskLogService taskLogService;
     private final AiConfigService aiConfigService;
     private final ParamService paramService;
     private final AgentProperties props;
@@ -110,6 +112,8 @@ public class CollectorWorker implements ApplicationRunner {
             result = collectService.collect(payload, schemaDefs, aiConfig);
         } catch (Exception e) {
             log.error("采集异常 taskId={}", payload.getTaskId(), e);
+            taskLogService.error(payload.getTaskId(),
+                    "采集线程异常：" + e.getClass().getSimpleName() + ": " + e.getMessage());
             result = new AgentCallbackRequest();
             result.setTaskId(payload.getTaskId());
             result.setModelName(payload.getModelName());

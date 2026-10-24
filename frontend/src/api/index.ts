@@ -110,6 +110,9 @@ export const adminApi = {
   createAgentTask: (data: { modelName: string; brandName?: string; aiModelId?: number | null }) =>
     request.post('/admin/agent-tasks', data),
   retryAgentTask: (id: number) => request.post<any, any>(`/admin/agent-tasks/${id}/retry`),
+  // 过程日志按 id 增量拉取，afterId 传已拿到的最后一条
+  agentTaskLogs: (id: number, afterId?: number) =>
+    request.get<any[], any[]>(`/admin/agent-tasks/${id}/logs`, { params: { afterId } }),
 
   // AI 连接（供应商）
   aiConfigs: () => request.get<any[], any[]>('/admin/ai-configs'),

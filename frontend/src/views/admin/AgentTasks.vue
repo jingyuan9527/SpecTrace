@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { Bot, ExternalLink, Loader2, RefreshCw, RotateCcw, Send, Terminal } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
+import { formatTime } from '@/lib/utils'
 import {
   Badge,
   Button,
@@ -62,6 +63,16 @@ const statusOptions = [
 ]
 
 const modelOptions = ref<{ label: string; value: number }[]>([])
+// 品牌提交的是名称字符串（后端 TaskCreateRequest.brandName），因此下拉值直接用品牌名
+const brandOptions = ref<{ label: string; value: string }[]>([{ label: '不限品牌（由 Agent 推断）', value: '' }])
+
+async function loadBrands() {
+  const brands = await adminApi.brands()
+  brandOptions.value = [
+    { label: '不限品牌（由 Agent 推断）', value: '' },
+    ...brands.map((brand: any) => ({ label: brand.name, value: brand.name })),
+  ]
+}
 
 async function load(silent = false) {
   if (!silent) loading.value = true
@@ -69,6 +80,12 @@ async function load(silent = false) {
     const res = await adminApi.agentTasks({ ...query, status: query.status || undefined })
     list.value = res.records
     total.value = res.total
+    // 详情打开时列表仍在轮询，用最新行同步状态；抓取结束即可停掉日志轮询
+    if (detailTarget.value) {
+      const fresh = res.records.find((row: any) => row.id === detailTarget.value.id)
+      if (fresh) detailTarget.value = fresh
+      syncLogPolling()
+    }
   } finally {
     if (!silent) loading.value = false
   }
@@ -76,12 +93,14 @@ async function load(silent = false) {
 
 // 页面可见时每 5 秒静默轮询，任务状态无需手动刷新即可从「排队中」流转
 const POLL_INTERVAL_MS = 5000
+const LOG_POLL_INTERVAL_MS = 3000
 let pollTimer: number | undefined
+let logTimer: number | undefined
 
 function startPolling() {
   stopPolling()
   pollTimer = window.setInterval(() => {
-    if (document.visibilityState === 'visible' && !detailTarget.value) {
+    if (document.visibilityState === 'visible') {
       load(true)
     }
   }, POLL_INTERVAL_MS)
@@ -95,6 +114,56 @@ function stopPolling() {
 }
 
 const detailTarget = ref<any>(null)
+const detailLogs = ref<any[]>([])
+const detailLogLoading = ref(false)
+const logBox = ref<HTMLElement | null>(null)
+
+// 抓取中的任务每 3 秒增量拉日志；任务结束后自动停下，避免空转
+function startLogPolling() {
+  stopLogPolling()
+  logTimer = window.setInterval(() => {
+    if (document.visibilityState === 'visible') loadDetailLogs(true)
+  }, LOG_POLL_INTERVAL_MS)
+}
+
+function stopLogPolling() {
+  if (logTimer) {
+    window.clearInterval(logTimer)
+    logTimer = undefined
+  }
+}
+
+function syncLogPolling() {
+  const status = detailTarget.value?.status
+  const running = status === 'QUEUED' || status === 'RUNNING'
+  if (running && !logTimer) {
+    startLogPolling()
+  } else if (!running && logTimer) {
+    stopLogPolling()
+    // 状态刚落定时再补拉一次，避免「结果已写入待审核」这类收尾日志丢在最后一次轮询之后
+    loadDetailLogs(true)
+  }
+}
+
+async function loadDetailLogs(append = false) {
+  const task = detailTarget.value
+  if (!task) return
+  if (!append) detailLogLoading.value = true
+  try {
+    const afterId = append && detailLogs.value.length ? detailLogs.value[detailLogs.value.length - 1].id : undefined
+    const lines = await adminApi.agentTaskLogs(task.id, afterId)
+    if (!lines?.length) return
+    detailLogs.value = afterId ? [...detailLogs.value, ...lines] : lines
+    if (append) {
+      await nextTick()
+      logBox.value?.scrollTo({ top: logBox.value.scrollHeight })
+    }
+  } catch {
+    // 日志是辅助信息，拉取失败不能打断任务列表的自动刷新
+  } finally {
+    detailLogLoading.value = false
+  }
+}
 const detailOpen = computed({
   get: () => !!detailTarget.value,
   set: (value: boolean) => {
@@ -114,10 +183,6 @@ async function retry(row: any) {
   }
 }
 
-function formatTime(value?: string) {
-  return value ? value.replace('T', ' ').slice(0, 19) : '—'
-}
-
 function formatDuration(ms?: number | null) {
   if (!ms || ms < 0) return '—'
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`
@@ -134,11 +199,38 @@ async function loadAiModels() {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), loadAiModels()])
+  await Promise.all([load(), loadAiModels(), loadBrands()])
   startPolling()
 })
 
-onBeforeUnmount(stopPolling)
+onBeforeUnmount(() => {
+  stopPolling()
+  stopLogPolling()
+})
+
+// 详情切换（或关闭）时重置日志：只按任务 id 判断，列表轮询替换对象不会打断日志
+watch(
+  () => detailTarget.value?.id,
+  async (id) => {
+    stopLogPolling()
+    detailLogs.value = []
+    if (!id) return
+    await loadDetailLogs()
+    syncLogPolling()
+  },
+)
+
+function logClass(level: string) {
+  if (level === 'ERROR') return 'text-destructive'
+  if (level === 'WARN') return 'text-amber-600 dark:text-amber-400'
+  return ''
+}
+
+/** 日志只展示时:分:秒，日期在任务头部已有。 */
+function timeOnly(value?: string | null) {
+  const text = formatTime(value, '')
+  return text.length > 10 ? text.slice(11) : ''
+}
 
 watch(
   () => query.current,
@@ -193,7 +285,7 @@ function modelLabel(id: number | null) {
       </CardHeader>
       <CardContent class="grid gap-2 lg:grid-cols-[1fr_180px_260px_auto]">
         <Input v-model="form.modelName" placeholder="机型名称，如 iPhone 17 Pro" @keyup.enter="createTask" />
-        <Input v-model="form.brandName" placeholder="品牌（可选）" />
+        <Select v-model="form.brandName" :options="brandOptions" placeholder="不限品牌" />
         <Combobox v-model="form.aiModelId" :options="modelOptions" placeholder="AI 模型（默认）" search-placeholder="搜索模型…" />
         <Button :disabled="submitting" @click="createTask">
           <Loader2 v-if="submitting" class="animate-spin" />
@@ -314,6 +406,31 @@ function modelLabel(id: number | null) {
           <span class="tabular-nums">{{ formatTime(detailTarget.createdAt) }}</span>
           <span class="text-muted-foreground">更新时间</span>
           <span class="tabular-nums">{{ formatTime(detailTarget.updatedAt) }}</span>
+        </div>
+
+        <Separator />
+
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-muted-foreground">抓取日志</span>
+            <span v-if="detailLogLoading" class="text-xs text-muted-foreground">加载中…</span>
+            <span v-else-if="detailTarget.status === 'RUNNING'" class="flex items-center gap-1 text-xs text-muted-foreground">
+              <Loader2 class="h-3 w-3 animate-spin" />
+              抓取中，每 3 秒刷新
+            </span>
+          </div>
+          <div
+            v-if="detailLogs.length"
+            ref="logBox"
+            class="max-h-64 space-y-1 overflow-auto rounded-md bg-muted/60 p-3 font-mono text-xs leading-5"
+          >
+            <div v-for="line in detailLogs" :key="line.id" class="break-words" :class="logClass(line.level)">
+              <span class="mr-1.5 text-muted-foreground/70">{{ timeOnly(line.createdAt) }}</span>{{ line.message }}
+            </div>
+          </div>
+          <p v-else class="rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+            {{ detailTarget.status === 'QUEUED' ? '任务排队中，尚未开始抓取' : '暂无日志' }}
+          </p>
         </div>
 
         <Separator />

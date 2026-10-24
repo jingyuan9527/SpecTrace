@@ -137,6 +137,14 @@ CREATE TABLE IF NOT EXISTS agent_pending_data (
     deleted      TINYINT      NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS agent_task_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id      BIGINT       NOT NULL,
+    level        VARCHAR(16)  NOT NULL DEFAULT 'INFO',
+    message      TEXT         DEFAULT NULL,
+    created_at   DATETIME     DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS ai_config (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     name         VARCHAR(64)  NOT NULL,
@@ -206,6 +214,7 @@ CREATE INDEX IF NOT EXISTS idx_task_status ON agent_task (status);
 CREATE INDEX IF NOT EXISTS idx_task_created ON agent_task (created_at);
 CREATE INDEX IF NOT EXISTS idx_pending_status ON agent_pending_data (status);
 CREATE INDEX IF NOT EXISTS idx_pending_task ON agent_pending_data (task_id);
+CREATE INDEX IF NOT EXISTS idx_task_log_task ON agent_task_log (task_id, id);
 CREATE INDEX IF NOT EXISTS idx_ai_model_config ON ai_model (config_id);
 CREATE INDEX IF NOT EXISTS idx_ai_model_default ON ai_model (is_default);
 CREATE INDEX IF NOT EXISTS idx_log_target ON operation_log (target_type, target_id);

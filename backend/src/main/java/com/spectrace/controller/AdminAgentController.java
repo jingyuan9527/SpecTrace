@@ -8,6 +8,8 @@ import com.spectrace.dto.PendingDataVO;
 import com.spectrace.dto.TaskCreateRequest;
 import com.spectrace.entity.AgentPendingData;
 import com.spectrace.entity.AgentTask;
+import com.spectrace.entity.AgentTaskLog;
+import com.spectrace.service.AgentTaskLogService;
 import com.spectrace.service.AgentTaskService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.*;
 public class AdminAgentController {
 
     private final AgentTaskService agentTaskService;
+    private final AgentTaskLogService agentTaskLogService;
 
     @Operation(summary = "新建抓取任务")
     @PostMapping("/agent-tasks")
@@ -45,6 +48,13 @@ public class AdminAgentController {
                                           @RequestParam(defaultValue = "10") long size,
                                           @RequestParam(required = false) String status) {
         return R.ok(PageResult.of(agentTaskService.pageTasks(current, size, status)));
+    }
+
+    @Operation(summary = "抓取任务过程日志（增量拉取，afterId 只取新增行）")
+    @GetMapping("/agent-tasks/{id}/logs")
+    public R<java.util.List<AgentTaskLog>> taskLogs(@PathVariable Long id,
+                                                    @RequestParam(required = false) Long afterId) {
+        return R.ok(agentTaskLogService.list(id, afterId));
     }
 
     @Operation(summary = "待审核数据列表")

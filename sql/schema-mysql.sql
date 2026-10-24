@@ -127,6 +127,18 @@ CREATE TABLE agent_pending_data (
     KEY idx_pending_task (task_id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'Agent 抓取待审核数据表';
 
+-- 7.4 抓取任务过程日志表
+DROP TABLE IF EXISTS agent_task_log;
+CREATE TABLE agent_task_log (
+    id           BIGINT       NOT NULL AUTO_INCREMENT,
+    task_id      BIGINT       NOT NULL COMMENT '来源任务',
+    level        VARCHAR(16)  NOT NULL DEFAULT 'INFO' COMMENT 'INFO/WARN/ERROR',
+    message      TEXT         DEFAULT NULL COMMENT '单行日志内容',
+    created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_task_log_task (task_id, id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'Agent 抓取任务过程日志表';
+
 -- 7.5 AI 供应商连接表（一个连接下可配置多个模型）
 DROP TABLE IF EXISTS ai_config;
 CREATE TABLE ai_config (
