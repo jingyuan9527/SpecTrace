@@ -136,6 +136,8 @@ export const adminApi = {
   saveDevice: (data: DeviceSaveRequest) =>
     data.id ? request.put<unknown, Device>(`/admin/devices/${data.id}`, data) : request.post<unknown, Device>('/admin/devices', data),
   deleteDevice: (id: number) => request.delete<unknown, void>(`/admin/devices/${id}`),
+  batchDeviceStatus: (ids: number[], status: number) =>
+    request.put<unknown, number>('/admin/devices/batch-status', { ids, status }),
 
   agentTasks: (params: Record<string, unknown>) =>
     request.get<unknown, PageResult<AgentTask>>('/admin/agent-tasks', { params }),

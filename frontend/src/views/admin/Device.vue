@@ -1,6 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { Bot, Copy, Download, FileUp, ImagePlus, Loader2, Pencil, Plus, Search, Smartphone, Trash2 } from '@lucide/vue'
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  Bot,
+  Copy,
+  Download,
+  FileUp,
+  ImagePlus,
+  Loader2,
+  Pencil,
+  Plus,
+  Search,
+  Smartphone,
+  Trash2,
+} from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
 import { usePagedList } from '@/composables/usePagedList'
@@ -308,13 +322,15 @@ function brandName(id?: number) {
   return brands.value.find((b) => b.id === id)?.name ?? '—'
 }
 
-// ---------- 抓取详情：发起前弹窗确认，可切换供应商连接与模型 ----------
+// ---------- 抓取详情与批量上/下架 ----------
+// 抓取发起前弹窗确认：可切换供应商连接与模型（任务页的表单自带模型下拉，这里补齐机型页入口）
 const selectedIds = ref<number[]>([])
 const aiModels = ref<AiModel[]>([])
 const scrapeDialog = ref(false)
 const scrapeTargets = ref<any[]>([])
 const scrapeModelId = ref<number | null>(null)
 const scrapeSubmitting = ref(false)
+const statusUpdating = ref(false)
 
 const scrapeModelOptions = computed(() =>
   aiModels.value.map((m) => ({
@@ -339,6 +355,10 @@ function toggleRow(id: number, checked: boolean) {
 
 function togglePage(checked: boolean) {
   selectedIds.value = checked ? list.value.map((row: any) => row.id) : []
+}
+
+async function loadAiModels() {
+  aiModels.value = await adminApi.aiModels()
 }
 
 /** 打开抓取确认弹窗：单台（行按钮）与批量（勾选）共用。 */
@@ -367,6 +387,19 @@ async function confirmScrape() {
     selectedIds.value = []
   } finally {
     scrapeSubmitting.value = false
+  }
+}
+
+async function batchUpdateStatus(status: 0 | 1) {
+  if (!selectedIds.value.length || statusUpdating.value) return
+  statusUpdating.value = true
+  try {
+    const updated = await adminApi.batchDeviceStatus([...selectedIds.value], status)
+    toast.success(`已${status === 1 ? '上架' : '下架'} ${updated} 台机型`)
+    selectedIds.value = []
+    await load()
+  } finally {
+    statusUpdating.value = false
   }
 }
 
@@ -492,10 +525,22 @@ function rowMessages(row: any) {
         </div>
         <Select v-model="query.brandId" :options="brandOptions" placeholder="全部品牌" class="w-full lg:w-44" />
         <Button variant="outline" @click="search">查询</Button>
-        <Button v-if="selectedIds.length" variant="outline" size="sm" @click="openScrape(selectedRows)">
-          <Bot />
-          抓取（{{ selectedIds.length }}）
-        </Button>
+        <template v-if="selectedIds.length">
+          <Button variant="outline" size="sm" @click="openScrape(selectedRows)">
+            <Bot />
+            抓取（{{ selectedIds.length }}）
+          </Button>
+          <Button variant="outline" size="sm" :disabled="statusUpdating" @click="batchUpdateStatus(1)">
+            <Loader2 v-if="statusUpdating" class="animate-spin" />
+            <ArrowUpToLine v-else />
+            上架
+          </Button>
+          <Button variant="outline" size="sm" :disabled="statusUpdating" @click="batchUpdateStatus(0)">
+            <Loader2 v-if="statusUpdating" class="animate-spin" />
+            <ArrowDownToLine v-else />
+            下架
+          </Button>
+        </template>
         <div class="ml-auto text-xs text-muted-foreground">共 {{ total }} 台机型</div>
       </CardContent>
     </Card>

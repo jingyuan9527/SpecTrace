@@ -424,6 +424,28 @@ public class DeviceService {
         }
     }
 
+    /**
+     * 批量上架/下架：只改 status 与更新时间。
+     * 不走 save 全量覆盖，避免把参数、版本等未提交字段误清空。
+     */
+    @Transactional
+    @CacheEvict(cacheNames = {CacheConfig.DEVICE_DETAIL, CacheConfig.SERIES_LIST}, allEntries = true)
+    public int batchUpdateStatus(List<Long> ids, Integer status, Long adminId, String adminName) {
+        if (status == null || (status != 0 && status != 1)) {
+            throw new BizException("status 只能为 0（下架）或 1（上架）");
+        }
+        if (ids == null || ids.isEmpty()) {
+            throw new BizException("请选择机型");
+        }
+        int updated = deviceMapper.update(null, Wrappers.<Device>lambdaUpdate()
+                .in(Device::getId, ids)
+                .set(Device::getStatus, status)
+                .set(Device::getUpdatedAt, LocalDateTime.now()));
+        logService.record(adminId, adminName, status == 1 ? "BATCH_ONLINE_DEVICE" : "BATCH_OFFLINE_DEVICE",
+                "device", null, (status == 1 ? "批量上架 " : "批量下架 ") + updated + " 台机型");
+        return updated;
+    }
+
     /** 删除机型：主表逻辑删除，参数值与版本物理清理，避免留下无主的孤儿行。 */
     @Transactional
     @CacheEvict(cacheNames = {CacheConfig.DEVICE_DETAIL, CacheConfig.SERIES_LIST}, allEntries = true)

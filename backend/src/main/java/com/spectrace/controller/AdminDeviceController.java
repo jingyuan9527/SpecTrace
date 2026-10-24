@@ -2,6 +2,7 @@ package com.spectrace.controller;
 
 import com.spectrace.common.PageResult;
 import com.spectrace.common.R;
+import com.spectrace.dto.DeviceBatchStatusRequest;
 import com.spectrace.dto.DeviceImportResult;
 import com.spectrace.dto.DeviceSaveRequest;
 import com.spectrace.entity.Device;
@@ -72,6 +73,13 @@ public class AdminDeviceController {
                             @RequestAttribute Long adminId, @RequestAttribute String adminName) {
         req.setId(id);
         return R.ok(deviceService.save(req, adminId, adminName));
+    }
+
+    @Operation(summary = "批量上架/下架（status：1 上架、0 下架）")
+    @PutMapping("/batch-status")
+    public R<Integer> batchStatus(@Valid @RequestBody DeviceBatchStatusRequest req,
+                                  @RequestAttribute Long adminId, @RequestAttribute String adminName) {
+        return R.ok(deviceService.batchUpdateStatus(req.getIds(), req.getStatus(), adminId, adminName));
     }
 
     @DeleteMapping("/{id}")
