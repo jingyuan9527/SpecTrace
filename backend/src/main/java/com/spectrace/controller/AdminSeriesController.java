@@ -3,6 +3,7 @@ package com.spectrace.controller;
 import com.spectrace.common.R;
 import com.spectrace.dto.AssignSeriesRequest;
 import com.spectrace.dto.MergeSeriesRequest;
+import com.spectrace.dto.SeriesSuggestVO;
 import com.spectrace.dto.SeriesVO;
 import com.spectrace.dto.UnassignedDeviceVO;
 import com.spectrace.entity.DeviceSeries;
@@ -30,6 +31,12 @@ public class AdminSeriesController {
     @GetMapping
     public R<List<SeriesVO>> list(@RequestParam(required = false) Long brandId) {
         return R.ok(seriesService.listOverview(brandId, null));
+    }
+
+    @Operation(summary = "AI 推荐品牌产品线系列划分（候选名，同名已存在会标注）")
+    @GetMapping("/suggest")
+    public R<List<SeriesSuggestVO>> suggest(@RequestParam Long brandId) {
+        return R.ok(seriesService.suggestByAi(brandId));
     }
 
     @Operation(summary = "未归类机型")

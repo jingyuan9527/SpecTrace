@@ -56,8 +56,9 @@ public class AdminDeviceController {
     public R<PageResult<Device>> page(@RequestParam(defaultValue = "1") long current,
                                       @RequestParam(defaultValue = "10") long size,
                                       @RequestParam(required = false) Long brandId,
+                                      @RequestParam(required = false) Long seriesId,
                                       @RequestParam(required = false) String keyword) {
-        var page = deviceService.page(current, size, brandId, null, keyword);
+        var page = deviceService.page(current, size, brandId, seriesId, null, keyword);
         // 列表徽标：标注同品牌同名机型有未处理的抓取结果，管理员不用两边来回对
         Map<Long, Integer> pendingCounts = agentTaskService.pendingCountByDevice(page.getRecords());
         page.getRecords().forEach(d -> d.setPendingReviewCount(pendingCounts.getOrDefault(d.getId(), 0)));

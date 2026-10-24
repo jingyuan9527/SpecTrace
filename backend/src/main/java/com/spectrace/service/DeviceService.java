@@ -49,9 +49,21 @@ public class DeviceService {
     private final OperationLogService logService;
 
     public IPage<Device> page(long current, long size, Long brandId, Integer year, String keyword) {
+        return page(current, size, brandId, null, year, keyword);
+    }
+
+    public IPage<Device> page(long current, long size, Long brandId, Long seriesId, Integer year, String keyword) {
         var query = Wrappers.<Device>lambdaQuery().orderByDesc(Device::getReleaseDate);
         if (brandId != null) {
             query.eq(Device::getBrandId, brandId);
+        }
+        if (seriesId != null) {
+            // seriesId=0 约定为「未归类」：前端把「未归类」选项映射为 0 传入
+            if (seriesId == 0L) {
+                query.isNull(Device::getSeriesId);
+            } else {
+                query.eq(Device::getSeriesId, seriesId);
+            }
         }
         if (year != null) {
             LocalDate start = LocalDate.of(year, 1, 1);

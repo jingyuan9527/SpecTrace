@@ -35,6 +35,7 @@ import type {
   PendingData,
   PendingDataDetail,
   RetentionOverview,
+  SeriesSuggestion,
   SearchConfig,
   SearchConfigSaveRequest,
   SearchTestResult,
@@ -136,6 +137,9 @@ export const adminApi = {
     return request.post<unknown, DeviceImportResult>('/admin/devices/import', form, { params: { dryRun } })
   },
   deviceDetail: (id: number) => request.get<unknown, DeviceDetail>(`/admin/devices/${id}`),
+  // 机型列表 seriesId=0 约定为「未归类」筛选
+  suggestSeries: (brandId: number) =>
+    request.get<unknown, SeriesSuggestion[]>('/admin/series/suggest', { params: { brandId } }),
   saveDevice: (data: DeviceSaveRequest) =>
     data.id ? request.put<unknown, Device>(`/admin/devices/${data.id}`, data) : request.post<unknown, Device>('/admin/devices', data),
   deleteDevice: (id: number) => request.delete<unknown, void>(`/admin/devices/${id}`),

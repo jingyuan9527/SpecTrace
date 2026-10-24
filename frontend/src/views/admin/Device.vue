@@ -9,6 +9,7 @@ import {
   Download,
   FileUp,
   ImagePlus,
+  Layers,
   Loader2,
   Pencil,
   Plus,
@@ -112,6 +113,13 @@ const form = reactive<DeviceForm>({
 })
 
 const brandOptions = computed(() => brands.value.map((b) => ({ label: b.name, value: b.id })))
+// 筛选用的系列下拉：跟随当前品牌，含「未归类」（约定 seriesId=0）
+const seriesFilterOptions = computed(() => [
+  ...seriesList.value
+    .filter((s) => s.brandId === query.brandId)
+    .map((s) => ({ label: s.name, value: s.id as number })),
+  { label: '未归类', value: 0 },
+])
 const seriesOptions = computed(() =>
   seriesList.value.filter((s) => s.brandId === form.brandId).map((s) => ({ label: s.name, value: s.id })),
 )
@@ -123,11 +131,25 @@ const defsByGroup = computed(() =>
 
 const { list, total, loading, query, load, search } = usePagedList({
   size: 10,
-  filters: () => ({ keyword: '', brandId: undefined as number | undefined }),
+  filters: () => ({
+    keyword: '',
+    brandId: undefined as number | undefined,
+    seriesId: undefined as number | undefined,
+  }),
   fetcher: (params) => adminApi.devices(params),
   // 基础数据（品牌/系列/参数定义）先加载完再拉列表，保持原有首屏顺序
   immediate: false,
 })
+
+// 系列筛选跟随品牌：切换品牌后原系列不属于新品牌，必须清空
+watch(
+  () => query.brandId,
+  () => {
+    if (query.seriesId && !seriesList.value.some((s) => s.id === query.seriesId && s.brandId === query.brandId)) {
+      query.seriesId = undefined
+    }
+  },
+)
 
 onMounted(async () => {
   ;[brands.value, seriesList.value, groups.value, defs.value, aiModels.value] = await Promise.all([
@@ -328,6 +350,45 @@ function brandName(id?: number) {
 /** 该机型有抓取结果待审核：直达待审核页并按机型名筛好。 */
 function goPending(row: any) {
   router.push({ path: '/admin/pending', query: { keyword: row.name } })
+}
+
+/** 勾选机型批量归入同一系列（走既有 assign 接口，系列须与机型同品牌）。 */
+const assignDialogOpen = ref(false)
+const assignTargetId = ref<number>()
+const assigning = ref(false)
+
+const assignOptions = computed(() =>
+  seriesList.value
+    .filter((s) => selectedRows.value.length > 0 && s.brandId === selectedRows.value[0]?.brandId)
+    .map((s) => ({ label: s.name, value: s.id as number })),
+)
+
+const assignBrandMismatch = computed(() => {
+  const rows = selectedRows.value
+  return rows.length > 0 && rows.some((row: any) => row.brandId !== rows[0]?.brandId)
+})
+
+function openAssign() {
+  if (assignBrandMismatch.value) {
+    toast.warning('所选机型必须属于同一品牌，才能加入同一个系列')
+    return
+  }
+  assignTargetId.value = undefined
+  assignDialogOpen.value = true
+}
+
+async function confirmAssign() {
+  if (!assignTargetId.value || !selectedIds.value.length || assigning.value) return
+  assigning.value = true
+  try {
+    const updated = await adminApi.assignSeries([...selectedIds.value], assignTargetId.value)
+    toast.success(`已把 ${updated} 台机型加入「${seriesList.value.find((s) => s.id === assignTargetId.value)?.name ?? ''}」`)
+    assignDialogOpen.value = false
+    selectedIds.value = []
+    await load()
+  } finally {
+    assigning.value = false
+  }
 }
 
 // ---------- 抓取详情与批量上/下架 ----------
@@ -532,11 +593,22 @@ function rowMessages(row: any) {
           <Input v-model="query.keyword" class="pl-9" placeholder="机型名称" @keyup.enter="search" />
         </div>
         <Select v-model="query.brandId" :options="brandOptions" placeholder="全部品牌" class="w-full lg:w-44" />
+        <Select
+          v-model="query.seriesId"
+          :options="seriesFilterOptions"
+          placeholder="全部系列"
+          class="w-full lg:w-44"
+          :disabled="!query.brandId"
+        />
         <Button variant="outline" @click="search">查询</Button>
         <template v-if="selectedIds.length">
           <Button variant="outline" size="sm" @click="openScrape(selectedRows)">
             <Bot />
             抓取（{{ selectedIds.length }}）
+          </Button>
+          <Button variant="outline" size="sm" @click="openAssign">
+            <Layers />
+            加入系列
           </Button>
           <Button variant="outline" size="sm" :disabled="statusUpdating" @click="batchUpdateStatus(1)">
             <Loader2 v-if="statusUpdating" class="animate-spin" />
@@ -875,6 +947,28 @@ function rowMessages(row: any) {
       <template #footer>
         <Button variant="outline" :disabled="creatingSeries" @click="seriesDialog = false">取消</Button>
         <Button :disabled="creatingSeries" @click="createSeries">{{ creatingSeries ? '创建中…' : '创建并选中' }}</Button>
+      </template>
+    </Dialog>
+
+    <Dialog v-model:open="assignDialogOpen" title="加入系列" class="max-w-sm">
+      <div class="space-y-3">
+        <p class="text-sm text-muted-foreground">
+          将把选中的 {{ selectedIds.length }} 台机型归入同一系列（品牌：{{
+            brandName(selectedRows[0]?.brandId)
+          }}）。
+        </p>
+        <div class="space-y-1.5">
+          <Label>目标系列</Label>
+          <Select v-model="assignTargetId" :options="assignOptions" placeholder="选择系列" />
+        </div>
+        <p class="text-xs text-muted-foreground">系列必须与机型同品牌；世代回顾按系列聚合，归类后即可按代查看。</p>
+      </div>
+      <template #footer>
+        <Button variant="outline" :disabled="assigning" @click="assignDialogOpen = false">取消</Button>
+        <Button :disabled="assigning || !assignTargetId" @click="confirmAssign">
+          <Loader2 v-if="assigning" class="animate-spin" />
+          {{ assigning ? '归入中…' : '确认加入' }}
+        </Button>
       </template>
     </Dialog>
 

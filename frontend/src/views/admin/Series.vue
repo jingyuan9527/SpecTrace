@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
-import { Combine, GripVertical, Pencil, Plus, Trash2 } from '@lucide/vue'
+import { Combine, GripVertical, Loader2, Pencil, Plus, Sparkles, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
-import type { Brand, DeviceSeries, UnassignedDevice } from '@/types/api'
+import type { Brand, DeviceSeries, SeriesSuggestion, UnassignedDevice } from '@/types/api'
 import {
   Badge,
   Button,
   Card,
   CardContent,
+  Checkbox,
   Dialog,
   Empty,
   Input,
@@ -51,6 +52,77 @@ const mergeDialog = ref(false)
 const mergeSource = ref<DeviceSeries | null>(null)
 const mergeTargetId = ref<number>()
 const merging = ref(false)
+
+// ---- AI 推荐系列：按品牌生成产品线候选，勾选后批量新建 ----
+const suggestDialog = ref(false)
+const suggestBrandId = ref<number>()
+const suggestLoading = ref(false)
+const suggestions = ref<SeriesSuggestion[]>([])
+const selectedSuggestions = ref<string[]>([])
+const suggestCreating = ref(false)
+
+const suggestBrandOptions = computed(() => brands.value.map((b) => ({ label: b.name, value: b.id })))
+const creatableSuggestions = computed(() => suggestions.value.filter((s) => !s.existing))
+const allSuggestionsSelected = computed(
+  () =>
+    creatableSuggestions.value.length > 0 &&
+    creatableSuggestions.value.every((s) => selectedSuggestions.value.includes(s.name)),
+)
+
+function openSuggest() {
+  suggestBrandId.value = brandId.value ?? brands.value[0]?.id
+  suggestions.value = []
+  selectedSuggestions.value = []
+  suggestDialog.value = true
+}
+
+async function fetchSuggestions() {
+  if (!suggestBrandId.value) {
+    toast.warning('请先选择品牌')
+    return
+  }
+  suggestLoading.value = true
+  try {
+    suggestions.value = await adminApi.suggestSeries(suggestBrandId.value)
+    // 默认全选可创建项；已存在项禁选
+    selectedSuggestions.value = suggestions.value.filter((s) => !s.existing).map((s) => s.name)
+    if (!suggestions.value.length) toast.warning('AI 未给出候选，请重试或手动新建')
+  } finally {
+    suggestLoading.value = false
+  }
+}
+
+function toggleSuggestion(name: string, checked: boolean) {
+  if (checked) {
+    if (!selectedSuggestions.value.includes(name)) selectedSuggestions.value.push(name)
+  } else {
+    selectedSuggestions.value = selectedSuggestions.value.filter((n) => n !== name)
+  }
+}
+
+async function createSelectedSeries() {
+  if (!suggestBrandId.value || !selectedSuggestions.value.length) return
+  suggestCreating.value = true
+  try {
+    // 逐个走既有 save 校验（同名拦截），排序号顺延
+    let created = 0
+    for (const name of selectedSuggestions.value) {
+      await adminApi.saveSeries({
+        brandId: suggestBrandId.value,
+        name,
+        sortOrder: list.value.filter((s) => s.brandId === suggestBrandId.value).length + 1 + created,
+        status: 1,
+      })
+      created++
+    }
+    toast.success(`已创建 ${created} 个系列`)
+    suggestDialog.value = false
+    brandId.value = suggestBrandId.value
+    await load()
+  } finally {
+    suggestCreating.value = false
+  }
+}
 
 const brandOptions = computed(() => brands.value.map((b) => ({ label: b.name, value: b.id })))
 
@@ -213,6 +285,10 @@ function yearRange(row: DeviceSeries) {
   <div class="space-y-4">
     <PageHeader title="系列管理" description="按产品线维护系列，机型数决定世代回顾能否按代查看">
       <template #actions>
+        <Button size="sm" variant="outline" @click="openSuggest">
+          <Sparkles />
+          AI 推荐系列
+        </Button>
         <Button size="sm" @click="openCreate">
           <Plus />
           新增系列
@@ -386,6 +462,70 @@ function yearRange(row: DeviceSeries) {
         <Button variant="outline" :disabled="merging" @click="mergeDialog = false">取消</Button>
         <Button :disabled="merging || !mergeOptions.length" @click="confirmMerge">
           {{ merging ? '合并中…' : '合并' }}
+        </Button>
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model:open="suggestDialog"
+      title="AI 推荐系列"
+      description="AI 按品牌产品线给出候选系列名，勾选后一键创建；同名已存在会标注且不可选"
+      class="max-w-xl"
+    >
+      <div class="space-y-3">
+        <div class="flex items-center gap-2">
+          <Select v-model="suggestBrandId" :options="suggestBrandOptions" placeholder="选择品牌" class="flex-1" />
+          <Button variant="outline" size="sm" :disabled="suggestLoading" @click="fetchSuggestions">
+            <Loader2 v-if="suggestLoading" class="animate-spin" />
+            <Sparkles v-else />
+            生成推荐
+          </Button>
+        </div>
+
+        <div v-if="suggestLoading" class="space-y-2 py-2">
+          <Skeleton v-for="i in 5" :key="i" class="h-12" />
+        </div>
+
+        <template v-else-if="suggestions.length">
+          <div class="max-h-80 space-y-1 overflow-y-auto rounded-md border p-2">
+            <label
+              v-for="item in suggestions"
+              :key="item.name"
+              class="flex items-start gap-2.5 rounded-sm px-2 py-1.5 hover:bg-accent"
+              :class="item.existing && 'cursor-default opacity-60'"
+            >
+              <Checkbox
+                class="mt-0.5"
+                :model-value="selectedSuggestions.includes(item.name)"
+                :disabled="item.existing"
+                @update:model-value="toggleSuggestion(item.name, $event)"
+              />
+              <span class="min-w-0">
+                <span class="flex flex-wrap items-center gap-2">
+                  <span class="text-sm font-medium">{{ item.name }}</span>
+                  <Badge v-if="item.existing" variant="secondary">已存在</Badge>
+                </span>
+                <span v-if="item.reason" class="mt-0.5 block text-xs text-muted-foreground">{{ item.reason }}</span>
+              </span>
+            </label>
+          </div>
+          <p class="text-xs text-muted-foreground">
+            已选 {{ selectedSuggestions.length }} / 可创建 {{ creatableSuggestions.length }} 个
+          </p>
+        </template>
+
+        <p v-else class="rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+          选择品牌后点击「生成推荐」，AI 会给出该品牌的产品线划分候选。
+        </p>
+      </div>
+      <template #footer>
+        <Button variant="outline" :disabled="suggestCreating" @click="suggestDialog = false">取消</Button>
+        <Button
+          :disabled="suggestCreating || !selectedSuggestions.length"
+          @click="createSelectedSeries"
+        >
+          <Loader2 v-if="suggestCreating" class="animate-spin" />
+          {{ suggestCreating ? '创建中…' : `创建所选（${selectedSuggestions.length}）` }}
         </Button>
       </template>
     </Dialog>

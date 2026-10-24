@@ -1,8 +1,11 @@
 package com.spectrace.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.spectrace.common.BizException;
 import com.spectrace.config.CacheConfig;
+import com.spectrace.dto.SeriesSuggestVO;
 import com.spectrace.dto.SeriesVO;
 import com.spectrace.dto.UnassignedDeviceVO;
 import com.spectrace.entity.Brand;
@@ -41,6 +44,8 @@ public class DeviceSeriesService {
     private final DeviceSeriesMapper seriesMapper;
     private final DeviceMapper deviceMapper;
     private final BrandMapper brandMapper;
+    private final AiChatService aiChatService;
+    private final ObjectMapper objectMapper;
 
     public DeviceSeries get(Long id) {
         return id == null ? null : seriesMapper.selectById(id);
@@ -288,6 +293,73 @@ public class DeviceSeriesService {
 
     public static String key(Long brandId, String name) {
         return brandId + "|" + (name == null ? "" : name.trim().toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * AI 推荐某品牌的产品线划分：单轮对话生成候选系列名，已存在的标注 existing 供前端禁选。
+     * AI 不可用或返回异常时抛业务异常，由前端提示降级为手动新建。
+     */
+    public List<SeriesSuggestVO> suggestByAi(Long brandId) {
+        Brand brand = brandMapper.selectById(brandId);
+        if (brand == null) {
+            throw new BizException("品牌不存在：" + brandId);
+        }
+        List<String> existingNames = list(brandId, null).stream()
+                .map(DeviceSeries::getName)
+                .toList();
+
+        String systemPrompt = """
+                你是手机产品线专家。根据品牌名称，推荐该品牌手机产品线的系列划分方案（如官方常用产品线命名）。
+
+                要求：
+                1. 只输出一个 JSON 对象，格式：{"series":[{"name":"系列名","reason":"一句话说明定位"}]}
+                2. 推荐 4~8 个系列；名称用品牌官方或社区通用叫法（中文品牌用中文，国际品牌用英文），不要自造词。
+                3. 覆盖该品牌真实存在的产品线定位（旗舰/中端/入门/电竞/折叠/影像等），宁缺毋滥。
+                """;
+        String userPrompt = "品牌：" + brand.getName()
+                + (existingNames.isEmpty() ? "" : "。以下系列名已存在，不要重复推荐：" + String.join("、", existingNames));
+
+        String content = aiChatService.complete(systemPrompt, userPrompt, 800);
+        List<SeriesSuggestVO> suggestions = parseSuggestions(content);
+        for (SeriesSuggestVO item : suggestions) {
+            item.setExisting(existingNames.contains(item.getName()));
+        }
+        log.info("AI 推荐系列: brand={} 生成 {} 个候选（已存在 {}）",
+                brand.getName(), suggestions.size(), suggestions.stream().filter(SeriesSuggestVO::isExisting).count());
+        return suggestions;
+    }
+
+    /** 容错解析模型输出：提取 JSON 对象里的 series 数组，空结果按异常处理提示重试。 */
+    private List<SeriesSuggestVO> parseSuggestions(String content) {
+        try {
+            String cleaned = content == null ? "" : content.trim()
+                    .replaceAll("(?m)^```(?:json)?", "")
+                    .replaceAll("(?m)```$", "")
+                    .trim();
+            int start = cleaned.indexOf('{');
+            int end = cleaned.lastIndexOf('}');
+            if (start < 0 || end <= start) {
+                throw new IllegalStateException("模型未输出 JSON");
+            }
+            JsonNode root = objectMapper.readTree(cleaned.substring(start, end + 1));
+            List<SeriesSuggestVO> result = new ArrayList<>();
+            for (JsonNode item : root.path("series")) {
+                String name = item.path("name").asText("").trim();
+                if (!name.isEmpty() && result.stream().noneMatch(s -> s.getName().equals(name))) {
+                    SeriesSuggestVO vo = new SeriesSuggestVO();
+                    vo.setName(name);
+                    vo.setReason(item.path("reason").asText(null));
+                    result.add(vo);
+                }
+            }
+            if (result.isEmpty()) {
+                throw new IllegalStateException("模型未给出任何系列名");
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("AI 系列推荐解析失败: {}", e.getMessage());
+            throw new BizException("AI 返回格式异常，请重试或手动新建系列");
+        }
     }
 
     private boolean existsName(Long brandId, String name, Long excludeId) {

@@ -78,6 +78,13 @@ export interface Device {
   updatedAt?: string
 }
 
+/** AI 推荐的系列名候选（existing 表示同名系列已存在） */
+export interface SeriesSuggestion {
+  name: string
+  reason?: string | null
+  existing?: boolean
+}
+
 export interface DeviceSeries {
   id: number
   brandId: number
