@@ -6,13 +6,16 @@ import {
   KeyRound,
   Loader2,
   Pencil,
+  PlugZap,
   Plus,
+  Search,
   Server,
   Star,
   Trash2,
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
+import type { ConnectivityTest } from '@/types/api'
 import {
   Badge,
   Button,
@@ -79,13 +82,25 @@ const remoteModels = ref<string[]>([])
 const selectedModels = ref<string[]>([])
 const pullLoading = ref(false)
 const importLoading = ref(false)
+// 远端模型可能成百上千（如 OpenRouter），按关键字过滤后再勾选
+const modelKeyword = ref('')
+const filteredRemoteModels = computed(() => {
+  const keyword = modelKeyword.value.trim().toLowerCase()
+  if (!keyword) return remoteModels.value
+  return remoteModels.value.filter((m) => m.toLowerCase().includes(keyword))
+})
+const testingModels = reactive<Record<string, boolean>>({})
+const testResults = reactive<Record<string, ConnectivityTest>>({})
 
 const deleteConnection = ref<any>(null)
 const deleteModel = ref<any>(null)
 const deleting = ref(false)
 
+// 全选只作用于当前筛选结果：搜索时勾选可见项，不吞掉之前选的其他项
 const allSelected = computed(
-  () => remoteModels.value.length > 0 && selectedModels.value.length === remoteModels.value.length,
+  () =>
+    filteredRemoteModels.value.length > 0 &&
+    filteredRemoteModels.value.every((m) => selectedModels.value.includes(m)),
 )
 
 async function load() {
@@ -196,10 +211,33 @@ async function fetchRemote() {
   } finally {
     pullLoading.value = false
   }
+  modelKeyword.value = ''
+  Object.keys(testResults).forEach((key) => delete testResults[key])
+}
+
+async function testModel(model: string) {
+  if (!pullConfig.value || testingModels[model]) return
+  testingModels[model] = true
+  try {
+    const result = await adminApi.testAiConfig(pullConfig.value.id, model)
+    testResults[model] = result
+    if (result.success) {
+      toast.success(`${model} 连通正常（${result.latencyMs} ms）`)
+    } else {
+      toast.error(`${model} 连通失败：${result.error ?? '未知错误'}`)
+    }
+  } finally {
+    testingModels[model] = false
+  }
 }
 
 function toggleAll(checked: boolean) {
-  selectedModels.value = checked ? [...remoteModels.value] : []
+  if (checked) {
+    selectedModels.value = [...new Set([...selectedModels.value, ...filteredRemoteModels.value])]
+  } else {
+    const visible = new Set(filteredRemoteModels.value)
+    selectedModels.value = selectedModels.value.filter((m) => !visible.has(m))
+  }
 }
 
 function toggleModel(model: string, checked: boolean) {
@@ -445,27 +483,66 @@ async function confirmDeleteModel() {
           </label>
         </div>
 
+        <div class="relative">
+          <Search class="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input v-model="modelKeyword" placeholder="按名称筛选模型，如 qwen / max…" class="pl-8" />
+        </div>
+
         <div class="max-h-80 space-y-1 overflow-y-auto rounded-md border p-2">
           <div v-if="pullLoading" class="space-y-2 p-2">
             <Skeleton v-for="i in 6" :key="i" class="h-7" />
           </div>
-          <template v-else-if="remoteModels.length">
-            <label
-              v-for="model in remoteModels"
+          <template v-else-if="filteredRemoteModels.length">
+            <div
+              v-for="model in filteredRemoteModels"
               :key="model"
-              class="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+              class="flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-accent"
             >
-              <Checkbox
-                :model-value="selectedModels.includes(model)"
-                @update:model-value="toggleModel(model, $event)"
-              />
-              <span class="font-mono text-xs">{{ model }}</span>
-            </label>
+              <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+                <Checkbox
+                  :model-value="selectedModels.includes(model)"
+                  @update:model-value="toggleModel(model, $event)"
+                />
+                <span class="truncate font-mono text-xs" :title="model">{{ model }}</span>
+              </label>
+              <span
+                v-if="testResults[model]"
+                class="shrink-0 text-xs tabular-nums"
+                :class="
+                  testResults[model].success
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-destructive'
+                "
+                :title="testResults[model].error ?? testResults[model].reply ?? ''"
+              >
+                {{ testResults[model].success ? `${testResults[model].latencyMs} ms` : '失败' }}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="shrink-0"
+                :disabled="testingModels[model]"
+                :aria-label="`测试 ${model} 连通性`"
+                @click="testModel(model)"
+              >
+                <Loader2 v-if="testingModels[model]" class="animate-spin" />
+                <PlugZap v-else />
+              </Button>
+            </div>
           </template>
+          <Empty
+            v-else-if="remoteModels.length"
+            title="没有匹配的模型"
+            description="换个关键字试试。"
+          />
           <Empty v-else title="未拉取到模型" description="请检查接口地址与 API Key 是否正确。" />
         </div>
 
-        <p class="text-xs text-muted-foreground">已选 {{ selectedModels.length }} / {{ remoteModels.length }} 个模型</p>
+        <p class="text-xs text-muted-foreground">
+          已选 {{ selectedModels.length }} / {{ remoteModels.length }} 个模型<template v-if="modelKeyword.trim()">
+            ，筛选出 {{ filteredRemoteModels.length }} 个</template
+          >；点击行尾图标可测试模型连通性
+        </p>
       </div>
 
       <template #footer>

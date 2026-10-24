@@ -186,6 +186,15 @@ export interface AiModel {
   enabled: number
 }
 
+/** AI 连通性测试结果（请求层失败也正常返回，success=false 携带错误详情） */
+export interface ConnectivityTest {
+  success: boolean
+  latencyMs: number
+  model: string
+  reply?: string | null
+  error?: string | null
+}
+
 // ---------- 访客端 VO ----------
 export interface DeviceSuggest {
   id: number
@@ -427,6 +436,7 @@ export interface AgentTaskCreateRequest {
   brandName?: string
   aiModelId?: number | null
 }
+
 
 export interface BrandSaveRequest extends Partial<Omit<Brand, 'id'>> {
   /** 表单里常用 null 表示「新建」，与 undefined 等价 */

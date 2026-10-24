@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.spectrace.common.BizException;
 import com.spectrace.dto.AiModelVO;
+import com.spectrace.dto.ConnectivityTestVO;
 import com.spectrace.dto.ImportModelsRequest;
 import com.spectrace.dto.ResolvedModel;
 import com.spectrace.entity.AiConfig;
@@ -198,6 +199,80 @@ public class AiConfigService {
 
     public void deleteModel(Long modelId) {
         modelMapper.deleteById(modelId);
+    }
+
+    /**
+     * 连通性测试：向 {baseUrl}/chat/completions 发一条最小对话请求，验证 Key 能真正调用该模型。
+     * 配置类错误（连接缺失 / 未配地址 / 无可用模型）抛业务异常；请求层面的失败返回 success=false，
+     * 前端拿到结构化结果展示延迟或错误详情，而不是一律弹错误提示。
+     */
+    public ConnectivityTestVO testConnection(Long configId, String modelName) {
+        AiConfig config = configMapper.selectById(configId);
+        if (config == null) {
+            throw new BizException("连接不存在");
+        }
+        if (config.getBaseUrl() == null || config.getBaseUrl().isBlank()) {
+            throw new BizException("请先为该连接配置接口地址");
+        }
+        String model = resolveTestModel(configId, modelName);
+        String url = config.getBaseUrl().replaceAll("/+$", "") + "/chat/completions";
+        String apiKey = config.getApiKey() == null ? "" : config.getApiKey();
+
+        ConnectivityTestVO vo = new ConnectivityTestVO();
+        vo.setModel(model);
+        long start = System.currentTimeMillis();
+        try {
+            String body = objectMapper.writeValueAsString(Map.of(
+                    "model", model,
+                    "messages", List.of(Map.of("role", "user", "content", "ping")),
+                    "max_tokens", 16,
+                    "stream", false));
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(30))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body));
+            if (!apiKey.isBlank()) {
+                builder.header("Authorization", "Bearer " + apiKey);
+            }
+            HttpResponse<String> resp = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            vo.setLatencyMs(System.currentTimeMillis() - start);
+            if (resp.statusCode() >= 400) {
+                vo.setSuccess(false);
+                vo.setError("HTTP " + resp.statusCode() + " " + truncate(resp.body()));
+                log.warn("连通性测试失败 {} model={}: HTTP {}", url, model, resp.statusCode());
+                return vo;
+            }
+            JsonNode root = objectMapper.readTree(resp.body());
+            String reply = root.path("choices").path(0).path("message").path("content").asText("");
+            vo.setSuccess(true);
+            vo.setReply(truncate(reply));
+            log.info("连通性测试成功 {} model={} latency={}ms", url, model, vo.getLatencyMs());
+            return vo;
+        } catch (Exception e) {
+            vo.setSuccess(false);
+            vo.setLatencyMs(System.currentTimeMillis() - start);
+            vo.setError(e.getClass().getSimpleName() + ": " + e.getMessage());
+            log.warn("连通性测试异常 {} model={}: {}", url, model, e.getMessage());
+            return vo;
+        }
+    }
+
+    /** 测试模型解析：未指定时回落到该连接下第一个启用模型（默认优先）。 */
+    private String resolveTestModel(Long configId, String modelName) {
+        if (modelName != null && !modelName.isBlank()) {
+            return modelName.trim();
+        }
+        AiModel model = modelMapper.selectOne(Wrappers.<AiModel>lambdaQuery()
+                .eq(AiModel::getConfigId, configId)
+                .eq(AiModel::getEnabled, 1)
+                .orderByDesc(AiModel::getIsDefault)
+                .orderByAsc(AiModel::getId)
+                .last("LIMIT 1"));
+        if (model == null) {
+            throw new BizException("该连接下暂无启用模型，请先导入或在测试时指定模型名");
+        }
+        return model.getModel();
     }
 
     // ---------------- 解析（供 Agent） ----------------

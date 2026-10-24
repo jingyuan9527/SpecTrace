@@ -13,6 +13,7 @@ import type {
   Brand,
   BrandSaveRequest,
   CompareResult,
+  ConnectivityTest,
   Device,
   DeviceDetail,
   DeviceImportResult,
@@ -150,6 +151,11 @@ export const adminApi = {
   // 连接下的模型
   aiConfigModels: (configId: number) => request.get<unknown, AiModel[]>(`/admin/ai-configs/${configId}/models`),
   pullRemoteModels: (configId: number) => request.get<unknown, string[]>(`/admin/ai-configs/${configId}/remote-models`),
+  // 连通性测试：model 不传时后端用该连接首个启用模型
+  testAiConfig: (configId: number, model?: string) =>
+    request.post<unknown, ConnectivityTest>(`/admin/ai-configs/${configId}/test`, undefined, {
+      params: model ? { model } : undefined,
+    }),
   importAiModels: (configId: number, data: { models: string[]; temperature?: number }) =>
     request.post<unknown, void>(`/admin/ai-configs/${configId}/import-models`, data),
   // AI 模型

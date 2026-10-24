@@ -2,6 +2,7 @@ package com.spectrace.controller;
 
 import com.spectrace.common.R;
 import com.spectrace.dto.AiModelVO;
+import com.spectrace.dto.ConnectivityTestVO;
 import com.spectrace.dto.ImportModelsRequest;
 import com.spectrace.entity.AiConfig;
 import com.spectrace.service.AiConfigService;
@@ -90,5 +91,16 @@ public class AdminAiConfigController {
         logService.record(adminId, adminName, "IMPORT_AI_MODELS", "ai_config", id,
                 "导入 " + req.getModels().size() + " 个模型");
         return R.ok(models);
+    }
+
+    @Operation(summary = "连通性测试（向 {baseUrl}/chat/completions 发最小请求，model 不传用该连接首个启用模型）")
+    @PostMapping("/{id}/test")
+    public R<ConnectivityTestVO> test(@PathVariable Long id,
+                                      @RequestParam(required = false) String model,
+                                      @RequestAttribute Long adminId, @RequestAttribute String adminName) {
+        ConnectivityTestVO result = aiConfigService.testConnection(id, model);
+        logService.record(adminId, adminName, "TEST_AI_CONFIG", "ai_config", id,
+                result.getModel() + (result.isSuccess() ? " 成功 " + result.getLatencyMs() + "ms" : " 失败"));
+        return R.ok(result);
     }
 }
