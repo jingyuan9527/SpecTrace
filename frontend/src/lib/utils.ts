@@ -14,3 +14,9 @@ export function formatTime(value?: string | null, fallback = '—') {
   if (!value) return fallback
   return value.replace('T', ' ').slice(0, 19)
 }
+
+/** 读设计令牌的 CSS 变量（存的是 HSL 分量），供 ECharts 等无法用 Tailwind 类的场合取色。 */
+export function cssVar(name: string, fallback: string) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return value ? `hsl(${value})` : fallback
+}

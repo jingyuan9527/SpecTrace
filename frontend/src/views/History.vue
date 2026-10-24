@@ -1,50 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import * as echarts from 'echarts/core'
-import { BarChart, LineChart as EChartsLineChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, MarkPointComponent, TooltipComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
-import type { EChartsType } from 'echarts/core'
 import { motion } from 'motion-v'
 import { Download, FileSpreadsheet, LineChart, TrendingUp } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
+import { useECharts } from '@/composables/useECharts'
+import { cssVar } from '@/lib/utils'
+import type { Brand, HistoryResult, ParamDef } from '@/types/api'
 import { useThemeStore } from '@/stores/theme'
 import { Alert, Button, Card, CardContent, Combobox, Empty, Skeleton, Tabs, type TabItem } from '@/components/ui'
-
-interface Brand {
-  id: number
-  name: string
-}
-
-interface ParamDef {
-  id: number
-  paramName: string
-  unit?: string
-}
-
-interface HistoryPoint {
-  deviceId: number
-  deviceName: string
-  releaseDate: string
-  value: string
-}
-
-interface HistorySeries {
-  brandId: number
-  brandName: string
-  points: HistoryPoint[]
-}
-
-interface HistoryResponse {
-  paramDefId: number
-  paramName: string
-  unit?: string
-  numeric: boolean
-  unitConflicts?: string[]
-  series: HistorySeries[]
-}
 
 const MAX_BRANDS = 4
 const theme = useThemeStore()
@@ -68,17 +33,6 @@ function parseIdList(value: unknown): number[] {
     .slice(0, MAX_BRANDS)
 }
 
-// 按需注册图表能力，避免把整个 ECharts 打进 History 页面 chunk
-echarts.use([
-  EChartsLineChart,
-  BarChart,
-  GridComponent,
-  TooltipComponent,
-  LegendComponent,
-  MarkPointComponent,
-  CanvasRenderer,
-])
-
 const brands = ref<Brand[]>([])
 const defs = ref<ParamDef[]>([])
 const initialBrandIds = parseIdList(route.query.brandIds)
@@ -86,7 +40,7 @@ const legacyBrandId = parseId(route.query.brandId)
 const brandIds = ref<number[]>(initialBrandIds.length ? initialBrandIds : legacyBrandId ? [legacyBrandId] : [])
 const paramDefId = ref<number | undefined>(parseId(route.query.paramDefId))
 const view = ref('chart')
-const data = ref<HistoryResponse | null>(null)
+const data = ref<HistoryResult | null>(null)
 const loading = ref(false)
 const capturing = ref(false)
 
@@ -95,9 +49,8 @@ const views: TabItem[] = [
   { value: 'table', label: '表格' },
 ]
 
-const chartRef = ref<HTMLElement>()
 const captureRef = ref<HTMLElement>()
-let chart: EChartsType | null = null
+const charts = useECharts()
 
 const defOptions = ref<{ label: string; value: number }[]>([])
 const brandKey = computed(() => brandIds.value.join(','))
@@ -148,13 +101,8 @@ async function load() {
   }
 }
 
-function cssVar(name: string, fallback: string) {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-  return value ? `hsl(${value})` : fallback
-}
-
 /** 所有品牌共用一套日期轴：同一发布日期的机型落在同一刻度上。 */
-function axisDates(series: HistorySeries[]) {
+function axisDates(series: HistoryResult['series']) {
   return [...new Set(series.flatMap((item) => item.points.map((point) => point.releaseDate || '')))]
     .filter(Boolean)
     .sort()
@@ -165,8 +113,7 @@ function seriesColor(index: number) {
 }
 
 function renderChart() {
-  if (!chartRef.value || !data.value || !data.value.series.length) return
-  if (!chart) chart = echarts.init(chartRef.value)
+  if (!data.value || !data.value.series.length) return
 
   const dark = theme.dark
   const info = data.value
@@ -208,48 +155,41 @@ function renderChart() {
     }
   })
 
-  chart.setOption(
-    {
-      backgroundColor: 'transparent',
-      color: info.series.map((_, index) => seriesColor(index)),
-      legend: info.series.length > 1
-        ? { top: 0, textStyle: { color: axisColor }, icon: 'roundRect', itemWidth: 12, itemHeight: 4 }
-        : undefined,
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: dark ? '#18181b' : '#ffffff',
-        borderColor: dark ? '#27272a' : '#e4e4e7',
-        textStyle: { color: dark ? '#fafafa' : '#18181b' },
-        valueFormatter: (value: unknown) => (value === null || value === undefined ? '—' : String(value)),
-      },
-      grid: { left: 56, right: 28, top: info.series.length > 1 ? 48 : 24, bottom: 72 },
-      xAxis: {
-        type: 'category',
-        data: dates,
-        axisLabel: {
-          rotate: 30,
-          color: axisColor,
-          formatter: (value: string) => value.slice(0, 7),
-        },
-        axisLine: { lineStyle: { color: dark ? '#3f3f46' : '#e4e4e7' } },
-      },
-      yAxis: {
-        type: numeric ? 'value' : 'category',
-        // 数值轴按数据范围自适应：电池容量这类 3000→3600 的变化从 0 起算会被压成一条平线
-        scale: numeric,
-        name: info.unit || '',
-        nameTextStyle: { color: axisColor },
-        axisLabel: { color: axisColor },
-        splitLine: { lineStyle: { color: splitColor } },
-      },
-      series,
+  charts.render('main', {
+    backgroundColor: 'transparent',
+    color: info.series.map((_, index) => seriesColor(index)),
+    legend: info.series.length > 1
+      ? { top: 0, textStyle: { color: axisColor }, icon: 'roundRect', itemWidth: 12, itemHeight: 4 }
+      : undefined,
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: dark ? '#18181b' : '#ffffff',
+      borderColor: dark ? '#27272a' : '#e4e4e7',
+      textStyle: { color: dark ? '#fafafa' : '#18181b' },
+      valueFormatter: (value: unknown) => (value === null || value === undefined ? '—' : String(value)),
     },
-    true,
-  )
-
-  chart.resize()
-  // 容器可能在入场动画结束后才完成布局，补一次 resize 触发重绘
-  window.setTimeout(() => chart?.resize(), 120)
+    grid: { left: 56, right: 28, top: info.series.length > 1 ? 48 : 24, bottom: 72 },
+    xAxis: {
+      type: 'category',
+      data: dates,
+      axisLabel: {
+        rotate: 30,
+        color: axisColor,
+        formatter: (value: string) => value.slice(0, 7),
+      },
+      axisLine: { lineStyle: { color: dark ? '#3f3f46' : '#e4e4e7' } },
+    },
+    yAxis: {
+      type: numeric ? 'value' : 'category',
+      // 数值轴按数据范围自适应：电池容量这类 3000→3600 的变化从 0 起算会被压成一条平线
+      scale: numeric,
+      name: info.unit || '',
+      nameTextStyle: { color: axisColor },
+      axisLabel: { color: axisColor },
+      splitLine: { lineStyle: { color: splitColor } },
+    },
+    series,
+  })
 }
 
 onMounted(async () => {
@@ -283,16 +223,6 @@ watch(
     renderChart()
   },
 )
-
-function onResize() {
-  chart?.resize()
-}
-window.addEventListener('resize', onResize)
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', onResize)
-  chart?.dispose()
-  chart = null
-})
 
 async function exportImage() {
   if (!captureRef.value) return
@@ -418,7 +348,7 @@ function exportCsv() {
           <p class="mt-1 text-xs text-muted-foreground">共 {{ totalPoints }} 个机型数据点</p>
         </div>
 
-        <div v-show="view === 'chart'" ref="chartRef" class="h-96 w-full" />
+        <div v-show="view === 'chart'" :ref="charts.bind('main')" class="h-96 w-full" />
 
         <div v-show="view === 'table'" class="overflow-x-auto">
           <table class="w-full text-sm">
