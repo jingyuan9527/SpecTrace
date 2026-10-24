@@ -45,7 +45,7 @@ INSERT OR IGNORE INTO param_def (id, param_key, param_name, group_id, param_type
  (10, 'os',                  '操作系统',       3, 'text',   NULL, NULL,  4, 1),
  (11, 'battery_capacity',    '电池容量',       4, 'number', NULL, 'mAh', 1, 1),
  (12, 'charging_power',      '有线充电功率',   4, 'number', NULL, 'W',   2, 1),
- (13, 'wireless_charging',   '无线充电',       4, 'text',   NULL, NULL,  3, 1),
+ (13, 'wireless_charging',   '无线充电',       4, 'select', '["支持","不支持"]', NULL, 3, 1),
  (14, 'rear_camera',         '后置摄像头',     5, 'text',   NULL, NULL,  1, 1),
  (15, 'front_camera',        '前置摄像头',     5, 'text',   NULL, NULL,  2, 1),
  (16, 'video_recording',     '视频录制',       5, 'text',   NULL, NULL,  3, 1),
@@ -59,6 +59,30 @@ INSERT OR IGNORE INTO param_def (id, param_key, param_name, group_id, param_type
  (24, 'bluetooth',           '蓝牙',           7, 'text',   NULL, NULL,  4, 1),
  (25, 'uwb',                 'UWB超宽频',      8, 'text',   NULL, NULL,  1, 1),
  (26, 'infrared',            '红外遥控',       8, 'text',   NULL, NULL,  2, 1);
+
+-- 充电相关参数按 param_key 补写，而不是写死 id：
+-- 上面的 INSERT OR IGNORE 在老库里遇到 id 被其他参数占用时会整行静默跳过，
+-- 导致「无线充电」这类后加参数在老库中根本不存在、采集 Schema 里也就不会出现。
+INSERT INTO param_def (param_key, param_name, group_id, param_type, enum_options, unit, sort_order, enabled)
+SELECT 'wireless_charging', '无线充电', 4, 'select', '["支持","不支持"]', NULL, 3, 1
+ WHERE NOT EXISTS (SELECT 1 FROM param_def WHERE param_key = 'wireless_charging');
+
+INSERT INTO param_def (param_key, param_name, group_id, param_type, enum_options, unit, sort_order, enabled)
+SELECT 'wireless_charging_power', '无线充电功率', 4, 'number', NULL, 'W', 4, 1
+ WHERE NOT EXISTS (SELECT 1 FROM param_def WHERE param_key = 'wireless_charging_power');
+
+INSERT INTO param_def (param_key, param_name, group_id, param_type, enum_options, unit, sort_order, enabled)
+SELECT 'charging_port', '充电接口', 4, 'text', NULL, NULL, 5, 1
+ WHERE NOT EXISTS (SELECT 1 FROM param_def WHERE param_key = 'charging_port');
+
+INSERT INTO param_def (param_key, param_name, group_id, param_type, enum_options, unit, sort_order, enabled)
+SELECT 'usb_version', 'USB 接口速率', 4, 'text', NULL, NULL, 6, 1
+ WHERE NOT EXISTS (SELECT 1 FROM param_def WHERE param_key = 'usb_version');
+
+-- 老库升级：无线充电原先是无枚举的文本（常被写成 "50W"），改为「支持/不支持」枚举；
+-- 存量取值的迁移交给重新采集，脚本不猜测改写既有数据
+UPDATE param_def SET param_type = 'select', enum_options = '["支持","不支持"]'
+ WHERE param_key = 'wireless_charging' AND (param_type <> 'select' OR enum_options IS NULL);
 
 -- 机型
 INSERT OR IGNORE INTO device (id, brand_id, name, release_date, thumbnail, description, status) VALUES
@@ -141,8 +165,17 @@ INSERT OR IGNORE INTO ai_model (id, config_id, model, temperature, is_default, e
  (1, 1, 'qwen-max', 0.20, 1, 1);
 
 -- 待审核演示数据：给后台「待审核数据」页一份字段完整的样例；真实数据由采集 Agent 写入
+-- 参数键必须与 param_def 一致，否则审核页会当成未定义参数丢弃
 INSERT OR IGNORE INTO agent_pending_data (id, task_id, model_name, brand_name, params_json, source_url, status) VALUES
  (1, NULL, 'iPhone 17 Pro', 'Apple',
-  '{"release_date":"2025-09-19","screen_size":"6.3英寸","refresh_rate":"120Hz","chipset":"Apple A19 Pro","ram":"12GB","battery":"3988mAh","charging":"40W","weight":"199g","ip_rating":"IP68","_variants":[{"storage":"256GB","ram":"12GB","price":8999,"currency":"CNY","priceType":"LAUNCH"},{"storage":"512GB","ram":"12GB","price":10999,"currency":"CNY","priceType":"LAUNCH"},{"storage":"1TB","ram":"12GB","price":12999,"currency":"CNY","priceType":"LAUNCH"}],"_confidence":{"screen_size":0.95,"chipset":0.9}}',
+  '{"release_date":"2025-09-19","screen_size":"6.3","screen_refresh_rate":"120","chipset":"Apple A19 Pro","ram":"12GB","battery_capacity":"3988","charging_power":"40","wireless_charging":"支持","wireless_charging_power":"25","charging_port":"USB-C","usb_version":"USB 3（10Gbps）","weight":"199","ip_rating":"IP68","_variants":[{"storage":"256GB","ram":"12GB","price":8999,"currency":"CNY","priceType":"LAUNCH"},{"storage":"512GB","ram":"12GB","price":10999,"currency":"CNY","priceType":"LAUNCH"},{"storage":"1TB","ram":"12GB","price":12999,"currency":"CNY","priceType":"LAUNCH"}],"_confidence":{"screen_size":0.95,"chipset":0.9,"wireless_charging":0.8}}',
   'https://www.apple.com.cn/iphone-17-pro/specs/', 'PENDING_REVIEW');
+
+-- 老库修复：旧版演示数据用的是 charging / refresh_rate / battery 等未定义键，审核页会把它们丢弃；
+-- 仅当该行仍是旧演示内容（还是待审核状态且含旧键 charging）时重写，管理员改过的不动
+UPDATE agent_pending_data
+   SET params_json = '{"release_date":"2025-09-19","screen_size":"6.3","screen_refresh_rate":"120","chipset":"Apple A19 Pro","ram":"12GB","battery_capacity":"3988","charging_power":"40","wireless_charging":"支持","wireless_charging_power":"25","charging_port":"USB-C","usb_version":"USB 3（10Gbps）","weight":"199","ip_rating":"IP68","_variants":[{"storage":"256GB","ram":"12GB","price":8999,"currency":"CNY","priceType":"LAUNCH"},{"storage":"512GB","ram":"12GB","price":10999,"currency":"CNY","priceType":"LAUNCH"},{"storage":"1TB","ram":"12GB","price":12999,"currency":"CNY","priceType":"LAUNCH"}],"_confidence":{"screen_size":0.95,"chipset":0.9,"wireless_charging":0.8}}'
+ WHERE id = 1
+   AND status = 'PENDING_REVIEW'
+   AND params_json LIKE '%"charging":%';
 
