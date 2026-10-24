@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { reactive, ref } from 'vue'
 import { KeyRound, Loader2, Plus, Power, Shield, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
+import { usePagedList } from '@/composables/usePagedList'
 import {
   Badge,
   Button,
@@ -25,10 +26,10 @@ import {
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
 
-const list = ref<any[]>([])
-const total = ref(0)
-const loading = ref(true)
-const query = reactive({ current: 1, size: 10 })
+const { list, total, loading, query, load } = usePagedList({
+  size: 10,
+  fetcher: (params) => adminApi.users(params),
+})
 
 const dialog = ref(false)
 const saving = ref(false)
@@ -46,24 +47,6 @@ const roles = [
   { label: '超级管理员', value: 'SUPER_ADMIN' },
   { label: '普通管理员', value: 'ADMIN' },
 ]
-
-async function load() {
-  loading.value = true
-  try {
-    const res = await adminApi.users({ ...query })
-    list.value = res.records
-    total.value = res.total
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(load)
-
-watch(
-  () => query.current,
-  () => load(),
-)
 
 function openCreate() {
   Object.assign(form, { username: '', password: '', nickname: '', role: 'ADMIN' })

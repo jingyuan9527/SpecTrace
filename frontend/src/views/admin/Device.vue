@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Copy, Download, FileUp, ImagePlus, Loader2, Pencil, Plus, Search, Smartphone, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
+import { usePagedList } from '@/composables/usePagedList'
 import {
   Badge,
   Button,
@@ -75,17 +76,13 @@ interface DeviceForm {
   variants: DeviceVariantRow[]
 }
 
-const list = ref<any[]>([])
 const brands = ref<Brand[]>([])
 const seriesList = ref<Series[]>([])
 const groups = ref<ParamGroup[]>([])
 const defs = ref<ParamDef[]>([])
-const total = ref(0)
-const loading = ref(true)
 const saving = ref(false)
 const uploading = ref(false)
 
-const query = reactive({ current: 1, size: 10, keyword: '', brandId: undefined as number | undefined })
 const dialog = ref(false)
 const deleteTarget = ref<any>(null)
 const deleting = ref(false)
@@ -114,16 +111,13 @@ const defsByGroup = computed(() =>
     .filter((group) => group.defs.length > 0),
 )
 
-async function load() {
-  loading.value = true
-  try {
-    const res = await adminApi.devices({ ...query })
-    list.value = res.records
-    total.value = res.total
-  } finally {
-    loading.value = false
-  }
-}
+const { list, total, loading, query, load, search } = usePagedList({
+  size: 10,
+  filters: () => ({ keyword: '', brandId: undefined as number | undefined }),
+  fetcher: (params) => adminApi.devices(params),
+  // 基础数据（品牌/系列/参数定义）先加载完再拉列表，保持原有首屏顺序
+  immediate: false,
+})
 
 onMounted(async () => {
   ;[brands.value, seriesList.value, groups.value, defs.value] = await Promise.all([
@@ -146,16 +140,6 @@ watch(
     }
   },
 )
-
-watch(
-  () => query.current,
-  () => load(),
-)
-
-function search() {
-  query.current = 1
-  load()
-}
 
 function resetForm() {
   Object.assign(form, {

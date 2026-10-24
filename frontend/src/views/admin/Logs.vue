@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
 import { RefreshCw, ScrollText } from '@lucide/vue'
 import { adminApi } from '@/api'
+import { usePagedList } from '@/composables/usePagedList'
 import {
   Badge,
   Button,
@@ -20,11 +20,6 @@ import {
 } from '@/components/ui'
 import PageHeader from '@/components/PageHeader.vue'
 
-const list = ref<any[]>([])
-const total = ref(0)
-const loading = ref(true)
-const query = reactive({ current: 1, size: 20, targetType: '' })
-
 const types = [
   { label: '全部类型', value: '' },
   { label: '品牌', value: 'brand' },
@@ -36,31 +31,11 @@ const types = [
   { label: '管理员', value: 'admin_user' },
 ]
 
-async function load() {
-  loading.value = true
-  try {
-    const res = await adminApi.logs({ ...query, targetType: query.targetType || undefined })
-    list.value = res.records
-    total.value = res.total
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(load)
-
-watch(
-  () => query.current,
-  () => load(),
-)
-
-watch(
-  () => query.targetType,
-  () => {
-    query.current = 1
-    load()
-  },
-)
+const { list, total, loading, query, load, search } = usePagedList({
+  size: 20,
+  filters: () => ({ targetType: '' }),
+  fetcher: (params) => adminApi.logs({ ...params, targetType: params.targetType || undefined }),
+})
 </script>
 
 <template>
@@ -68,7 +43,7 @@ watch(
     <PageHeader title="操作日志" description="记录管理端的关键写操作，便于追溯数据变更" />
 
     <div class="flex flex-wrap items-center gap-2">
-      <Select v-model="query.targetType" :options="types" class="w-44" />
+      <Select v-model="query.targetType" :options="types" class="w-44" @update:model-value="search" />
       <Button variant="outline" size="sm" @click="load">
         <RefreshCw />
         刷新

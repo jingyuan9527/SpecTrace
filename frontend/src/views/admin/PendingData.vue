@@ -13,6 +13,7 @@ import {
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
+import { usePagedList } from '@/composables/usePagedList'
 import {
   Alert,
   Badge,
@@ -38,15 +39,11 @@ import {
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
 
-const list = ref<any[]>([])
 const brands = ref<any[]>([])
 const defs = ref<any[]>([])
-const total = ref(0)
-const loading = ref(true)
 const saving = ref(false)
 const discarding = ref(false)
 
-const query = reactive({ current: 1, size: 10, status: 'PENDING_REVIEW' as string | undefined })
 const dialog = ref(false)
 const current = ref<any>(null)
 const discardTarget = ref<any>(null)
@@ -74,36 +71,18 @@ const statusMeta: Record<string, { label: string; variant: 'info' | 'success' | 
   DISCARDED: { label: '已丢弃', variant: 'secondary' },
 }
 
-async function load() {
-  loading.value = true
-  try {
-    const res = await adminApi.pendingData({ ...query, status: query.status || undefined })
-    list.value = res.records
-    total.value = res.total
-    // 列表刷新后旧的选择可能已不在当前页，直接清空避免误操作
-    selectedIds.value = []
-  } finally {
-    loading.value = false
-  }
-}
+const { list, total, loading, query, load, search } = usePagedList({
+  size: 10,
+  filters: () => ({ status: 'PENDING_REVIEW' as string | undefined }),
+  fetcher: (params) => adminApi.pendingData({ ...params, status: params.status || undefined }),
+  // 品牌与参数定义先加载完再拉列表，保持原有首屏顺序
+  immediate: false,
+})
 
 onMounted(async () => {
   ;[brands.value, defs.value] = await Promise.all([adminApi.brands(), adminApi.paramDefs()])
   await load()
 })
-
-watch(
-  () => query.current,
-  () => load(),
-)
-
-watch(
-  () => query.status,
-  () => {
-    query.current = 1
-    load()
-  },
-)
 
 async function openReview(row: any) {
   const detail = await adminApi.pendingDetail(row.id)
@@ -191,6 +170,11 @@ const selectedIds = ref<number[]>([])
 const batchAction = ref<'approve' | 'discard' | null>(null)
 const batchProcessing = ref(false)
 
+// 列表刷新后旧的选择可能已不在当前页，直接清空避免误操作
+watch(list, () => {
+  selectedIds.value = []
+})
+
 const selectableIds = computed(() =>
   list.value.filter((row) => row.status === 'PENDING_REVIEW').map((row) => row.id),
 )
@@ -276,7 +260,7 @@ function removeVariant(index: number) {
     <PageHeader title="待审核数据" description="Agent 抓取结果必须人工核对后才能进入正式机型库" />
 
     <div class="flex flex-wrap items-center gap-2">
-      <Select v-model="query.status" :options="statusOptions" class="w-40" />
+      <Select v-model="query.status" :options="statusOptions" class="w-40" @update:model-value="search" />
       <Button variant="outline" size="sm" @click="load">
         <RefreshCw />
         刷新

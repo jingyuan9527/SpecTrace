@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { reactive, ref } from 'vue'
 import { CheckCheck, Flag, RefreshCw, XCircle } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
+import { usePagedList } from '@/composables/usePagedList'
 import { formatTime } from '@/lib/utils'
 import {
   Badge,
@@ -23,12 +24,7 @@ import {
 } from '@/components/ui'
 import PageHeader from '@/components/PageHeader.vue'
 
-const list = ref<any[]>([])
-const total = ref(0)
-const loading = ref(true)
 const handlingId = ref<number | null>(null)
-
-const query = reactive({ current: 1, size: 10, status: 'OPEN' as string })
 const notes = reactive<Record<number, string>>({})
 
 const statusOptions = [
@@ -44,31 +40,11 @@ const statusMeta: Record<string, { label: string; variant: 'info' | 'success' | 
   IGNORED: { label: '已忽略', variant: 'secondary' },
 }
 
-async function load() {
-  loading.value = true
-  try {
-    const res = await adminApi.feedback({ ...query, status: query.status || undefined })
-    list.value = res.records
-    total.value = res.total
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(load)
-
-watch(
-  () => query.current,
-  () => load(),
-)
-
-watch(
-  () => query.status,
-  () => {
-    query.current = 1
-    load()
-  },
-)
+const { list, total, loading, query, load, search } = usePagedList({
+  size: 10,
+  filters: () => ({ status: 'OPEN' as string }),
+  fetcher: (params) => adminApi.feedback({ ...params, status: params.status || undefined }),
+})
 
 async function handle(row: any, status: 'RESOLVED' | 'IGNORED') {
   handlingId.value = row.id
@@ -87,7 +63,7 @@ async function handle(row: any, status: 'RESOLVED' | 'IGNORED') {
     <PageHeader title="纠错反馈" description="访客对参数值提交的纠错，核实后可在机型管理中修改参数" />
 
     <div class="flex flex-wrap items-center gap-2">
-      <Select v-model="query.status" :options="statusOptions" class="w-40" />
+      <Select v-model="query.status" :options="statusOptions" class="w-40" @update:model-value="search" />
       <Button variant="outline" size="sm" @click="load">
         <RefreshCw />
         刷新

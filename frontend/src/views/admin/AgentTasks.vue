@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { Bot, ExternalLink, Loader2, RefreshCw, RotateCcw, Send, Terminal } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
+import { usePagedList } from '@/composables/usePagedList'
 import { formatTime } from '@/lib/utils'
 import {
   Badge,
@@ -35,12 +36,23 @@ interface AiModel {
   isDefault: number
 }
 
-const list = ref<any[]>([])
 const aiModels = ref<AiModel[]>([])
-const total = ref(0)
-const loading = ref(true)
 const submitting = ref(false)
-const query = reactive({ current: 1, size: 10, status: '' })
+
+const detailTarget = ref<any>(null)
+
+const { list, total, loading, query, load, search } = usePagedList({
+  size: 10,
+  filters: () => ({ status: '' }),
+  fetcher: (params) => adminApi.agentTasks({ ...params, status: params.status || undefined }),
+  // 详情打开时列表仍在轮询，用最新行同步状态；抓取结束即可停掉日志轮询
+  onLoaded: (res) => {
+    if (!detailTarget.value) return
+    const fresh = res.records.find((row: any) => row.id === detailTarget.value.id)
+    if (fresh) detailTarget.value = fresh
+    syncLogPolling()
+  },
+})
 
 const form = reactive<{ modelName: string; brandName: string; aiModelId: number | null }>({
   modelName: '',
@@ -74,23 +86,6 @@ async function loadBrands() {
   ]
 }
 
-async function load(silent = false) {
-  if (!silent) loading.value = true
-  try {
-    const res = await adminApi.agentTasks({ ...query, status: query.status || undefined })
-    list.value = res.records
-    total.value = res.total
-    // 详情打开时列表仍在轮询，用最新行同步状态；抓取结束即可停掉日志轮询
-    if (detailTarget.value) {
-      const fresh = res.records.find((row: any) => row.id === detailTarget.value.id)
-      if (fresh) detailTarget.value = fresh
-      syncLogPolling()
-    }
-  } finally {
-    if (!silent) loading.value = false
-  }
-}
-
 // 页面可见时每 5 秒静默轮询，任务状态无需手动刷新即可从「排队中」流转
 const POLL_INTERVAL_MS = 5000
 const LOG_POLL_INTERVAL_MS = 3000
@@ -113,7 +108,6 @@ function stopPolling() {
   }
 }
 
-const detailTarget = ref<any>(null)
 const detailLogs = ref<any[]>([])
 const detailLogLoading = ref(false)
 const logBox = ref<HTMLElement | null>(null)
@@ -232,19 +226,6 @@ function timeOnly(value?: string | null) {
   return text.length > 10 ? text.slice(11) : ''
 }
 
-watch(
-  () => query.current,
-  () => load(),
-)
-
-watch(
-  () => query.status,
-  () => {
-    query.current = 1
-    load()
-  },
-)
-
 async function createTask() {
   if (!form.modelName.trim()) {
     toast.warning('请输入机型名称')
@@ -299,7 +280,7 @@ function modelLabel(id: number | null) {
     </Card>
 
     <div class="flex flex-wrap items-center gap-2">
-      <Select v-model="query.status" :options="statusOptions" class="w-40" />
+      <Select v-model="query.status" :options="statusOptions" class="w-40" @update:model-value="search" />
       <Button variant="outline" size="sm" @click="load">
         <RefreshCw />
         刷新
