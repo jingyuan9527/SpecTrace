@@ -1,11 +1,14 @@
 package com.spectrace.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.spectrace.config.CacheConfig;
 import com.spectrace.entity.ParamDef;
 import com.spectrace.entity.ParamGroup;
 import com.spectrace.mapper.ParamDefMapper;
 import com.spectrace.mapper.ParamGroupMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -19,10 +22,12 @@ public class ParamService {
     private final ParamGroupMapper paramGroupMapper;
     private final ParamDefMapper paramDefMapper;
 
+    @Cacheable(cacheNames = CacheConfig.PARAM_META, key = "'groups'")
     public List<ParamGroup> listGroups() {
         return paramGroupMapper.selectList(Wrappers.<ParamGroup>lambdaQuery().orderByAsc(ParamGroup::getSortOrder));
     }
 
+    @CacheEvict(cacheNames = CacheConfig.PARAM_META, allEntries = true)
     public ParamGroup saveGroup(ParamGroup group) {
         if (group.getSortOrder() == null) {
             group.setSortOrder(0);
@@ -35,10 +40,12 @@ public class ParamService {
         return group;
     }
 
+    @CacheEvict(cacheNames = CacheConfig.PARAM_META, allEntries = true)
     public void deleteGroup(Long id) {
         paramGroupMapper.deleteById(id);
     }
 
+    @Cacheable(cacheNames = CacheConfig.PARAM_META, key = "#groupId + ':' + #enabled")
     public List<ParamDef> listDefs(Long groupId, Integer enabled) {
         var query = Wrappers.<ParamDef>lambdaQuery().orderByAsc(ParamDef::getSortOrder);
         if (groupId != null) {
@@ -50,6 +57,7 @@ public class ParamService {
         return paramDefMapper.selectList(query);
     }
 
+    @CacheEvict(cacheNames = CacheConfig.PARAM_META, allEntries = true)
     public ParamDef saveDef(ParamDef def) {
         if (def.getEnabled() == null) {
             def.setEnabled(1);
@@ -65,6 +73,7 @@ public class ParamService {
         return def;
     }
 
+    @CacheEvict(cacheNames = CacheConfig.PARAM_META, allEntries = true)
     public void deleteDef(Long id) {
         paramDefMapper.deleteById(id);
     }

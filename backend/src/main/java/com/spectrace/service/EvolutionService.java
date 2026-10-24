@@ -18,8 +18,10 @@ import com.spectrace.mapper.BrandMapper;
 import com.spectrace.mapper.DeviceMapper;
 import com.spectrace.mapper.DeviceParamValueMapper;
 import com.spectrace.mapper.DeviceVariantMapper;
+import com.spectrace.config.CacheConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -55,6 +57,7 @@ public class EvolutionService {
     private final ParamService paramService;
 
     /** 系列列表：带机型数与起止年份，供筛选下拉直接展示规模。 */
+    @Cacheable(cacheNames = CacheConfig.SERIES_LIST, key = "#brandId")
     public List<SeriesVO> seriesList(Long brandId) {
         return seriesService.listOverview(brandId, 1);
     }

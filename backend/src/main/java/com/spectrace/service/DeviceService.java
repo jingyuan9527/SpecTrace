@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.spectrace.common.BizException;
 import com.spectrace.common.ParamValueParser;
+import com.spectrace.config.CacheConfig;
 import com.spectrace.dto.*;
 import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
@@ -19,6 +20,8 @@ import com.spectrace.mapper.DeviceParamValueMapper;
 import com.spectrace.mapper.DeviceSeriesMapper;
 import com.spectrace.mapper.DeviceVariantMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -117,6 +120,7 @@ public class DeviceService {
      * 机型详情：主表 + 参数值（paramKey -> value）+ 字段级溯源 + 最后更新时间。
      * paramMeta 与 params 并行返回，避免改变既有参数结构导致管理端编辑表单失效。
      */
+    @Cacheable(cacheNames = CacheConfig.DEVICE_DETAIL, key = "#id")
     public Map<String, Object> detail(Long id) {
         Device device = deviceMapper.selectById(id);
         if (device == null) {
@@ -212,12 +216,14 @@ public class DeviceService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = {CacheConfig.DEVICE_DETAIL, CacheConfig.SERIES_LIST}, allEntries = true)
     public Device save(DeviceSaveRequest req, Long adminId, String adminName) {
         return save(req, adminId, adminName, null);
     }
 
     /** sourceUrl 非空表示本次写入来自 Agent 抓取，会落到每个参数值上用于溯源。 */
     @Transactional
+    @CacheEvict(cacheNames = {CacheConfig.DEVICE_DETAIL, CacheConfig.SERIES_LIST}, allEntries = true)
     public Device save(DeviceSaveRequest req, Long adminId, String adminName, String sourceUrl) {
         Device device = new Device();
         device.setId(req.getId());
@@ -418,8 +424,12 @@ public class DeviceService {
         }
     }
 
+    /** 删除机型：主表逻辑删除，参数值与版本物理清理，避免留下无主的孤儿行。 */
+    @Transactional
+    @CacheEvict(cacheNames = {CacheConfig.DEVICE_DETAIL, CacheConfig.SERIES_LIST}, allEntries = true)
     public void delete(Long id, Long adminId, String adminName) {
         deviceMapper.deleteById(id);
+        valueMapper.delete(Wrappers.<DeviceParamValue>lambdaQuery().eq(DeviceParamValue::getDeviceId, id));
         variantMapper.delete(Wrappers.<DeviceVariant>lambdaQuery().eq(DeviceVariant::getDeviceId, id));
         logService.record(adminId, adminName, "DELETE_DEVICE", "device", id, null);
     }
@@ -584,15 +594,32 @@ public class DeviceService {
     }
 
     public List<Integer> releaseYears(Long brandId) {
-        List<Device> devices = deviceMapper.selectList(Wrappers.<Device>lambdaQuery()
-                .select(Device::getReleaseDate)
-                .eq(brandId != null, Device::getBrandId, brandId));
-        return devices.stream()
-                .map(Device::getReleaseDate)
+        // SQL 端聚合年份，替代全表载入内存 distinct：机型库变大后这里是公开端最容易被拖慢的接口
+        var query = Wrappers.<Device>query()
+                .select("DISTINCT strftime('%Y', release_date) AS release_year")
+                .isNotNull("release_date")
+                .ne("release_date", "")
+                .eq(brandId != null, "brand_id", brandId)
+                .orderByDesc("release_year");
+        return deviceMapper.selectObjs(query).stream()
+                .map(this::parseYear)
                 .filter(Objects::nonNull)
-                .map(LocalDate::getYear)
-                .distinct()
-                .sorted(Comparator.reverseOrder())
                 .toList();
+    }
+
+    /** strftime 对无法解析的日期返回 NULL 或异常片段，统一兜底为丢弃该行。 */
+    private Integer parseYear(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        if (text.length() < 4) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(text.substring(0, 4));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

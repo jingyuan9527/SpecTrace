@@ -2,9 +2,12 @@ package com.spectrace.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.spectrace.common.BizException;
+import com.spectrace.config.CacheConfig;
 import com.spectrace.entity.Brand;
 import com.spectrace.mapper.BrandMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -15,6 +18,7 @@ public class BrandService {
 
     private final BrandMapper brandMapper;
 
+    @Cacheable(cacheNames = CacheConfig.BRANDS, key = "#status")
     public List<Brand> list(Integer status) {
         var query = Wrappers.<Brand>lambdaQuery().orderByAsc(Brand::getSortOrder);
         if (status != null) {
@@ -23,6 +27,7 @@ public class BrandService {
         return brandMapper.selectList(query);
     }
 
+    @CacheEvict(cacheNames = CacheConfig.BRANDS, allEntries = true)
     public Brand save(Brand brand) {
         if (brand.getId() == null) {
             if (brand.getStatus() == null) {
@@ -38,6 +43,7 @@ public class BrandService {
         return brand;
     }
 
+    @CacheEvict(cacheNames = CacheConfig.BRANDS, allEntries = true)
     public void delete(Long id) {
         Long used = brandMapper.selectCount(Wrappers.<Brand>lambdaQuery().eq(Brand::getId, id));
         if (used == null || used == 0) {

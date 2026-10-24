@@ -156,6 +156,8 @@ export const adminApi = {
 
   backups: () => request.get<any, any>('/admin/maintenance/backups'),
   triggerBackup: () => request.post<any, any>('/admin/maintenance/backups'),
+  retention: () => request.get<any, any>('/admin/maintenance/retention'),
+  triggerRetentionCleanup: () => request.post<any, any>('/admin/maintenance/retention/cleanup'),
 
   upload: (file: File, onProgress?: (percent: number) => void) => {
     const form = new FormData()

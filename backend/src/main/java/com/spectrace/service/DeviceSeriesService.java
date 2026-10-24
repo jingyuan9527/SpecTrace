@@ -2,6 +2,7 @@ package com.spectrace.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.spectrace.common.BizException;
+import com.spectrace.config.CacheConfig;
 import com.spectrace.dto.SeriesVO;
 import com.spectrace.dto.UnassignedDeviceVO;
 import com.spectrace.entity.Brand;
@@ -12,6 +13,7 @@ import com.spectrace.mapper.DeviceMapper;
 import com.spectrace.mapper.DeviceSeriesMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -58,6 +60,7 @@ public class DeviceSeriesService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = CacheConfig.SERIES_LIST, allEntries = true)
     public DeviceSeries save(DeviceSeries series) {
         if (!StringUtils.hasText(series.getName())) {
             throw new BizException("系列名称不能为空");
@@ -99,6 +102,7 @@ public class DeviceSeriesService {
 
     /** 删除系列：有机型在册时拒绝，引导先合并或迁移，避免机型被静默解绑。 */
     @Transactional
+    @CacheEvict(cacheNames = CacheConfig.SERIES_LIST, allEntries = true)
     public void delete(Long id) {
         if (seriesMapper.selectById(id) == null) {
             throw new BizException("系列不存在");
@@ -184,6 +188,7 @@ public class DeviceSeriesService {
 
     /** 归类：seriesId 为空表示取消归类；系列必须与机型同品牌。 */
     @Transactional
+    @CacheEvict(cacheNames = CacheConfig.SERIES_LIST, allEntries = true)
     public int assign(List<Long> deviceIds, Long seriesId) {
         if (deviceIds == null || deviceIds.isEmpty()) {
             throw new BizException("请选择要归类的机型");
@@ -212,6 +217,7 @@ public class DeviceSeriesService {
 
     /** 合并系列：机型迁到目标系列后删除源系列，两个系列必须同品牌。 */
     @Transactional
+    @CacheEvict(cacheNames = CacheConfig.SERIES_LIST, allEntries = true)
     public int merge(Long sourceId, Long targetId) {
         if (targetId == null || Objects.equals(sourceId, targetId)) {
             throw new BizException("请选择不同的目标系列");

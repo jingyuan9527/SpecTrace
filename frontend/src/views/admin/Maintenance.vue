@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { Database, HardDriveDownload, Loader2, RefreshCw } from '@lucide/vue'
+import { Database, Eraser, HardDriveDownload, Loader2, RefreshCw } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
 import { formatBytes } from '@/lib/image'
@@ -22,9 +22,30 @@ interface BackupOverview {
   backups: BackupFile[]
 }
 
+interface RetentionOverview {
+  enabled: boolean
+  cron: string
+  taskDays: number
+  pendingDays: number
+  operationLogDays: number
+  nextRunAt?: string | null
+  counts: Record<string, number>
+}
+
+const RETENTION_TABLE_NAMES: Record<string, string> = {
+  agent_task: '抓取任务',
+  agent_task_log: '抓取过程日志',
+  agent_pending_data: '待审核数据',
+  operation_log: '操作日志',
+}
+
 const overview = ref<BackupOverview | null>(null)
 const loading = ref(false)
 const backingUp = ref(false)
+
+const retention = ref<RetentionOverview | null>(null)
+const retentionLoading = ref(false)
+const cleaning = ref(false)
 
 async function load() {
   loading.value = true
@@ -32,6 +53,15 @@ async function load() {
     overview.value = await adminApi.backups()
   } finally {
     loading.value = false
+  }
+}
+
+async function loadRetention() {
+  retentionLoading.value = true
+  try {
+    retention.value = await adminApi.retention()
+  } finally {
+    retentionLoading.value = false
   }
 }
 
@@ -46,7 +76,22 @@ async function backupNow() {
   }
 }
 
-onMounted(load)
+async function cleanupNow() {
+  cleaning.value = true
+  try {
+    const removed = await adminApi.triggerRetentionCleanup()
+    const total = Object.values(removed as Record<string, number>).reduce((sum, n) => sum + n, 0)
+    toast.success(total > 0 ? `已清理 ${total} 行过期数据` : '没有需要清理的数据')
+    await loadRetention()
+  } finally {
+    cleaning.value = false
+  }
+}
+
+onMounted(() => {
+  load()
+  loadRetention()
+})
 </script>
 
 <template>
@@ -125,6 +170,53 @@ onMounted(load)
         <Empty v-else title="暂无备份文件" description="点击「立即备份」生成第一份快照，或等待每日定时任务。">
           <template #icon><Database class="mb-1 h-8 w-8 text-muted-foreground/40" /></template>
         </Empty>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardContent class="space-y-4 p-4">
+        <div class="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h3 class="text-sm font-medium">数据保留策略</h3>
+            <p class="mt-1 text-xs text-muted-foreground">
+              每日定时清理终态数据，防止数据库无界膨胀：抓取任务及过程日志保留 {{ retention?.taskDays ?? '—' }} 天、
+              已处理待审核保留 {{ retention?.pendingDays ?? '—' }} 天、操作日志保留 {{ retention?.operationLogDays ?? '—' }} 天。
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <Button variant="outline" size="sm" :disabled="cleaning" @click="cleanupNow">
+              <Loader2 v-if="cleaning" class="animate-spin" />
+              <Eraser v-else />
+              立即清理
+            </Button>
+            <Button variant="outline" size="sm" :disabled="retentionLoading" @click="loadRetention">
+              <RefreshCw />
+            </Button>
+          </div>
+        </div>
+
+        <div v-if="retentionLoading && !retention" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Skeleton v-for="i in 4" :key="i" class="h-11" />
+        </div>
+        <Table v-else-if="retention">
+          <TableHeader>
+            <TableRow class="hover:bg-transparent">
+              <TableHead>数据表</TableHead>
+              <TableHead class="w-28">当前行数</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow v-for="(count, table) in retention.counts" :key="table">
+              <TableCell class="font-medium">{{ RETENTION_TABLE_NAMES[table] || table }}</TableCell>
+              <TableCell class="text-muted-foreground">{{ count }}</TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+
+        <p class="text-xs text-muted-foreground">
+          定时计划：<code class="rounded bg-muted px-1 py-0.5">{{ retention?.cron || '—' }}</code>
+          <template v-if="retention?.nextRunAt">，下次执行 {{ formatTime(retention.nextRunAt) }}</template>
+        </p>
       </CardContent>
     </Card>
   </div>
