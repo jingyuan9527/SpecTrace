@@ -56,8 +56,8 @@ public class EvolutionService {
     private final DeviceVariantMapper variantMapper;
     private final ParamService paramService;
 
-    /** 系列列表：带机型数与起止年份，供筛选下拉直接展示规模。 */
-    @Cacheable(cacheNames = CacheConfig.SERIES_LIST, key = "#brandId")
+    /** 系列列表：带机型数与起止年份，供筛选下拉直接展示规模。brandId 为空表示全量，key 需归一避免 null。 */
+    @Cacheable(cacheNames = CacheConfig.SERIES_LIST, key = "#brandId ?: 'all'")
     public List<SeriesVO> seriesList(Long brandId) {
         return seriesService.listOverview(brandId, 1);
     }

@@ -18,7 +18,8 @@ public class BrandService {
 
     private final BrandMapper brandMapper;
 
-    @Cacheable(cacheNames = CacheConfig.BRANDS, key = "#status")
+    // 后台品牌列表调 list(null) 查全量：SpEL 对 null 求值会抛「Null key returned」，用 elvis 归一
+    @Cacheable(cacheNames = CacheConfig.BRANDS, key = "#status ?: 'all'")
     public List<Brand> list(Integer status) {
         var query = Wrappers.<Brand>lambdaQuery().orderByAsc(Brand::getSortOrder);
         if (status != null) {
