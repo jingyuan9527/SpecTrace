@@ -52,6 +52,8 @@ public class CollectorWorker implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
+        // 恢复上次进程中断遗留的中间态任务，先于消费线程启动执行，避免与消费产生竞态
+        agentTaskService.recoverInterruptedTasks(taskQueue.isPersistent(), props.isEnabled());
         if (!props.isEnabled()) {
             log.info("内嵌采集 Agent 未启用（spectrace.agent.enabled=false）");
             return;
@@ -92,6 +94,17 @@ public class CollectorWorker implements ApplicationRunner {
 
     private void handle(AgentTaskPayload payload) {
         long start = System.currentTimeMillis();
+        try {
+            doHandle(payload, start);
+        } catch (Exception e) {
+            // 兜底：markRunning / 读参数定义等前置步骤抛出的异常也不允许杀死消费线程，
+            // 否则之后所有任务将永远排队且无告警
+            log.error("任务处理异常 taskId={}", payload.getTaskId(), e);
+            failQuietly(payload, "任务处理异常：" + e.getClass().getSimpleName() + ": " + e.getMessage(), start);
+        }
+    }
+
+    private void doHandle(AgentTaskPayload payload, long start) {
         agentTaskService.markRunning(payload.getTaskId());
 
         List<ParamDef> schemaDefs = paramService.listDefs(null, 1);
@@ -127,9 +140,26 @@ public class CollectorWorker implements ApplicationRunner {
             agentTaskService.handleCallback(result);
             log.info("采集完成 taskId={} status={}", payload.getTaskId(), result.getStatus());
         } catch (Exception e) {
-            log.error("写回采集结果失败 taskId={}", payload.getTaskId(), e);
+            log.error("写回采集结果失败 taskId={}，任务保持中间态，等待下次启动恢复", payload.getTaskId(), e);
         }
         trackFailure(payload, result);
+    }
+
+    /** handle 抛异常时的兜底落库；落库再失败则留待下次启动的恢复逻辑处理，消费线程本身绝不退出。 */
+    private void failQuietly(AgentTaskPayload payload, String error, long start) {
+        AgentCallbackRequest result = new AgentCallbackRequest();
+        result.setTaskId(payload.getTaskId());
+        result.setModelName(payload.getModelName());
+        result.setBrandName(payload.getBrandName());
+        result.setStatus("FAILED");
+        result.setError(error);
+        result.setDurationMs(System.currentTimeMillis() - start);
+        try {
+            agentTaskService.handleCallback(result);
+            trackFailure(payload, result);
+        } catch (Exception e) {
+            log.error("失败状态落库失败 taskId={}", payload.getTaskId(), e);
+        }
     }
 
     /** 连续失败达到阈值时输出可检索的 ERROR 日志，并可选推送 webhook。 */

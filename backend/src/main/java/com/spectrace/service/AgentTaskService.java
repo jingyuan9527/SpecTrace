@@ -26,6 +26,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
@@ -51,6 +52,7 @@ public class AgentTaskService {
     private final OperationLogService logService;
     private final AgentTaskLogService taskLogService;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
 
     /** 管理员提交抓取任务。 */
     public AgentTask createTask(TaskCreateRequest req, Long adminId, String adminName) {
@@ -66,10 +68,51 @@ public class AgentTaskService {
         payload.setModelName(task.getModelName());
         payload.setBrandName(task.getBrandName());
         payload.setAiModelId(task.getAiModelId());
-        taskQueue.push(payload);
+        try {
+            taskQueue.push(payload);
+        } catch (Exception e) {
+            // 入队失败必须把任务落为失败，否则它将永远停在 QUEUED 且无队列条目可消费
+            log.error("任务入队失败 taskId={}", task.getId(), e);
+            task.setStatus(TaskStatus.FAILED.name());
+            task.setErrorMsg("任务入队失败：" + e.getMessage());
+            task.setUpdatedAt(LocalDateTime.now());
+            taskMapper.updateById(task);
+            throw new BizException("任务入队失败：" + e.getMessage());
+        }
 
         logService.record(adminId, adminName, "CREATE_AGENT_TASK", "agent_task", task.getId(), task.getModelName());
         return task;
+    }
+
+    /**
+     * 应用重启后恢复被中断的任务，避免「幽灵任务」永久卡在中间态：
+     * RUNNING（进程消失，抓取必然中断）置为失败；队列不持久时（内存队列重启即丢）QUEUED 重新入队。
+     * Redis 队列中的 QUEUED 重启后仍会被消费，重复入队反而会造成同任务双跑。
+     */
+    public void recoverInterruptedTasks(boolean queuePersistent, boolean agentEnabled) {
+        List<AgentTask> running = taskMapper.selectList(Wrappers.<AgentTask>lambdaQuery()
+                .eq(AgentTask::getStatus, TaskStatus.RUNNING.name()));
+        for (AgentTask task : running) {
+            task.setStatus(TaskStatus.FAILED.name());
+            task.setErrorMsg("应用重启，任务中断");
+            task.setUpdatedAt(LocalDateTime.now());
+            taskMapper.updateById(task);
+            log.warn("重启恢复：中断任务置为失败 taskId={}", task.getId());
+        }
+        if (queuePersistent || !agentEnabled) {
+            return;
+        }
+        List<AgentTask> queued = taskMapper.selectList(Wrappers.<AgentTask>lambdaQuery()
+                .eq(AgentTask::getStatus, TaskStatus.QUEUED.name()));
+        for (AgentTask task : queued) {
+            AgentTaskPayload payload = new AgentTaskPayload();
+            payload.setTaskId(task.getId());
+            payload.setModelName(task.getModelName());
+            payload.setBrandName(task.getBrandName());
+            payload.setAiModelId(task.getAiModelId());
+            taskQueue.push(payload);
+            log.info("重启恢复：内存队列丢失，任务重新入队 taskId={} model={}", task.getId(), task.getModelName());
+        }
     }
 
     /** 失败任务重试：按原参数新建一条任务，保留历史失败记录便于对比。 */
@@ -482,9 +525,10 @@ public class AgentTaskService {
 
     /**
      * 批量通过：直接使用抓取值入库，不经过人工修正。
-     * 单条失败不影响其余记录，失败原因原样返回给前端。
+     *
+     * <p>每条走独立事务提交，单条失败不影响其余记录。不能在外层包一个大事务再 catch：
+     * 自调用不走事务代理，失败条目已执行的半截写入会随外层事务一起提交，产生「半入库」脏数据。
      */
-    @Transactional
     public Map<String, Object> batchApprove(List<Long> ids, Long adminId, String adminName) {
         if (ids == null || ids.isEmpty()) {
             throw new BizException("请选择待审核数据");
@@ -502,7 +546,8 @@ public class AgentTaskService {
                     failures.add("#" + id + " 已处理");
                     continue;
                 }
-                approve(id, buildApproveRequest(pending), adminId, adminName);
+                ApproveRequest req = buildApproveRequest(pending);
+                transactionTemplate.executeWithoutResult(tx -> approve(id, req, adminId, adminName));
                 success++;
             } catch (Exception e) {
                 log.error("批量审核失败: pendingId={}", id, e);
@@ -517,8 +562,7 @@ public class AgentTaskService {
         return result;
     }
 
-    /** 批量丢弃。 */
-    @Transactional
+    /** 批量丢弃，与批量通过一致按独立事务逐条提交。 */
     public Map<String, Object> batchDiscard(List<Long> ids, Long adminId, String adminName) {
         if (ids == null || ids.isEmpty()) {
             throw new BizException("请选择待审核数据");
@@ -536,7 +580,7 @@ public class AgentTaskService {
                     failures.add("#" + id + " 已处理");
                     continue;
                 }
-                discard(id, adminId, adminName);
+                transactionTemplate.executeWithoutResult(tx -> discard(id, adminId, adminName));
                 success++;
             } catch (Exception e) {
                 log.error("批量丢弃失败: pendingId={}", id, e);

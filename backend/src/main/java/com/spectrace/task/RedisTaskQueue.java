@@ -40,4 +40,9 @@ public class RedisTaskQueue implements TaskQueue {
         String json = redisTemplate.opsForList().leftPop(queueKey, timeout);
         return json == null ? null : objectMapper.readValue(json, AgentTaskPayload.class);
     }
+
+    @Override
+    public boolean isPersistent() {
+        return true;
+    }
 }
