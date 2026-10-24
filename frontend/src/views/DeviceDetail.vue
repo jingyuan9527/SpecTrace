@@ -6,6 +6,7 @@ import { ArrowLeft, CalendarDays, Clock3, Flag, GitCompareArrows, Link2, Loader2
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
 import { absoluteUrl, setPageMeta } from '@/lib/meta'
+import { formatTime } from '@/lib/utils'
 import { useCompareStore } from '@/stores/compare'
 import {
   Button,
@@ -110,12 +111,6 @@ onMounted(async () => {
     loading.value = false
   }
 })
-
-/** 后端返回 ISO 时间，统一裁剪为「YYYY-MM-DD HH:mm」。 */
-function formatTime(value?: string | null) {
-  if (!value) return ''
-  return value.replace('T', ' ').slice(0, 16)
-}
 
 function formatPrice(price?: number | null, currency = 'CNY') {
   if (price === null || price === undefined) return '—'

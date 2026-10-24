@@ -3,6 +3,7 @@ import { onMounted, reactive, ref, watch } from 'vue'
 import { CheckCheck, Flag, RefreshCw, XCircle } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
+import { formatTime } from '@/lib/utils'
 import {
   Badge,
   Button,
@@ -78,10 +79,6 @@ async function handle(row: any, status: 'RESOLVED' | 'IGNORED') {
   } finally {
     handlingId.value = null
   }
-}
-
-function formatTime(value?: string) {
-  return value ? value.replace('T', ' ').slice(0, 16) : '—'
 }
 </script>
 

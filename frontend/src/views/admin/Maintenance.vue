@@ -4,6 +4,7 @@ import { Database, HardDriveDownload, Loader2, RefreshCw } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
 import { formatBytes } from '@/lib/image'
+import { formatTime } from '@/lib/utils'
 import PageHeader from '@/components/PageHeader.vue'
 import { Alert, Badge, Button, Card, CardContent, Empty, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui'
 
@@ -43,10 +44,6 @@ async function backupNow() {
   } finally {
     backingUp.value = false
   }
-}
-
-function formatTime(value?: string | null) {
-  return value ? value.replace('T', ' ').slice(0, 16) : '—'
 }
 
 onMounted(load)
