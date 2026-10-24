@@ -269,7 +269,7 @@ function removeVariant(index: number) {
 
 <template>
   <div class="space-y-4">
-    <PageHeader title="待审核数据" description="Agent 抓取结果必须人工核对后才能进入正式机型库" />
+    <PageHeader title="抓取审核" description="Agent 抓取结果必须人工核对后才能进入正式机型库" />
 
     <div class="flex flex-wrap items-center gap-2">
       <Select v-model="query.status" :options="statusOptions" class="w-40" @update:model-value="search" />

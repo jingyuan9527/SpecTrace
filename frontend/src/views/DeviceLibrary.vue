@@ -161,8 +161,8 @@ function toggleCompare(device: Device) {
           筛选
         </div>
         <div class="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[160px_140px_1fr_auto]">
-          <Select v-model="query.brandId" :options="brandOptions" placeholder="全部品牌" />
-          <Select v-model="query.year" :options="yearOptions" placeholder="全部年份" />
+          <Select v-model="query.brandId" :options="brandOptions" placeholder="全部品牌" clearable />
+          <Select v-model="query.year" :options="yearOptions" placeholder="全部年份" clearable />
           <DeviceSearch
             v-model="query.keyword"
             placeholder="机型名称或拼音首字母"

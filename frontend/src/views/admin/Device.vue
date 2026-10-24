@@ -592,7 +592,7 @@ function rowMessages(row: any) {
           <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input v-model="query.keyword" class="pl-9" placeholder="机型名称" @keyup.enter="search" />
         </div>
-        <Select v-model="query.brandId" :options="brandOptions" placeholder="全部品牌" class="w-full lg:w-44" />
+        <Select v-model="query.brandId" :options="brandOptions" placeholder="全部品牌" class="w-full lg:w-44" clearable />
         <Select
           v-model="query.seriesId"
           :options="seriesFilterOptions"

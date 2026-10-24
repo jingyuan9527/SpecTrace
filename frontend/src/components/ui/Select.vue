@@ -11,7 +11,7 @@ import {
   SelectValue,
   SelectViewport,
 } from 'reka-ui'
-import { Check, ChevronDown } from '@lucide/vue'
+import { Check, ChevronDown, X } from '@lucide/vue'
 import { computed } from 'vue'
 import { cn } from '@/lib/utils'
 import type { SelectOption } from './types'
@@ -24,8 +24,10 @@ const props = withDefaults(
     disabled?: boolean
     id?: string
     class?: string
+    /** 有值时展示清空按钮：筛选场景需要能回到「全部」语义 */
+    clearable?: boolean
   }>(),
-  { placeholder: '请选择', disabled: false },
+  { placeholder: '请选择', disabled: false, clearable: false },
 )
 const emit = defineEmits<{ 'update:modelValue': [value: string | number | undefined] }>()
 
@@ -38,6 +40,16 @@ function encode(value: string | number) {
 }
 
 const modelValue = computed(() => (props.modelValue === '' ? EMPTY_VALUE : (props.modelValue ?? undefined)))
+
+const hasValue = computed(
+  () => props.modelValue !== undefined && props.modelValue !== null && props.modelValue !== '',
+)
+
+function clear(event: MouseEvent) {
+  // 阻止冒泡：SelectTrigger 的 click 会展开下拉
+  event.stopPropagation()
+  emit('update:modelValue', undefined)
+}
 
 function decode(value: unknown) {
   return value === EMPTY_VALUE ? '' : (value as string | number | undefined)
@@ -60,9 +72,22 @@ function decode(value: unknown) {
       "
     >
       <SelectValue :placeholder="props.placeholder" />
-      <SelectIcon as-child>
-        <ChevronDown class="h-4 w-4 opacity-50" />
-      </SelectIcon>
+      <span class="flex items-center gap-0.5">
+        <!-- SelectTrigger 本身是 button，清空用 span 承载避免按钮嵌套 -->
+        <span
+          v-if="props.clearable && hasValue"
+          role="button"
+          tabindex="-1"
+          aria-label="清空选择"
+          class="rounded-sm p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+          @click.stop="clear"
+        >
+          <X class="h-3.5 w-3.5" />
+        </span>
+        <SelectIcon as-child>
+          <ChevronDown class="h-4 w-4 opacity-50" />
+        </SelectIcon>
+      </span>
     </SelectTrigger>
     <SelectPortal>
       <SelectContent

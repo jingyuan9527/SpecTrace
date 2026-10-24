@@ -373,7 +373,7 @@ async function confirmScrape() {
 
     <Card>
       <CardContent class="flex flex-col gap-2 p-4 sm:flex-row sm:items-center">
-        <Select v-model="brandId" :options="brandOptions" placeholder="全部品牌" class="w-full sm:w-48" />
+        <Select v-model="brandId" :options="brandOptions" placeholder="全部品牌" class="w-full sm:w-48" clearable />
         <span class="text-xs text-muted-foreground">共 {{ list.length }} 个系列，未归类机型 {{ unassigned.length }} 台</span>
       </CardContent>
     </Card>
