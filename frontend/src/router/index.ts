@@ -14,6 +14,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'compare', name: 'compare', component: () => import('@/views/Compare.vue') },
       { path: 'history', name: 'history', component: () => import('@/views/History.vue') },
       { path: 'evolution', name: 'evolution', component: () => import('@/views/Evolution.vue') },
+      // 兜底 404：保留访客导航，未知路径不再渲染空白页
+      { path: ':pathMatch(.*)*', name: 'not-found', component: () => import('@/views/NotFound.vue') },
     ],
   },
   {

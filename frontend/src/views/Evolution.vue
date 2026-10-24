@@ -6,7 +6,6 @@ import { LineChart as EChartsLineChart } from 'echarts/charts'
 import { GridComponent, MarkPointComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import type { EChartsType } from 'echarts/core'
-import html2canvas from 'html2canvas'
 import { motion } from 'motion-v'
 import { ArrowDownRight, ArrowRight, ArrowUpRight, Camera, Loader2, Smartphone, Sparkles, TrendingUp } from '@lucide/vue'
 import { toast } from 'vue-sonner'
@@ -414,6 +413,8 @@ async function exportImage() {
   capturing.value = true
   await nextTick()
   try {
+    // 动态加载：html2canvas 约 200KB，只有真正导出时才需要
+    const html2canvas = (await import('html2canvas')).default
     const canvas = await html2canvas(captureRef.value, {
       backgroundColor: theme.dark ? '#18181b' : '#ffffff',
       scale: 2,

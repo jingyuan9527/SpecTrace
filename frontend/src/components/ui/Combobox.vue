@@ -14,10 +14,16 @@ const props = withDefaults(
     disabled?: boolean
     id?: string
     class?: string
+    /** 远程模式：候选由父组件按搜索词拉取，本地不再过滤 */
+    remote?: boolean
   }>(),
-  { placeholder: '请选择', searchPlaceholder: '搜索…', disabled: false },
+  { placeholder: '请选择', searchPlaceholder: '搜索…', disabled: false, remote: false },
 )
-const emit = defineEmits<{ 'update:modelValue': [value: string | number | undefined] }>()
+const emit = defineEmits<{
+  'update:modelValue': [value: string | number | undefined]
+  /** 搜索词变化时通知父组件（远程模式拉取候选），仅在绑定该事件的页面生效 */
+  search: [keyword: string]
+}>()
 
 const open = ref(false)
 const keyword = ref('')
@@ -26,8 +32,13 @@ const selected = computed(() => props.options.find((o) => o.value === props.mode
 const filtered = computed(() => {
   const k = keyword.value.trim().toLowerCase()
   if (!k) return props.options
+  if (props.remote) return props.options
   return props.options.filter((o) => o.label.toLowerCase().includes(k))
 })
+
+function onKeywordInput() {
+  emit('search', keyword.value.trim())
+}
 
 function select(option: SelectOption) {
   emit('update:modelValue', option.value)
@@ -67,6 +78,7 @@ function select(option: SelectOption) {
             v-model="keyword"
             :placeholder="props.searchPlaceholder"
             class="flex h-9 w-full bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground"
+            @input="onKeywordInput"
             @keydown.esc="open = false"
           />
         </div>

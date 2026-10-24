@@ -146,8 +146,7 @@ onMounted(async () => {
     }
   }
   await load()
-  const res = await publicApi.devices({ current: 1, size: 200 })
-  candidates.value = res.records
+  await loadDefaultCandidates()
   syncUrl()
 })
 
@@ -158,6 +157,33 @@ const available = computed(() =>
     .filter((c) => !compare.has(c.id))
     .map((c) => ({ label: c.name, value: c.id })),
 )
+
+// ---------- 候选机型按需搜索 ----------
+let searchSeq = 0
+let searchTimer: number | undefined
+
+/** 下拉默认展示最近发布的机型，搜索词变化后按需走 suggest 联想。 */
+async function loadDefaultCandidates() {
+  const res = await publicApi.devices({ current: 1, size: 50 })
+  candidates.value = res.records
+}
+
+function onCandidateSearch(keyword: string) {
+  if (searchTimer) window.clearTimeout(searchTimer)
+  const seq = ++searchSeq
+  if (!keyword) {
+    searchTimer = window.setTimeout(loadDefaultCandidates, 250)
+    return
+  }
+  searchTimer = window.setTimeout(async () => {
+    try {
+      const res = await publicApi.suggest(keyword, 20)
+      if (seq === searchSeq) candidates.value = res
+    } catch {
+      if (seq === searchSeq) candidates.value = []
+    }
+  }, 250)
+}
 
 /** 按“仅显示差异”过滤分组，空分组不渲染。 */
 const displayedGroups = computed(() => {
@@ -227,6 +253,8 @@ async function captureCanvas() {
   capturing.value = true
   await nextTick()
   try {
+    // 动态加载：html2canvas 约 200KB，只有真正截图时才需要
+    const html2canvas = (await import('html2canvas')).default
     return await html2canvas(captureRef.value, { backgroundColor: '#ffffff', scale: 2, useCORS: true })
   } finally {
     capturing.value = false
@@ -268,7 +296,15 @@ async function copyToClipboard() {
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <Combobox v-model="pickId" :options="available" placeholder="添加机型" search-placeholder="搜索机型…" class="w-52" />
+        <Combobox
+          v-model="pickId"
+          :options="available"
+          remote
+          placeholder="添加机型"
+          search-placeholder="搜索机型…"
+          class="w-52"
+          @search="onCandidateSearch"
+        />
         <Button variant="outline" :disabled="!pickId" @click="addSelected">
           <Plus />
           添加

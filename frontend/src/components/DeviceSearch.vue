@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { pinyin } from 'pinyin-pro'
+import type * as PinyinPro from 'pinyin-pro'
 import { Search, Smartphone } from '@lucide/vue'
 import { publicApi } from '@/api'
 import { Input } from '@/components/ui'
@@ -12,6 +12,9 @@ import ImageWithFallback from '@/components/ImageWithFallback.vue'
  * 联想来源两路合并：
  * 1. 本地索引（最多 500 台）负责拼音全拼/首字母匹配，输入 `pg` 可命中「苹果」；
  * 2. 服务端 /devices/suggest 兜底中文关键词与超出本地索引的机型。
+ *
+ * 拼音词典约 300KB，随包静态引入会拖慢首页加载，因此在首次聚焦时动态加载，
+ * 本地索引与词典都在那一刻才构建；远程联想在此之前一直可用。
  */
 interface SuggestDevice {
   id: number
@@ -38,11 +41,20 @@ const remoteMatches = ref<SuggestDevice[]>([])
 const index = ref<SuggestDevice[]>([])
 const indexReady = ref(false)
 
+let indexLoading = false
 let debounceTimer: number | undefined
 let requestSeq = 0
 
+let pinyinFn: typeof PinyinPro.pinyin | null = null
+async function ensurePinyin() {
+  if (!pinyinFn) {
+    pinyinFn = (await import('pinyin-pro')).pinyin
+  }
+  return pinyinFn
+}
+
 /** 拼音全拼 + 首字母 + 原文拼成一条可搜索文本，避免每次按键重复转换。 */
-function buildKeywordText(name: string, brandName?: string | null) {
+function buildKeywordText(name: string, brandName: string | null | undefined, pinyin: typeof PinyinPro.pinyin) {
   const text = `${name} ${brandName ?? ''}`
   const full = pinyin(text, { toneType: 'none', type: 'array' }).join('').toLowerCase()
   const first = pinyin(text, { pattern: 'first', toneType: 'none', type: 'array' }).join('').toLowerCase()
@@ -50,12 +62,18 @@ function buildKeywordText(name: string, brandName?: string | null) {
 }
 
 async function loadIndex() {
+  if (indexLoading) return
+  indexLoading = true
   try {
-    const [res, brands] = await Promise.all([publicApi.devices({ current: 1, size: 500 }), publicApi.brands()])
+    const [res, brands, pinyin] = await Promise.all([
+      publicApi.devices({ current: 1, size: 500 }),
+      publicApi.brands(),
+      ensurePinyin(),
+    ])
     const brandNames = new Map<number, string>(brands.map((brand: any) => [brand.id, brand.name]))
     index.value = (res.records as any[]).map((device) => {
       const brandName = brandNames.get(device.brandId) ?? ''
-      return { ...device, brandName, keywordText: buildKeywordText(device.name, brandName) }
+      return { ...device, brandName, keywordText: buildKeywordText(device.name, brandName, pinyin) }
     })
   } finally {
     indexReady.value = true
@@ -125,6 +143,10 @@ function onEnter() {
 }
 
 function onFocus() {
+  // 首次交互才构建本地拼音索引：词典与 500 台机型列表都在此刻才拉取
+  if (!indexReady.value) {
+    loadIndex()
+  }
   if (props.modelValue.trim() && suggestions.value.length) open.value = true
 }
 
@@ -134,7 +156,6 @@ function onDocumentPointerDown(event: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener('pointerdown', onDocumentPointerDown)
-  loadIndex()
 })
 
 onBeforeUnmount(() => {
