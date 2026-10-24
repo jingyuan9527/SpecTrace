@@ -64,6 +64,9 @@ SpecTrace/
 ### 1. 后端（内含采集 Agent，无需安装 MySQL / Redis）
 
 ```bash
+# JWT 签名密钥为必填项（未配置会拒绝启动），先设置再启动
+# Git Bash / Linux:  SPECTRACE_JWT_SECRET=<至少32位随机串> mvn spring-boot:run
+# PowerShell:        $env:SPECTRACE_JWT_SECRET="<至少32位随机串>"; mvn spring-boot:run
 cd backend
 mvn spring-boot:run
 ```
@@ -71,7 +74,7 @@ mvn spring-boot:run
 - 默认使用 SQLite 文件库 `backend/data/spectrace.db`，启动时自动建表、幂等写入种子数据
 - 端口 `8080`，接口文档：http://localhost:8080/swagger-ui.html
 - 数据文件路径可用 `SPECTRACE_DB_PATH` 覆盖（例如 `SPECTRACE_DB_PATH=D:/data/spectrace.db`）
-- 初始超级管理员：`admin / admin123`（启动时以 BCrypt 写入）；账号带「待改密」标记，首次登录强制跳转改密页，不修改无法进入后台；管理员在「账号权限」里重置的密码同样要求本人首登修改
+- 初始超级管理员：`admin / admin123`（启动时以 BCrypt 写入）；账号带「待改密」标记，首次登录强制跳转改密页——**改密强制在后端校验**：未改密的 token 只能访问认证接口；登录连续失败 5 次锁定 10 分钟
 - **采集 Agent 随应用启动常驻消费任务**：先在后台「AI 配置」保存连接与模型（填好 API Key），再到「抓取任务」提交任务即可自动采集
 - 关闭内嵌 Agent：启动加 `--spectrace.agent.enabled=false`（或环境变量 `SPECTRACE_AGENT_ENABLED=false`）
 - 只处理一个任务（联调）：`mvn spring-boot:run -Dspring-boot.run.arguments=--once`
@@ -96,6 +99,7 @@ npm run dev
 - 工作区目录由 `AGENTSCOPE_WORKSPACE` 控制（默认 `.agentscope/workspace`），首次启动把内置 persona 写入其下 `AGENTS.md`
 - **persona 版本同步**：内置 `backend/src/main/resources/AGENTS.md` 升级后，启动时按内容 SHA-256 与工作区 `AGENTS.md.sha256` 比对；版本变化会把旧文件备份为 `AGENTS.md.bak-<时间戳>` 再覆盖，版本未变则保留工作区里的手工修改
 - 任务获取实现由 `spectrace.agent.queue` 决定：`memory`（默认，进程内队列，无外部服务）/ `redis`（可选，`BLPOP spectrace:agent:task`，多实例部署）；后端投递与 Agent 消费共用同一实现
+- **任务可靠性**：消费线程对单任务异常兜底（任务落为失败，线程不退出）；应用启动时自动恢复中断任务——RUNNING 置为失败，内存队列丢失的 QUEUED 重新入队（Redis 队列本身持久，不重复入队）；入队失败的任务直接落为失败，不会留 QUEUED 僵尸
 - 每个任务执行前解析一次 AI 模型参数，后台「AI 配置」改完**下个任务即生效**，无需重启
 - AI 连接（服务商 / 接口地址 / API Key）与模型在后台「AI 配置」页面维护：保存连接后可**拉取远端模型**、一次导入多个模型并设默认；创建抓取任务时可指定模型，缺省用默认模型
 
@@ -116,6 +120,11 @@ npm run dev
 | `AGENT_ALERT_THRESHOLD` | `3` | 采集任务连续失败达到该次数写 `AGENT_CONSECUTIVE_FAILURE` ERROR 日志，0 关闭 |
 | `AGENT_ALERT_WEBHOOK` | 空 | 告警 webhook（钉钉机器人文本消息格式），留空只写日志 |
 | `SPECTRACE_PUBLIC_BASE_URL` | 空 | 站点对外域名（含协议），用于 sitemap / robots；反向代理部署必须配置，否则回退请求域名 |
+| `SPECTRACE_JWT_SECRET` | 空（**必填**） | JWT 签名密钥，未配置拒绝启动；建议 `openssl rand -hex 32` 生成 |
+| `SPECTRACE_CORS_ORIGINS` | 空（任意来源） | 跨域白名单（逗号分隔，如 `https://a.com,https://b.com`）；公网部署务必收敛 |
+| `SPECTRACE_PUBLIC_QPM` | `120` | 公开接口单 IP 每分钟请求上限（feedback / insight 另有更严格限流，叠加生效） |
+| `SPECTRACE_RETENTION_ENABLED` / `_CRON` | `true` / `0 0 4 * * *` | 增长数据定时清理开关与计划（默认每天 04:00，排在 03:30 备份之后） |
+| `SPECTRACE_RETENTION_TASK_DAYS` / `_PENDING_DAYS` / `_OPERATION_LOG_DAYS` | `30` / `30` / `90` | 终态抓取任务（含过程日志）、已处理待审核、操作日志的保留天数 |
 | `SPECTRACE_UPLOAD_MAX_BYTES` | `8388608` | 单张图片硬上限（字节）；前端会先压到 500KB，超限提示裁剪 |
 | `SPECTRACE_AI_INSIGHT_ENABLED` | `true` | 是否开放 AI 摘要类能力（对比差异摘要、世代回顾文案），未配置模型时前端自动隐藏入口 |
 | `SPECTRACE_AI_INSIGHT_CACHE_HOURS` | `24` | 摘要缓存时长（小时），同一组机型与参数值在窗口内复用 |
@@ -235,6 +244,10 @@ docker run -d --name spectrace-app -p 80:8080 \
 - **AI 世代回顾**：与对比摘要共用 `AiInsightSupport` 的护栏（同来源每分钟 5 次、结果缓存默认 24 小时、失败降级、非法 JSON 退化为纯文本）；按当前所选参数与可见世代生成一段带趋势判断的回顾，缓存 key 含可见机型与取值，换区间或改参数自然失效。只允许引用给定数值支撑的「升级明显 / 提升有限 / 略有退步」，不写购买建议。
 - **后台会话校验**：进入后台路由前调用 `/api/auth/me` 确认 token 仍有效（每次整页加载校验一次，SPA 内跳转不重复请求），失效即清本地凭证回到登录页；该校验失败时静默处理，不弹全局错误。
 - **账号安全**：`admin_user.must_change_password` 标记「初始密码」与「被管理员重置的密码」，登录响应与 `/auth/me` 都返回该标记，路由守卫据此把用户锁在改密页；自助改密 `PUT /api/auth/password` 必须校验原密码（JWT 只证明持有 token，不能证明是本人），改完清除标记。老库升级由 `SqliteSchemaMigration` 补列，并只对仍能匹配初始口令的账号打标记，已改密的账号不受打扰。启动日志不再打印明文口令。
+- **后端会话防线**：JWT 密钥必须经 `SPECTRACE_JWT_SECRET` 注入（未配置拒绝启动）；过滤器每请求回查 `admin_user`——禁用 / 删除的账号 token 立即失效、角色与「待改密」标记以库内最新为准（未改密的 token 只放行 `/api/auth/**`）；登录同账号连续失败 5 次锁定 10 分钟并写入操作日志，可追溯爆破。
+- **公开接口护栏**：`PublicRateLimitFilter` 对 `/api/public/**` 做单 IP 每分钟基础限流（`SPECTRACE_PUBLIC_QPM`，默认 120，feedback / insight 各自更严格的限流叠加生效）；`/devices` 分页 size 收敛上限 100，防止匿名一次拉全库。
+- **公开读缓存**：品牌、参数元信息、系列列表、机型详情走 Caffeine 进程内缓存（TTL 5 分钟兜底 + 管理端写路径 `@CacheEvict` 主动失效），机型发布年份改为 SQL 聚合，SQLite 读压力与机型库规模解耦。
+- **数据保留策略**：终态抓取任务（含过程日志）、已处理待审核、操作日志按保留天数定时清理（默认每天 04:00，排在 03:30 备份之后），防止 SQLite 无界膨胀拖慢查询与备份；「系统运维」页展示各表行数、保留配置并支持手动清理（仅超级管理员）。
 
 ## 接口文档
 
@@ -244,6 +257,8 @@ docker run -d --name spectrace-app -p 80:8080 \
 
 - 后端：Java 21 / Spring Boot 3.3 / MyBatis-Plus / AgentScope Java 2.0（Harness，内嵌），统一响应体 `R<T>`，全局异常处理 `GlobalExceptionHandler`；`mvn test` 跑单测（参数值解析、CSV 导入预览、世代回顾聚合、AI 摘要解析与限流）
 - 前端：`npm run build` 验证构建；`npm run typecheck` 做类型检查；`npm run test:e2e` 跑 Playwright 主链路（访客对比分享、后台审核入库、键盘登录与弹窗、键盘完成新增品牌/机型/提交抓取/审核、后台系列增改并删与拖拽排序、世代回顾参数/区间/移动端、后台账号与参数维护、纠错反馈处理、初始密码强制改密）
+- 列表页复用：后台分页列表统一走 `src/composables/usePagedList`（分页 / 筛选 / 加载态 / 竞态兜底），新增列表页不再手写 query 与双 watch；可搜索下拉需要远程联想时使用 `Combobox` 的 `remote` 模式 + `@search` 事件
+- 大体积依赖按需加载：`html2canvas` 与 `pinyin-pro` 词典均通过动态 `import()` 引入（截图导出与首次聚焦搜索时才加载），新增重依赖时保持同样的按需方式
 - 可访问性：键盘路径已由 e2e 覆盖——全程 Tab + Enter 可完成登录、新增品牌、新增机型、提交抓取与审核通过，弹窗打开后焦点自动进入、Esc 可关闭；真机与读屏环境的人工复核仍需发布前补一次，自动化无法替代
 - 表结构变更：新增列请同时改 `db/schema.sql` 与 `SqliteSchemaMigration`（老库靠后者补列）；**新列上的索引必须放在迁移里**，`schema.sql` 在 `CREATE TABLE IF NOT EXISTS` 之后执行，老库此时还没有该列，索引语句会直接中断启动
 - 种子数据：不要引用后加列（同样会中断老库启动），需要时放到 `ApplicationRunner`（参考 `SeriesInitializer`，排在迁移之后）

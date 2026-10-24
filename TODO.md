@@ -621,6 +621,228 @@
 
 ---
 
+## P9 · 可靠性与安全收口（2026-10-24 新增）
+
+> 来源：全量代码复盘（后端核心链路 / 安全面 / 前端工程三项并行审查）。按建议执行顺序排序：先修正确性与安全（T41–T45），再做前端重构与性能治理。后端为主的一项一个 commit，全部小改动。
+
+| 任务 | 状态 | 落地要点 |
+| --- | --- | --- |
+| T41 采集任务可靠性 | ✅ | `CollectorWorker.handle` 兜底 try/catch（异常落 FAILED，消费线程不退出）；启动时 `recoverInterruptedTasks`——RUNNING 置失败、内存队列丢失的 QUEUED 重新入队（Redis 持久不重复入队）；`createTask` 入队失败落 FAILED；`TaskQueue.isPersistent()` 区分队列持久性 |
+| T42 批量审核事务 | ✅ | `batchApprove` / `batchDiscard` 拆掉外层 `@Transactional`，改用 `TransactionTemplate` 逐条独立事务，失败条目不再残留半截写入 |
+| T43 JWT 密钥 | ✅ | secret 改 `${SPECTRACE_JWT_SECRET:}`，`JwtUtil` 启动校验为空拒绝启动；README 快速启动与 `.env.example` 同步 |
+| T44 登录防爆破 | ✅ | 新增 `LoginAttemptGuard`：同账号 10 分钟内失败 5 次锁定（成功登录清零，锁定期正确密码也拒绝，单测覆盖）；`JwtAuthenticationFilter` 每请求回查 `admin_user`——禁用/删除 token 即失效、角色以库内为准、未改密 token 只放行 `/api/auth/**`；登录失败写操作日志 |
+| T45 SQL 日志 | ✅ | 删除 `log-impl: StdOutImpl`，杜绝 AI API Key / BCrypt 哈希随 SQL 参数打进 stdout |
+| T46 CORS 白名单 | ✅ | `SPECTRACE_CORS_ORIGINS` 逗号分隔白名单，未配置保持任意来源（自部署友好），README 提示公网必配 |
+| T47 公开限流 | ✅ | 通用 `MemoryRateLimiter` + `PublicRateLimitFilter`（`/api/public/**` 单 IP 每分钟 120 次，`SPECTRACE_PUBLIC_QPM` 可配）；`/devices` size 收敛 100、suggest/hot limit 收敛 50；三处重复的 X-Forwarded-For 解析收敛到 `ClientIps` |
+| T49 公开读缓存 | ✅ | 引入 Caffeine：brands / paramMeta（分组+定义）/ seriesList / deviceDetail 五分钟 TTL + 写路径 `@CacheEvict` 主动失效；`releaseYears` 改 SQL `strftime` 聚合；顺带修复机型删除不清理参数值的孤儿数据问题（补 `@Transactional`） |
+| T50 数据保留策略 | ✅ | 新增 `DataRetentionService`：终态任务（含过程日志）、已处理待审核、操作日志按天定时清理（默认 04:00，排在备份后）；`/api/admin/maintenance/retention` 概览与手动清理（仅超管、写操作日志）；「系统运维」页新增保留策略卡片 |
+| T48 usePagedList | ✅ | 新增 `src/composables/usePagedList.ts`（query / load / silent 轮询 / onLoaded 钩子 / seq 竞态兜底）；Logs、Feedback、Users、PendingData、AgentTasks、Device 六页迁移；筛选变更合并为单次 load，修复 PendingData / AgentTasks 非首页切状态的双请求竞态 |
+| T52 pinyin-pro 按需加载 | ✅ | DeviceSearch 首次聚焦才动态 `import('pinyin-pro')` 并构建本地索引，DeviceSearch chunk 从 221KB 降到 4KB，词典变为异步 chunk |
+| T53 404 与对比候选 | ✅ | 路由补 `/:pathMatch(.*)*` + `NotFound.vue`（保留访客导航）；Combobox 增加 `remote` 模式与 `search` 事件（向后兼容），Compare 候选改为默认最近 50 台 + suggest 按需联想，不再一次拉 200 台 |
+| T51 截图库按需加载 | ⏳ | html2canvas 已改三页导出函数内动态 import（路由不再静态引入 200KB）；`useECharts` / `InsightCard` 抽取留待下一批（涉及三个大页重构，单独排期降低回归风险） |
+| T54 类型契约与 mock 绑定 | ☐ | 未开工，方案与验收标准见下文 |
+
+### T41 采集任务可靠性收口（优先级 1）✅
+
+**问题**：三处叠加造成「幽灵任务」：
+1. `CollectorWorker` 消费循环只对 `poll` 做 try/catch，`handle()` 裸调——worker 线程遇一次 DB 异常（如 SQLITE_BUSY）即永久退出，之后所有任务永远排队且无告警；
+2. 内存队列重启即丢，DB 中任务卡 QUEUED，而 `retry()` 仅允许 FAILED 重试，卡死任务无法挽回；
+3. 应用启动时无 RUNNING/QUEUED 状态重扫，崩溃后任务永久卡中间态。
+
+**改动**
+- `handle()` 包 try/catch：任何异常把当前任务置 FAILED（带错误信息），worker 线程绝不退出
+- 启动时重扫：RUNNING → FAILED（标记「应用重启中断」）；内存队列模式下未完成任务不再永久卡死
+- `retry()` 放开 QUEUED / RUNNING 卡死态
+- `createTask` 加固：入队失败时任务置 FAILED，不留 QUEUED 僵尸
+
+**验收**：模拟 handle 抛异常后 worker 仍能继续消费下一条；杀进程重启后无永久 QUEUED/RUNNING 任务；QUEUED 卡死任务可重试。
+
+**预估**：1 天
+
+---
+
+### T42 batchApprove 单条独立事务（优先级 2）✅
+
+**问题**：`AgentTaskService.batchApprove` 外层 `@Transactional` + 循环内 catch + `this.approve()` 自调用不走事务传播——某条中途失败时，它已执行的半截写入随外层事务一起提交，产生「半入库」脏数据，与「单条失败不影响其余」的注释语义矛盾。
+
+**改动**
+- 拆掉外层 `@Transactional`，每条走独立事务（注入自身代理 `REQUIRES_NEW` 或抽独立 bean）
+- `batchDiscard` 同样排查修正
+
+**验收**：构造中途失败场景，失败条目在库中无任何残留写入；成功条目不受影响。
+
+**预估**：0.5 天
+
+---
+
+### T43 JWT 密钥强制外部配置（优先级 3）✅
+
+**问题**：`application.yml` 硬编码默认 secret（其它配置都用 `${ENV:default}` 形式，唯独它是纯字面量），部署忘改即可伪造 SUPER_ADMIN token。
+
+**改动**
+- secret 改为 `${SPECTRACE_JWT_SECRET:}`，为空时启动失败并提示配置项名
+- README 与 `.env.example` 同步说明
+
+**验收**：未配置时启动报错且信息明确；配置后正常签发 token。
+
+**预估**：0.5 天
+
+---
+
+### T44 登录防爆破与改密后端强制（优先级 4）✅
+
+**问题**：登录无失败锁定/限流；`must_change_password` 仅前端路由守卫拦截，后端过滤器不拦——持 token 不改密仍可调全部管理接口；账号被禁用后 token 最长 24h 仍有效（过滤器只信 claim）。
+
+**改动**
+- 登录失败限流：同账号维度内存计数（复用 FeedbackService 的内存限流模式），连续失败 5 次锁定 10 分钟，错误信息不泄露账号是否存在
+- `JwtAuthenticationFilter` 每请求回查 `admin_user`：禁用即 401；`must_change_password` 标记的 token 仅放行 `/api/auth/**`（顺带让禁用/降权即时生效）
+- 登录失败写操作日志，便于追溯爆破
+
+**验收**：连续错 5 次密码被锁定并提示；未改密账号带 token 调管理接口被拒；禁用账号 token 立即失效。
+
+**预估**：1 天
+
+---
+
+### T45 移除 MyBatis StdOutImpl 日志（优先级 5）✅
+
+**问题**：`application.yml` 的 `log-impl: StdOutImpl` 把 SQL 参数（明文 AI API Key、BCrypt 哈希）直打 stdout，绕过日志框架与级别控制；高并发下也是性能开销。
+
+**改动**：删除该行，MyBatis 默认走 SLF4J。需要调试 SQL 时临时加回。
+
+**验收**：启动与保存 AI 配置时 stdout 无 SQL 参数输出。
+
+**预估**：0.1 天
+
+---
+
+### T46 CORS 白名单可配置（优先级 6）✅
+
+**问题**：`WebCorsConfig` `allowedOriginPatterns("*")` + `allowCredentials(true)`，任意站点可携带凭据跨域探测。
+
+**改动**
+- 新增 `SPECTRACE_CORS_ORIGINS`（逗号分隔白名单）：配置后仅放行名单内 Origin
+- 未配置保持现行为（自部署/局域网友好），README 提示公网部署应配置
+
+**验收**：配置白名单后域外预检被拒；未配置时行为不变。
+
+**预估**：0.5 天
+
+---
+
+### T47 公开接口统一限流与 size 上限（优先级 7）✅
+
+**问题**：search/suggest/compare/history/series 等公开接口全无限流；`/devices` 的 `size` 无上限可一次爬全库；仅 feedback / insight 各有限流且实现分散。
+
+**改动**
+- 抽通用内存限流组件（同 IP 每分钟 N 次，阈值可配），公开查询接口统一接入；feedback / insight 迁移复用
+- `/devices` size 上限收敛（如 100）
+- X-Forwarded-For 信任现状保留（部署在反代后），README 说明
+
+**验收**：超限返回 429 且有明确提示；size 超上限被收敛；e2e 不受影响（mock 拦截）。
+
+**预估**：1 天
+
+---
+
+### T48 usePagedList composable 收敛 admin 列表页（优先级 8）✅
+
+**问题**：6+ 个 admin 列表页重复同一段 query/load/watch/Pagination/Skeleton 样板（60 处 `finally`、7 处相同 Skeleton）；PendingData / AgentTasks 的 `watch(status){ current=1; load() }` 在非第 1 页切状态时与 current-watch 并发触发两次 load，存在竞态。
+
+**改动**
+- 新增 `src/composables/usePagedList.ts`：统一 query、load、loading、finally、分页 watch、筛选变更合并为单次 load（重置页码后只发一次请求）
+- 逐页迁移 Device / PendingData / AgentTasks / Users / Logs / Feedback
+
+**验收**：各列表页功能与交互不变（e2e 全绿）；切筛选不再并发双请求。
+
+**预估**：1–1.5 天
+
+---
+
+### T49 公开接口 Caffeine 缓存与 SQL 聚合（优先级 9）✅
+
+**问题**：brands / param-defs / series / detail 等准静态数据每次请求直打 SQLite，无任何缓存；`releaseYears` 全表载入内存做 Java distinct 而非 SQL 聚合，公开端可低成本制造慢查询。
+
+**改动**
+- 引入 Caffeine：brands / param-defs / series / 设备详情等短 TTL（默认 5 分钟，可配），管理端写操作主动失效对应 key
+- `releaseYears` 改 SQL 聚合
+- 公开 GET 视情况加 Cache-Control 头
+
+**验收**：二次请求命中缓存（日志可验证）；后台改数据后公开侧即时或短延迟可见；`mvn test` 全绿。
+
+**预估**：1–1.5 天
+
+---
+
+### T50 增长表清理策略（优先级 10）✅
+
+**问题**：`agent_task.result` 存整份参数 JSON、`agent_task_log`、`operation_log`、已处理的 `agent_pending_data` 只进不出，SQLite 文件无界膨胀直接拖慢查询与 `VACUUM INTO` 备份。
+
+**改动**
+- 每日定时清理（与备份同一调度）：已完成任务及其日志保留 N 天（默认 30，可配）、`operation_log` 保留 90 天、已处理 pending 保留 30 天
+- 「系统运维」页展示各增长表行数与保留策略，支持手动触发清理并写操作日志
+
+**验收**：超过保留期的记录被清理且日志可查；手动触发生效；非超管无权调用。
+
+**预估**：1 天
+
+---
+
+### T51 useECharts / InsightCard 收敛与 html2canvas 按需加载（优先级 11）⏳ 部分完成
+
+**问题**：Evolution / History / Compare 三页各自维护一份 ECharts 生命周期（初始化、resize、dispose、暗色重渲染）与 AI insight 块（UI + 取缓存 + 生成 + 429 豁免 + 降级）；html2canvas 静态 import 进三个路由 chunk（各约 200KB）。
+
+**改动**
+- 抽 `useECharts` composable 与 `InsightCard.vue` + `useInsight` composable，三页收敛复用
+- html2canvas 改为导出函数内动态 `import()`
+
+**验收**：三页图表、AI 摘要、截图导出行为不变（e2e 全绿）；构建后首屏与三路由 chunk 不再静态含 html2canvas。
+
+**预估**：1.5 天
+
+---
+
+### T52 pinyin-pro 动态加载（优先级 12）✅
+
+**问题**：约 300KB 拼音词典随 DeviceSearch 静态打进首页加载链路。
+
+**改动**：DeviceSearch 在首次聚焦/展开时动态 `import('pinyin-pro')`。
+
+**验收**：首屏 chunk 不含 pinyin-pro；搜索联想（全拼/首字母）功能不变。
+
+**预估**：0.5 天
+
+---
+
+### T53 路由 404 与对比候选优化（优先级 13）✅
+
+**问题**：路由无 catch-all，未知路径渲染空白页；Compare 为填充添加框候选全量拉 200 台机型。
+
+**改动**
+- 路由补 `/:pathMatch(.*)*` 404 页
+- Compare 候选改用 suggest 接口按需搜索
+
+**验收**：未知路径显示 404；对比添加机型可搜索选择且大库不卡。
+
+**预估**：0.5 天
+
+---
+
+### T54 前后端类型契约与 e2e mock 绑定（优先级 14）
+
+**问题**：`api/index.ts` 几乎全 `any`；`e2e/mock-api.ts` 手写 VO 靠人肉对齐后端，且未匹配路径兜底 `ok(null)`——接口变更时前端编译期与 e2e 均不报警。
+
+**改动**
+- 建立前后端共享 VO 类型（前端 `types/api.ts` 起步，或后端 OpenAPI 导出生成）
+- `mock-api.ts` 以类型约束实现，未匹配路径从静默 `ok(null)` 改为抛错
+- `api/index.ts` 逐步补齐返回类型
+
+**验收**：后端改字段名时 `typecheck` 报错；e2e 遇未 mock 接口直接失败而非静默通过。
+
+**预估**：2 天
+
+---
+
 ## 依赖与并行建议
 
 - T1 独立，最先做，当天可完成
