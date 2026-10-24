@@ -187,7 +187,7 @@ public class CollectService {
             log.error("系列发现失败 taskId={}", payload.getTaskId(), e);
             String message = e.getMessage() == null ? "" : e.getMessage();
             String error = message.contains("Timeout") || message.contains("timeout")
-                    ? "发现超时（>" + props.getTaskTimeoutSeconds() + "s）"
+                    ? "发现超时（>" + props.getTaskTimeoutSeconds() + "s），" + timeoutHint(payload.getTaskId())
                     : e.getClass().getSimpleName() + ": " + message;
             taskLogService.error(payload.getTaskId(), "系列发现异常：" + error);
             AgentCallbackRequest result = new AgentCallbackRequest();
@@ -293,7 +293,7 @@ public class CollectService {
             log.error("采集失败 taskId={}", payload.getTaskId(), e);
             String message = e.getMessage() == null ? "" : e.getMessage();
             String error = message.contains("Timeout") || message.contains("timeout")
-                    ? "抓取超时（>" + props.getTaskTimeoutSeconds() + "s）"
+                    ? "抓取超时（>" + props.getTaskTimeoutSeconds() + "s），" + timeoutHint(payload.getTaskId())
                     : e.getClass().getSimpleName() + ": " + message;
             taskLogService.error(payload.getTaskId(), "采集异常：" + error);
             AgentCallbackRequest result = new AgentCallbackRequest();
@@ -303,6 +303,22 @@ public class CollectService {
             result.setStatus("FAILED");
             result.setError(error);
             return result;
+        }
+    }
+
+    /**
+     * 超时原因初判：结合过程日志区分「模型 API 无响应」与「工具链路卡住」，
+     * 否则管理员只看到超时，不知道该换模型还是查网络。
+     */
+    private String timeoutHint(Long taskId) {
+        try {
+            int steps = taskLogService.list(taskId, null).size();
+            // 首行是「开始采集」，没有后续行说明模型首轮调用都没返回
+            return steps <= 1
+                    ? "期间无任何工具调用记录，疑似模型 API 无响应或响应极慢，建议重试时更换模型"
+                    : "超时前已有 " + (steps - 1) + " 条过程日志，可在任务日志中定位卡住的环节";
+        } catch (Exception e) {
+            return "原因未知";
         }
     }
 
