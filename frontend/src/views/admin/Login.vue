@@ -8,7 +8,8 @@ import { Button, Card, CardContent, Input, Label } from '@/components/ui'
 
 const router = useRouter()
 const loading = ref(false)
-const form = reactive({ username: 'admin', password: 'admin123' })
+// 不预填任何账号：默认凭据写在代码里会被登录页直接暴露给访客（生产验证发现）
+const form = reactive({ username: '', password: '' })
 
 async function submit() {
   if (!form.username || !form.password) {
@@ -73,8 +74,6 @@ async function submit() {
               {{ loading ? '登录中…' : '登录' }}
             </Button>
           </form>
-
-          <p class="mt-4 text-center text-xs text-muted-foreground">默认账号 admin / admin123，首次登录会强制修改密码</p>
         </CardContent>
       </Card>
 
