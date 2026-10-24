@@ -72,6 +72,8 @@ export interface Device {
   thumbnail?: string | null
   description?: string | null
   status: number
+  /** 同品牌同名机型的待审核抓取数据条数（管理端列表徽标，0/空为无） */
+  pendingReviewCount?: number | null
   createdAt?: string
   updatedAt?: string
 }

@@ -490,12 +490,46 @@ public class AgentTaskService {
         return String.join("、", values);
     }
 
-    public IPage<AgentPendingData> pagePending(long current, long size, String status) {
+    public IPage<AgentPendingData> pagePending(long current, long size, String status, String keyword) {
         var query = Wrappers.<AgentPendingData>lambdaQuery().orderByDesc(AgentPendingData::getCreatedAt);
         if (status != null && !status.isBlank()) {
             query.eq(AgentPendingData::getStatus, status);
         }
+        if (StringUtils.hasText(keyword)) {
+            String kw = keyword.trim();
+            query.and(q -> q.like(AgentPendingData::getModelName, kw).or().like(AgentPendingData::getBrandName, kw));
+        }
         return pendingMapper.selectPage(new Page<>(current, size), query);
+    }
+
+    /**
+     * 机型列表标注：同品牌同名机型各有几条待审核抓取数据，供管理端「抓取待审」徽标。
+     * 待审核记录的品牌为空时按机型名兜底匹配（可能来自不限品牌的任务）。
+     */
+    public Map<Long, Integer> pendingCountByDevice(List<Device> devices) {
+        if (devices == null || devices.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> brandNames = brandMapper.selectBatchIds(
+                        devices.stream().map(Device::getBrandId).filter(java.util.Objects::nonNull).distinct().toList())
+                .stream().collect(java.util.stream.Collectors.toMap(Brand::getId, Brand::getName));
+        List<AgentPendingData> rows = pendingMapper.selectList(Wrappers.<AgentPendingData>lambdaQuery()
+                .eq(AgentPendingData::getStatus, PendingStatus.PENDING_REVIEW.name())
+                .in(AgentPendingData::getModelName, devices.stream().map(Device::getName).distinct().toList()));
+        Map<Long, Integer> result = new java.util.HashMap<>();
+        for (AgentPendingData row : rows) {
+            String pendingBrand = StringUtils.hasText(row.getBrandName()) ? row.getBrandName().trim() : null;
+            for (Device device : devices) {
+                if (!device.getName().equals(row.getModelName())) {
+                    continue;
+                }
+                if (pendingBrand != null && !pendingBrand.equals(brandNames.get(device.getBrandId()))) {
+                    continue;
+                }
+                result.merge(device.getId(), 1, Integer::sum);
+            }
+        }
+        return result;
     }
 
     public AgentPendingData getPending(Long id) {

@@ -42,4 +42,11 @@ public class Device {
 
     @TableLogic
     private Integer deleted;
+
+    /**
+     * 同品牌同名机型的待审核抓取数据条数（非表字段，管理端列表「抓取待审」徽标用）。
+     * 0 或 null 都表示没有待处理结果。
+     */
+    @TableField(exist = false)
+    private Integer pendingReviewCount;
 }

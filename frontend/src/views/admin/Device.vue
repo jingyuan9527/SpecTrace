@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   ArrowDownToLine,
   ArrowUpToLine,
@@ -82,6 +83,8 @@ interface DeviceForm {
   params: Record<string, string>
   variants: DeviceVariantRow[]
 }
+
+const router = useRouter()
 
 const brands = ref<Brand[]>([])
 const seriesList = ref<Series[]>([])
@@ -320,6 +323,11 @@ function optionsOf(def: ParamDef): string[] {
 function brandName(id?: number) {
   if (!id) return '—'
   return brands.value.find((b) => b.id === id)?.name ?? '—'
+}
+
+/** 该机型有抓取结果待审核：直达待审核页并按机型名筛好。 */
+function goPending(row: any) {
+  router.push({ path: '/admin/pending', query: { keyword: row.name } })
 }
 
 // ---------- 抓取详情与批量上/下架 ----------
@@ -587,7 +595,18 @@ function rowMessages(row: any) {
               <TableCell class="text-muted-foreground">{{ seriesName(row.seriesId) }}</TableCell>
               <TableCell class="text-muted-foreground">{{ row.releaseDate || '—' }}</TableCell>
               <TableCell>
-                <Badge :variant="row.status === 1 ? 'success' : 'secondary'">{{ row.status === 1 ? '上架' : '下架' }}</Badge>
+                <div class="flex flex-wrap items-center gap-1">
+                  <Badge :variant="row.status === 1 ? 'success' : 'secondary'">{{ row.status === 1 ? '上架' : '下架' }}</Badge>
+                  <Badge
+                    v-if="row.pendingReviewCount"
+                    variant="info"
+                    class="cursor-pointer"
+                    title="有抓取结果待审核，点击前往处理"
+                    @click="goPending(row)"
+                  >
+                    抓取待审{{ row.pendingReviewCount > 1 ? ` ${row.pendingReviewCount}` : '' }}
+                  </Badge>
+                </div>
               </TableCell>
               <TableCell class="text-right">
                 <div class="flex justify-end gap-1">

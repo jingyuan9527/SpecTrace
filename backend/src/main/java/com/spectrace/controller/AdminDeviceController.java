@@ -6,6 +6,7 @@ import com.spectrace.dto.DeviceBatchStatusRequest;
 import com.spectrace.dto.DeviceImportResult;
 import com.spectrace.dto.DeviceSaveRequest;
 import com.spectrace.entity.Device;
+import com.spectrace.service.AgentTaskService;
 import com.spectrace.service.DeviceImportService;
 import com.spectrace.service.DeviceService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -19,6 +20,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Map;
+
 @Tag(name = "后台-机型管理")
 @RestController
 @RequestMapping("/api/admin/devices")
@@ -28,6 +31,7 @@ public class AdminDeviceController {
 
     private final DeviceService deviceService;
     private final DeviceImportService deviceImportService;
+    private final AgentTaskService agentTaskService;
 
     @Operation(summary = "下载机型批量导入 CSV 模板")
     @GetMapping("/import/template")
@@ -53,7 +57,11 @@ public class AdminDeviceController {
                                       @RequestParam(defaultValue = "10") long size,
                                       @RequestParam(required = false) Long brandId,
                                       @RequestParam(required = false) String keyword) {
-        return R.ok(PageResult.of(deviceService.page(current, size, brandId, null, keyword)));
+        var page = deviceService.page(current, size, brandId, null, keyword);
+        // 列表徽标：标注同品牌同名机型有未处理的抓取结果，管理员不用两边来回对
+        Map<Long, Integer> pendingCounts = agentTaskService.pendingCountByDevice(page.getRecords());
+        page.getRecords().forEach(d -> d.setPendingReviewCount(pendingCounts.getOrDefault(d.getId(), 0)));
+        return R.ok(PageResult.of(page));
     }
 
     @GetMapping("/{id}")

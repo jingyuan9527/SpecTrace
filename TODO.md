@@ -950,6 +950,17 @@
 
 **CI 事故与教训（2026-10-24）**：T64 首推 CI 失败——save() 操作日志仍调已删除的 `SearchConfigVO.getProvider()`；本地 `mvn package` 增量编译用旧 .class 兜住符号未报错，CI 干净构建暴露。已修复并改用 `mvn clean package` 本地对齐 CI 验证（后续一律 clean 构建）。
 
+### T65 机型列表「抓取待审」徽标（2026-10-24 用户反馈）✅
+
+**问题**：机型抓取完成进入待审核后，机型管理列表毫无提示，管理员需在两个页面间人工对机型名。
+
+**改动**
+- 机型分页接口附带 `pendingReviewCount`（`Device` 实体 `@TableField(exist=false)` 瞬态字段，`AgentTaskService.pendingCountByDevice` 按「同品牌同名 + PENDING_REVIEW」批量标注）
+- 机型管理列表状态列新增「抓取待审 N」徽标，点击直达待审核页并按机型名筛好
+- 待审核列表新增 keyword（机型名/品牌名模糊）筛选，支持从 URL `?keyword=` 初始化
+
+**验证**：`mvn clean package` + typecheck/build/e2e 11 全绿；接口冒烟——插入 2 条同机型待审核 + 1 条已丢弃后，机型列表计数=2、`keyword+status` 组合筛选命中 2 条、无关注键词 0 条。
+
 ---
 
 ## 依赖与并行建议

@@ -76,12 +76,13 @@ public class AdminAgentController {
         return R.ok(agentTaskService.createDevicesFromDiscovery(id, req.getNames(), adminId, adminName));
     }
 
-    @Operation(summary = "待审核数据列表")
+    @Operation(summary = "待审核数据列表（keyword 按机型名 / 品牌名模糊筛选）")
     @GetMapping("/pending-data")
     public R<PageResult<PendingDataVO>> pending(@RequestParam(defaultValue = "1") long current,
                                                 @RequestParam(defaultValue = "10") long size,
-                                                @RequestParam(required = false) String status) {
-        var page = agentTaskService.pagePending(current, size, status);
+                                                @RequestParam(required = false) String status,
+                                                @RequestParam(required = false) String keyword) {
+        var page = agentTaskService.pagePending(current, size, status, keyword);
         var records = page.getRecords().stream().map(agentTaskService::toVO).toList();
         return R.ok(PageResult.of(page.getTotal(), page.getCurrent(), page.getSize(), records));
     }

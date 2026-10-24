@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   ArrowRight,
   ChevronDown,
@@ -72,10 +73,19 @@ const statusMeta: Record<string, { label: string; variant: 'info' | 'success' | 
   DISCARDED: { label: '已丢弃', variant: 'secondary' },
 }
 
+// 机型管理页「抓取待审」徽标跳转进来时带 keyword，直接按机型名筛
+const route = useRoute()
+const initialKeyword = typeof route.query.keyword === 'string' ? route.query.keyword : ''
+
 const { list, total, loading, query, load, search } = usePagedList({
   size: 10,
-  filters: () => ({ status: 'PENDING_REVIEW' as string | undefined }),
-  fetcher: (params) => adminApi.pendingData({ ...params, status: params.status || undefined }),
+  filters: () => ({ status: 'PENDING_REVIEW' as string | undefined, keyword: initialKeyword }),
+  fetcher: (params) =>
+    adminApi.pendingData({
+      ...params,
+      status: params.status || undefined,
+      keyword: params.keyword || undefined,
+    }),
   // 品牌与参数定义先加载完再拉列表，保持原有首屏顺序
   immediate: false,
 })
@@ -262,6 +272,13 @@ function removeVariant(index: number) {
 
     <div class="flex flex-wrap items-center gap-2">
       <Select v-model="query.status" :options="statusOptions" class="w-40" @update:model-value="search" />
+      <Input
+        v-model="query.keyword"
+        placeholder="机型名 / 品牌名筛选"
+        class="w-52"
+        @keyup.enter="search"
+      />
+      <Button variant="outline" size="sm" @click="search">查询</Button>
       <Button variant="outline" size="sm" @click="load">
         <RefreshCw />
         刷新
