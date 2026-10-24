@@ -6,6 +6,9 @@ import com.spectrace.common.BizException;
 import com.spectrace.dto.EvolutionDeviceVO;
 import com.spectrace.dto.EvolutionParamVO;
 import com.spectrace.dto.EvolutionVO;
+import com.spectrace.dto.SeriesOverviewResult;
+import com.spectrace.dto.SeriesOverviewVO;
+import com.spectrace.dto.SeriesTrendPointVO;
 import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
 import com.spectrace.entity.DeviceParamValue;
@@ -84,11 +87,13 @@ class EvolutionServiceTest {
         series.setName("iPhone 数字系列");
         series.setStatus(1);
         when(seriesService.get(1L)).thenReturn(series);
+        when(seriesService.list(isNull(), eq(1))).thenReturn(List.of(series));
 
         Brand brand = new Brand();
         brand.setId(1L);
         brand.setName("Apple");
         when(brandMapper.selectById(1L)).thenReturn(brand);
+        when(brandMapper.selectBatchIds(any())).thenReturn(List.of(brand));
 
         // 故意乱序并混入发布时间为空的机型，验证排序与空值兜底
         when(deviceMapper.selectList(any())).thenReturn(List.of(
@@ -160,6 +165,45 @@ class EvolutionServiceTest {
         assertThatThrownBy(() -> service.evolution(1L, tooMany))
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("最多同时查看 8 个参数");
+    }
+
+    @Test
+    @DisplayName("总览：规模年份取成员极值，趋势跳过无日期与无值机型")
+    void buildsOverviewWithTrends() {
+        when(deviceMapper.selectCount(any())).thenReturn(2L);
+
+        SeriesOverviewResult overview = service.overview(null);
+
+        assertThat(overview.getUnassignedCount()).isEqualTo(2L);
+        assertThat(overview.getItems()).hasSize(1);
+        SeriesOverviewVO item = overview.getItems().get(0);
+        assertThat(item.getDeviceCount()).isEqualTo(3);
+        assertThat(item.getStartYear()).isEqualTo(2024);
+        assertThat(item.getEndYear()).isEqualTo(2025);
+        // 最新一代按发布时间取末位（空日期排末尾）
+        assertThat(item.getLatest().getName()).isEqualTo("iPhone SE");
+        // 无日期的 SE 不进趋势，屏幕尺寸按参数值换算
+        assertThat(item.getScreenTrend()).extracting(SeriesTrendPointVO::getYear)
+                .containsExactly(2024, 2025);
+        assertThat(item.getScreenTrend()).extracting(SeriesTrendPointVO::getValue)
+                .usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(new BigDecimal("6.1"), new BigDecimal("6.3"));
+        // 起售价直接取变体最低价
+        assertThat(item.getPriceTrend()).extracting(SeriesTrendPointVO::getValue)
+                .usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(new BigDecimal("5999"), new BigDecimal("5999"));
+    }
+
+    @Test
+    @DisplayName("总览：无系列时返回空列表且仍带未归类计数")
+    void returnsEmptyOverviewWithUnassignedCount() {
+        when(seriesService.list(isNull(), eq(1))).thenReturn(List.of());
+        when(deviceMapper.selectCount(any())).thenReturn(5L);
+
+        SeriesOverviewResult overview = service.overview(null);
+
+        assertThat(overview.getItems()).isEmpty();
+        assertThat(overview.getUnassignedCount()).isEqualTo(5L);
     }
 
     private Device device(Long id, String name, LocalDate releaseDate) {

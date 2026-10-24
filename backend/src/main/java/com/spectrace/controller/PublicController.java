@@ -11,6 +11,7 @@ import com.spectrace.dto.EvolutionVO;
 import com.spectrace.dto.HistorySeriesVO;
 import com.spectrace.dto.SeriesInsightRequest;
 import com.spectrace.dto.SeriesInsightVO;
+import com.spectrace.dto.SeriesOverviewResult;
 import com.spectrace.dto.SeriesVO;
 import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
@@ -151,6 +152,12 @@ public class PublicController {
     @GetMapping("/series")
     public R<List<SeriesVO>> series(@RequestParam(required = false) Long brandId) {
         return R.ok(evolutionService.seriesList(brandId));
+    }
+
+    @Operation(summary = "系列总览（机型库系列视图：收录规模 + 最新一代 + 迷你趋势 + 未归类计数）")
+    @GetMapping("/series/overview")
+    public R<SeriesOverviewResult> seriesOverview(@RequestParam(required = false) Long brandId) {
+        return R.ok(evolutionService.overview(brandId));
     }
 
     @Operation(summary = "世代回顾：系列机型序列与参数趋势")

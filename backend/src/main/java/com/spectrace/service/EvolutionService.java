@@ -7,6 +7,9 @@ import com.spectrace.dto.EvolutionDeviceVO;
 import com.spectrace.dto.EvolutionParamVO;
 import com.spectrace.dto.EvolutionPointVO;
 import com.spectrace.dto.EvolutionVO;
+import com.spectrace.dto.SeriesOverviewResult;
+import com.spectrace.dto.SeriesOverviewVO;
+import com.spectrace.dto.SeriesTrendPointVO;
 import com.spectrace.dto.SeriesVO;
 import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
@@ -26,11 +29,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -60,6 +65,126 @@ public class EvolutionService {
     @Cacheable(cacheNames = CacheConfig.SERIES_LIST, key = "#brandId ?: 'all'")
     public List<SeriesVO> seriesList(Long brandId) {
         return seriesService.listOverview(brandId, 1, true);
+    }
+
+    /**
+     * 系列总览：机型库「系列」视图的卡片数据。
+     * 趋势固定「屏幕尺寸 + 起售价」两条（卡片空间有限，其余参数进世代回顾看），
+     * 缺日期或非数值的机型不进点列，避免 sparkline 出现断轴。
+     */
+    @Cacheable(cacheNames = CacheConfig.SERIES_LIST, key = "'overview:' + (#brandId ?: 'all')")
+    public SeriesOverviewResult overview(Long brandId) {
+        Long unassignedCount = deviceMapper.selectCount(Wrappers.<Device>lambdaQuery()
+                .eq(Device::getStatus, 1)
+                .isNull(Device::getSeriesId)
+                .eq(brandId != null, Device::getBrandId, brandId));
+
+        List<DeviceSeries> seriesList = seriesService.list(brandId, 1);
+        if (seriesList.isEmpty()) {
+            SeriesOverviewResult empty = new SeriesOverviewResult();
+            empty.setItems(List.of());
+            empty.setUnassignedCount(unassignedCount);
+            return empty;
+        }
+
+        List<Long> seriesIds = seriesList.stream().map(DeviceSeries::getId).toList();
+        Map<Long, List<Device>> membersBySeries = deviceMapper.selectList(Wrappers.<Device>lambdaQuery()
+                        .select(Device::getId, Device::getName, Device::getSeriesId,
+                                Device::getReleaseDate, Device::getThumbnail)
+                        .eq(Device::getStatus, 1)
+                        .in(Device::getSeriesId, seriesIds)).stream()
+                .collect(Collectors.groupingBy(Device::getSeriesId));
+
+        List<Long> memberIds = membersBySeries.values().stream()
+                .flatMap(List::stream).map(Device::getId).toList();
+        Map<Long, BigDecimal> prices = lowestPrices(memberIds);
+        Map<Long, String> screenValues = screenValuesOf(memberIds);
+
+        Map<Long, Brand> brandMap = brandMapper.selectBatchIds(
+                        seriesList.stream().map(DeviceSeries::getBrandId).distinct().toList()).stream()
+                .collect(Collectors.toMap(Brand::getId, Function.identity(), (a, b) -> a));
+
+        List<SeriesOverviewVO> items = new ArrayList<>();
+        for (DeviceSeries series : seriesList) {
+            List<Device> members = membersBySeries.getOrDefault(series.getId(), List.of()).stream()
+                    .sorted(Comparator.comparing(Device::getReleaseDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                            .thenComparing(Device::getId))
+                    .toList();
+            List<Integer> years = members.stream()
+                    .map(Device::getReleaseDate)
+                    .filter(Objects::nonNull)
+                    .map(LocalDate::getYear)
+                    .toList();
+
+            SeriesOverviewVO item = new SeriesOverviewVO();
+            item.setId(series.getId());
+            item.setBrandId(series.getBrandId());
+            Brand brand = brandMap.get(series.getBrandId());
+            item.setBrandName(brand == null ? null : brand.getName());
+            item.setName(series.getName());
+            item.setDeviceCount(members.size());
+            item.setStartYear(years.isEmpty() ? null : years.stream().min(Integer::compareTo).orElse(null));
+            item.setEndYear(years.isEmpty() ? null : years.stream().max(Integer::compareTo).orElse(null));
+            item.setLatest(members.isEmpty() ? null : toDeviceVO(members.get(members.size() - 1), prices));
+            item.setScreenTrend(trendPoints(members, member -> {
+                String raw = screenValues.get(member.getId());
+                return StringUtils.hasText(raw) ? ParamValueParser.parse(raw.trim(), SCREEN_TREND_UNIT) : null;
+            }));
+            item.setPriceTrend(trendPoints(members, member -> prices.get(member.getId()) == null
+                    ? null
+                    : new ParamValueParser.Parsed(true, prices.get(member.getId()), null, false)));
+            items.add(item);
+        }
+
+        SeriesOverviewResult result = new SeriesOverviewResult();
+        result.setItems(items);
+        result.setUnassignedCount(unassignedCount);
+        log.debug("系列总览: brandId={} 系列 {} 个，未归类 {} 台", brandId, items.size(), unassignedCount);
+        return result;
+    }
+
+    /** 屏幕尺寸趋势的参数定义与换算单位（英寸）；参数未定义时趋势为空。 */
+    private static final String SCREEN_TREND_KEY = "screen_size";
+    private static final String SCREEN_TREND_UNIT = "英寸";
+
+    /** deviceId -> screen_size 参数原始值。 */
+    private Map<Long, String> screenValuesOf(List<Long> deviceIds) {
+        ParamDef screenDef = paramService.listDefs(null, 1).stream()
+                .filter(def -> SCREEN_TREND_KEY.equals(def.getParamKey()))
+                .findFirst().orElse(null);
+        if (screenDef == null || deviceIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> values = new HashMap<>();
+        valueMapper.selectList(Wrappers.<DeviceParamValue>lambdaQuery()
+                        .select(DeviceParamValue::getDeviceId, DeviceParamValue::getParamValue)
+                        .in(DeviceParamValue::getDeviceId, deviceIds)
+                        .eq(DeviceParamValue::getParamDefId, screenDef.getId()))
+                .forEach(value -> values.put(value.getDeviceId(), value.getParamValue()));
+        return values;
+    }
+
+    /**
+     * 按机型序列生成趋势点：无发布日期或解析不出数值的机型跳过。
+     * @param valueOf 返回 null 表示该机型无值，不产生点位
+     */
+    private List<SeriesTrendPointVO> trendPoints(List<Device> members, Function<Device, ParamValueParser.Parsed> valueOf) {
+        List<SeriesTrendPointVO> points = new ArrayList<>();
+        for (Device member : members) {
+            if (member.getReleaseDate() == null) {
+                continue;
+            }
+            ParamValueParser.Parsed parsed = valueOf.apply(member);
+            if (parsed == null || !parsed.numeric()) {
+                continue;
+            }
+            SeriesTrendPointVO point = new SeriesTrendPointVO();
+            point.setYear(member.getReleaseDate().getYear());
+            point.setValue(parsed.number());
+            point.setDeviceName(member.getName());
+            points.add(point);
+        }
+        return points;
     }
 
     /**
