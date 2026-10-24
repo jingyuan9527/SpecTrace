@@ -236,6 +236,8 @@ function renderChart() {
       },
       yAxis: {
         type: numeric ? 'value' : 'category',
+        // 数值轴按数据范围自适应：电池容量这类 3000→3600 的变化从 0 起算会被压成一条平线
+        scale: numeric,
         name: info.unit || '',
         nameTextStyle: { color: axisColor },
         axisLabel: { color: axisColor },

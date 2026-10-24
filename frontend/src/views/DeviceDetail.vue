@@ -295,7 +295,12 @@ async function submitFeedback() {
                       v-if="item.meta?.sourceUrl || item.meta?.updatedAt || item.meta?.confidence != null"
                       class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-normal text-muted-foreground"
                     >
-                      <span v-if="item.meta?.updatedAt">更新于 {{ formatTime(item.meta.updatedAt) }}</span>
+                      <!-- 手机宽度下值列只有 ~190px，完整时间会被拆成两三行，小屏只留日期 -->
+                      <span v-if="item.meta?.updatedAt" class="whitespace-nowrap">
+                        更新于
+                        <span class="hidden sm:inline">{{ formatTime(item.meta.updatedAt) }}</span>
+                        <span class="sm:hidden">{{ formatTime(item.meta.updatedAt).slice(0, 10) }}</span>
+                      </span>
                       <span
                         v-if="item.meta?.confidence != null"
                         :class="item.meta.confidence < 0.6 ? 'text-amber-600 dark:text-amber-400' : ''"

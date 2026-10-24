@@ -294,9 +294,15 @@ async function copyToClipboard() {
           <Copy />
           复制图片
         </Button>
-        <Button variant="outline" :disabled="!compare.count" @click="clearOpen = true">
+        <!-- 手机上只留图标，避免四个按钮挤成两行；破坏性操作仍然要过确认弹窗 -->
+        <Button
+          variant="outline"
+          :disabled="!compare.count"
+          aria-label="清空对比池"
+          @click="clearOpen = true"
+        >
           <Trash2 />
-          清空
+          <span class="hidden sm:inline">清空</span>
         </Button>
       </div>
     </div>

@@ -601,6 +601,7 @@ onBeforeUnmount(() => {
           </p>
         </div>
 
+        <!-- 横向滚动而非换行：世代是有序轴，换行会打乱阅读方向；小屏收窄卡片让 3 代可见，提示还能继续滑 -->
         <div class="flex gap-3 overflow-x-auto pb-1">
           <!-- 用 div 而非 button：html2canvas 会把表单控件按固有尺寸测量，导致卡片被压扁 -->
           <div
@@ -608,7 +609,7 @@ onBeforeUnmount(() => {
             :key="device.id"
             role="button"
             tabindex="0"
-            class="flex w-32 shrink-0 cursor-pointer flex-col items-center gap-1 rounded-lg border p-3 text-center transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            class="flex w-24 shrink-0 cursor-pointer flex-col items-center gap-1 rounded-lg border p-3 text-center transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:w-32"
             @click="router.push({ name: 'device-detail', params: { id: device.id } })"
             @keydown.enter.prevent="router.push({ name: 'device-detail', params: { id: device.id } })"
             @keydown.space.prevent="router.push({ name: 'device-detail', params: { id: device.id } })"
