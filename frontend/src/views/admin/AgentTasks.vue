@@ -173,8 +173,6 @@ const detailOpen = computed({
     if (!value) detailTarget.value = null
   },
 })
-const retryingId = ref<number | null>(null)
-
 // ---- 系列发现结果（任务详情里勾选创建草稿机型） ----
 const discovery = ref<SeriesDiscoveryDetail | null>(null)
 const discoveryLoading = ref(false)
@@ -233,14 +231,30 @@ async function createSelectedDevices() {
   }
 }
 
-async function retry(row: any) {
-  retryingId.value = row.id
+// ---- 重试弹窗：失败任务常见于模型 API 无响应，重试时可换供应商与模型 ----
+const retryDialog = ref(false)
+const retryTarget = ref<any>(null)
+const retryModelId = ref<number | null>(null)
+const retrySubmitting = ref(false)
+
+function openRetry(row: any) {
+  retryTarget.value = row
+  // 默认沿用原模型；原任务未指定时回落到后台默认模型
+  retryModelId.value = row.aiModelId ?? aiModels.value.find((m) => m.isDefault === 1)?.id ?? null
+  retryDialog.value = true
+}
+
+async function confirmRetry() {
+  const target = retryTarget.value
+  if (!target || retrySubmitting.value) return
+  retrySubmitting.value = true
   try {
-    const task = await adminApi.retryAgentTask(row.id)
+    const task = await adminApi.retryAgentTask(target.id, retryModelId.value ?? undefined)
     toast.success(`已重新提交，新任务 #${task?.id ?? ''}`)
+    retryDialog.value = false
     await load(true)
   } finally {
-    retryingId.value = null
+    retrySubmitting.value = false
   }
 }
 
@@ -437,11 +451,9 @@ function modelLabel(id: number | null | undefined) {
                     v-if="row.status === 'FAILED'"
                     variant="outline"
                     size="sm"
-                    :disabled="retryingId === row.id"
-                    @click="retry(row)"
+                    @click="openRetry(row)"
                   >
-                    <Loader2 v-if="retryingId === row.id" class="animate-spin" />
-                    <RotateCcw v-else />
+                    <RotateCcw />
                     重试
                   </Button>
                 </div>
@@ -603,15 +615,38 @@ function modelLabel(id: number | null | undefined) {
           }}</pre>
         </div>
 
-        <Button
-          v-if="detailTarget.status === 'FAILED'"
-          :disabled="retryingId === detailTarget.id"
-          @click="retry(detailTarget)"
-        >
+        <Button v-if="detailTarget.status === 'FAILED'" @click="openRetry(detailTarget)">
           <RotateCcw />
           重试该任务
         </Button>
       </div>
     </Sheet>
+
+    <Dialog
+      v-model:open="retryDialog"
+      title="重试抓取任务"
+      :description="`#${retryTarget?.id ?? ''} ${retryTarget?.modelName ?? ''}，将按原参数新建任务`"
+      class="max-w-md"
+    >
+      <div class="space-y-1.5">
+        <Label>AI 模型（可选）</Label>
+        <Combobox
+          v-model="retryModelId"
+          :options="modelOptions"
+          placeholder="默认模型"
+          search-placeholder="搜索供应商 / 模型…"
+        />
+        <p class="text-xs text-muted-foreground">
+          超时类失败常见于模型 API 无响应，建议更换「供应商连接 / 模型名」后重试；不选择则沿用原模型
+        </p>
+      </div>
+      <template #footer>
+        <Button variant="outline" :disabled="retrySubmitting" @click="retryDialog = false">取消</Button>
+        <Button :disabled="retrySubmitting" @click="confirmRetry">
+          <Loader2 v-if="retrySubmitting" class="animate-spin" />
+          {{ retrySubmitting ? '提交中…' : '提交重试' }}
+        </Button>
+      </template>
+    </Dialog>
   </div>
 </template>

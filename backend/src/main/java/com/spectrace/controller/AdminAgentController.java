@@ -38,11 +38,12 @@ public class AdminAgentController {
         return R.ok(agentTaskService.createTask(req, adminId, adminName));
     }
 
-    @Operation(summary = "重试失败的抓取任务")
+    @Operation(summary = "重试失败的抓取任务（aiModelId 非空时覆盖原模型）")
     @PostMapping("/agent-tasks/{id}/retry")
     public R<AgentTask> retry(@PathVariable Long id,
+                              @RequestParam(required = false) Long aiModelId,
                               @RequestAttribute Long adminId, @RequestAttribute String adminName) {
-        return R.ok(agentTaskService.retry(id, adminId, adminName));
+        return R.ok(agentTaskService.retry(id, aiModelId, adminId, adminName));
     }
 
     @Operation(summary = "抓取任务列表")

@@ -126,8 +126,11 @@ public class AgentTaskService {
         }
     }
 
-    /** 失败任务重试：按原参数新建一条任务，保留历史失败记录便于对比。 */
-    public AgentTask retry(Long taskId, Long adminId, String adminName) {
+    /**
+     * 失败任务重试：按原参数新建一条任务，保留历史失败记录便于对比。
+     * aiModelId 非空时覆盖原模型——超时类失败常见原因是模型 API 无响应，重试时换模型是主要恢复手段。
+     */
+    public AgentTask retry(Long taskId, Long aiModelId, Long adminId, String adminName) {
         AgentTask origin = taskMapper.selectById(taskId);
         if (origin == null) {
             throw new BizException("抓取任务不存在");
@@ -138,12 +141,15 @@ public class AgentTaskService {
         TaskCreateRequest req = new TaskCreateRequest();
         req.setModelName(origin.getModelName());
         req.setBrandName(origin.getBrandName());
-        req.setAiModelId(origin.getAiModelId());
+        req.setAiModelId(aiModelId != null ? aiModelId : origin.getAiModelId());
         req.setTaskType(origin.getTaskType());
         AgentTask task = createTask(req, adminId, adminName);
-        log.info("重试抓取任务: originId={} newId={} model={} admin={}", taskId, task.getId(), task.getModelName(), adminName);
+        boolean modelChanged = aiModelId != null && !aiModelId.equals(origin.getAiModelId());
+        log.info("重试抓取任务: originId={} newId={} model={} aiModelId={}{} admin={}",
+                taskId, task.getId(), task.getModelName(), task.getAiModelId(),
+                modelChanged ? "（已更换模型）" : "", adminName);
         logService.record(adminId, adminName, "RETRY_AGENT_TASK", "agent_task", task.getId(),
-                "重试自任务 #" + taskId + "：" + task.getModelName());
+                "重试自任务 #" + taskId + "：" + task.getModelName() + (modelChanged ? "（更换模型）" : ""));
         return task;
     }
 

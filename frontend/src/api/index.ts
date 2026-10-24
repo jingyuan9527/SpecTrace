@@ -142,7 +142,10 @@ export const adminApi = {
   agentTasks: (params: Record<string, unknown>) =>
     request.get<unknown, PageResult<AgentTask>>('/admin/agent-tasks', { params }),
   createAgentTask: (data: AgentTaskCreateRequest) => request.post<unknown, AgentTask>('/admin/agent-tasks', data),
-  retryAgentTask: (id: number) => request.post<unknown, AgentTask>(`/admin/agent-tasks/${id}/retry`),
+  retryAgentTask: (id: number, aiModelId?: number) =>
+    request.post<unknown, AgentTask>(`/admin/agent-tasks/${id}/retry`, undefined, {
+      params: aiModelId ? { aiModelId } : undefined,
+    }),
   // 过程日志按 id 增量拉取，afterId 传已拿到的最后一条
   agentTaskLogs: (id: number, afterId?: number) =>
     request.get<unknown, AgentTaskLog[]>(`/admin/agent-tasks/${id}/logs`, { params: { afterId } }),
