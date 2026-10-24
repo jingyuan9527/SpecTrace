@@ -2,11 +2,12 @@ package com.spectrace.dto;
 
 import lombok.Data;
 
-/** 搜索源配置保存：Key 留空表示不修改。 */
+import java.util.List;
+
+/** 搜索源配置保存：engines 为启用的引擎（tavily/searxng/serper，可多个）；Key 留空表示不修改。 */
 @Data
 public class SearchConfigSaveRequest {
-    /** system / tavily / searxng */
-    private String provider;
+    private List<String> engines;
     private String tavilyApiKey;
     private String searxngBaseUrl;
     private String searxngToken;

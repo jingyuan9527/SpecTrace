@@ -45,8 +45,8 @@ public class WebSearchService {
     /** 后台搜索源配置的运行时视图。 */
     @Data
     public static class SearchRuntime {
-        /** system / tavily / searxng */
-        private String provider;
+        /** 启用的引擎（tavily/searxng/serper，按尝试顺序），空表示系统默认链 */
+        private List<String> engines;
         private String tavilyApiKey;
         private String searxngBaseUrl;
         private String searxngToken;
@@ -58,34 +58,81 @@ public class WebSearchService {
     }
 
     /**
-     * 按配置执行搜索。所选引擎抛错时回落 DuckDuckGo；DuckDuckGo 也失败时返回空结果而非异常，
-     * 调用方（采集工具）只负责记录，不需要为搜索失败做容错。
+     * 按配置执行搜索：启用的引擎依次尝试（Tavily → SearXNG → Serper），全部失败回落 DuckDuckGo；
+     * DuckDuckGo 也失败时返回空结果而非异常，调用方（采集工具）只负责记录，不需要为搜索失败做容错。
+     * 未启用任何引擎时走默认链（有 Serper Key 用 Google，否则 DuckDuckGo）。
      */
     public Outcome search(SearchRuntime cfg, String query) {
-        String provider = cfg.getProvider() == null ? "system" : cfg.getProvider();
-        try {
-            return switch (provider) {
-                case "tavily" -> new Outcome("tavily", searchTavily(cfg, query));
-                case "searxng" -> new Outcome("searxng", searchSearxng(cfg, query));
-                default -> searchDefault(cfg, query);
-            };
-        } catch (Exception e) {
-            log.warn("搜索引擎 {} 失败，回落 DuckDuckGo: {}", provider, e.getMessage());
+        List<String> engines = cfg.getEngines() == null ? List.of() : cfg.getEngines();
+        for (String engine : engines) {
             try {
-                return new Outcome("duckduckgo", searchDuckDuckGo(query));
-            } catch (Exception fallback) {
-                log.warn("DuckDuckGo 搜索也失败: {}", fallback.getMessage());
-                return new Outcome("none", List.of());
+                List<Map<String, Object>> results = switch (engine) {
+                    case "tavily" -> searchTavily(cfg, query);
+                    case "searxng" -> searchSearxng(cfg, query);
+                    case "serper" -> searchSerper(cfg.getSerperApiKey(), query);
+                    default -> null;
+                };
+                if (results != null) {
+                    return new Outcome(engine, results);
+                }
+            } catch (Exception e) {
+                log.warn("搜索引擎 {} 失败，尝试下一个: {}", engine, e.getMessage());
             }
+        }
+        if (engines.isEmpty()) {
+            try {
+                if (cfg.getSerperApiKey() != null && !cfg.getSerperApiKey().isBlank()) {
+                    return new Outcome("serper", searchSerper(cfg.getSerperApiKey(), query));
+                }
+            } catch (Exception e) {
+                log.warn("搜索引擎 serper 失败，尝试下一个: {}", e.getMessage());
+            }
+        }
+        try {
+            return new Outcome("duckduckgo", searchDuckDuckGo(query));
+        } catch (Exception fallback) {
+            log.warn("DuckDuckGo 搜索也失败: {}", fallback.getMessage());
+            return new Outcome("none", List.of());
         }
     }
 
-    /** 默认链：有 Serper Key（后台或环境变量）走 Google 结果，否则 DuckDuckGo。 */
-    private Outcome searchDefault(SearchRuntime cfg, String query) throws Exception {
-        if (cfg.getSerperApiKey() != null && !cfg.getSerperApiKey().isBlank()) {
-            return new Outcome("serper", searchSerper(cfg.getSerperApiKey(), query));
+    /**
+     * 查询 Tavily 用量（GET /usage，10 分钟限 10 次，只应在测试场景调用）。
+     * 失败返回 null，不影响测试结论。
+     */
+    public String fetchTavilyUsage(String apiKey) {
+        try {
+            JsonNode data = restClientBuilder.build()
+                    .get()
+                    .uri("https://api.tavily.com/usage")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .retrieve()
+                    .body(JsonNode.class);
+            if (data == null) {
+                return null;
+            }
+            String plan = data.path("account").path("current_plan").asText("");
+            int planUsage = data.path("account").path("plan_usage").asInt(-1);
+            int planLimit = data.path("account").path("plan_limit").asInt(-1);
+            int keyUsage = data.path("key").path("usage").asInt(-1);
+            int keyLimit = data.path("key").path("limit").asInt(-1);
+            StringBuilder sb = new StringBuilder();
+            if (!plan.isBlank()) {
+                sb.append(plan).append(" 计划：已用 ").append(Math.max(planUsage, 0));
+                sb.append(planLimit >= 0 ? " / " + planLimit : "（不限量）");
+            }
+            if (keyUsage >= 0 && (keyLimit >= 0 || keyUsage != planUsage)) {
+                if (!sb.isEmpty()) {
+                    sb.append("；");
+                }
+                sb.append("本 Key：已用 ").append(keyUsage);
+                sb.append(keyLimit >= 0 ? " / " + keyLimit : "");
+            }
+            return sb.isEmpty() ? null : sb.toString() + " 积分";
+        } catch (Exception e) {
+            log.warn("查询 Tavily 用量失败: {}", e.getMessage());
+            return null;
         }
-        return new Outcome("duckduckgo", searchDuckDuckGo(query));
     }
 
     private List<Map<String, Object>> searchTavily(SearchRuntime cfg, String query) throws Exception {

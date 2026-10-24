@@ -10,4 +10,6 @@ public class SearchTestResultVO {
     private int count;
     private long latencyMs;
     private String error;
+    /** Tavily 用量摘要（仅启用 Tavily 且查询成功时返回，如「Free：本月已用 37 / 1000 积分」） */
+    private String tavilyUsage;
 }

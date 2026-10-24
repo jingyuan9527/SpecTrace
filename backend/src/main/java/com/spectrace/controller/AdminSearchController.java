@@ -44,10 +44,11 @@ public class AdminSearchController {
         return R.ok(vo);
     }
 
-    @Operation(summary = "用已保存配置真实搜索一次，验证可用性")
+    @Operation(summary = "真实搜索一次验证可用性；body 可传未保存的表单值（Key 留空沿用已存值），为空则测试已保存配置")
     @PostMapping("/test")
-    public R<SearchTestResultVO> test(@RequestAttribute Long adminId, @RequestAttribute String adminName) {
-        SearchTestResultVO result = searchConfigService.test();
+    public R<SearchTestResultVO> test(@RequestBody(required = false) SearchConfigSaveRequest req,
+                                      @RequestAttribute Long adminId, @RequestAttribute String adminName) {
+        SearchTestResultVO result = searchConfigService.test(req);
         logService.record(adminId, adminName, "TEST_SEARCH_CONFIG", "agent_search_config", null,
                 result.getEngine() + (result.isSuccess()
                         ? " 成功 " + result.getCount() + " 条 " + result.getLatencyMs() + "ms"

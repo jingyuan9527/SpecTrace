@@ -36,6 +36,7 @@ import type {
   PendingDataDetail,
   RetentionOverview,
   SearchConfig,
+  SearchConfigSaveRequest,
   SearchTestResult,
   SeriesCreateResult,
   SeriesDiscoveryDetail,
@@ -171,16 +172,12 @@ export const adminApi = {
     }),
   importAiModels: (configId: number, data: { models: string[]; temperature?: number }) =>
     request.post<unknown, void>(`/admin/ai-configs/${configId}/import-models`, data),
-  // 采集搜索源（Tavily / SearXNG / Serper / DuckDuckGo 路由，Key 留空表示不修改）
+  // 采集搜索源（多引擎链式切换，Key 留空表示不修改；test 可传未保存的表单值）
   getSearchConfig: () => request.get<unknown, SearchConfig>('/admin/search-config'),
-  saveSearchConfig: (data: {
-    provider: string
-    tavilyApiKey?: string
-    searxngBaseUrl?: string
-    searxngToken?: string
-    serperApiKey?: string
-  }) => request.put<unknown, SearchConfig>('/admin/search-config', data),
-  testSearchConfig: () => request.post<unknown, SearchTestResult>('/admin/search-config/test'),
+  saveSearchConfig: (data: SearchConfigSaveRequest) =>
+    request.put<unknown, SearchConfig>('/admin/search-config', data),
+  testSearchConfig: (data?: Partial<SearchConfigSaveRequest>) =>
+    request.post<unknown, SearchTestResult>('/admin/search-config/test', data ?? {}),
   // AI 模型
   aiModels: () => request.get<unknown, AiModel[]>('/admin/ai-models'),
   setDefaultAiModel: (id: number) => request.post<unknown, void>(`/admin/ai-models/${id}/default`),

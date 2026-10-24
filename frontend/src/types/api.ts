@@ -199,12 +199,21 @@ export interface ConnectivityTest {
 
 /** 采集搜索源配置（Key 只回是否已配置） */
 export interface SearchConfig {
-  provider: string
+  /** 启用的引擎（tavily/searxng/serper，按尝试顺序），空表示系统默认链 */
+  engines: string[]
   tavilyApiKeySet: boolean
   searxngBaseUrl?: string | null
   searxngTokenSet: boolean
   serperApiKeySet: boolean
   updatedAt?: string
+}
+
+export interface SearchConfigSaveRequest {
+  engines: string[]
+  tavilyApiKey?: string
+  searxngBaseUrl?: string
+  searxngToken?: string
+  serperApiKey?: string
 }
 
 export interface SearchTestResult {
@@ -213,6 +222,8 @@ export interface SearchTestResult {
   count: number
   latencyMs: number
   error?: string | null
+  /** Tavily 用量摘要（仅启用 Tavily 且查询成功时返回） */
+  tavilyUsage?: string | null
 }
 
 // ---------- 访客端 VO ----------
