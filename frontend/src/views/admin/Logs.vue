@@ -2,6 +2,7 @@
 import { RefreshCw, ScrollText } from '@lucide/vue'
 import { adminApi } from '@/api'
 import { usePagedList } from '@/composables/usePagedList'
+import { formatTime } from '@/lib/utils'
 import {
   Badge,
   Button,
@@ -77,7 +78,7 @@ const { list, total, loading, query, load, search } = usePagedList({
               <TableCell class="font-mono text-xs text-muted-foreground">{{ row.targetType }}</TableCell>
               <TableCell class="tabular-nums text-muted-foreground">{{ row.targetId ?? '—' }}</TableCell>
               <TableCell class="max-w-96 break-words text-xs text-muted-foreground">{{ row.detail || '—' }}</TableCell>
-              <TableCell class="text-xs text-muted-foreground">{{ row.createdAt }}</TableCell>
+              <TableCell class="text-xs tabular-nums text-muted-foreground">{{ formatTime(row.createdAt) }}</TableCell>
             </TableRow>
           </TableBody>
         </Table>

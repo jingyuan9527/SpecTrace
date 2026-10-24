@@ -318,7 +318,7 @@ function modelLabel(id: number | null | undefined) {
               <TableCell class="tabular-nums text-muted-foreground">
                 {{ row.durationMs ? `${row.durationMs} ms` : '—' }}
               </TableCell>
-              <TableCell class="text-xs text-muted-foreground">{{ row.createdAt }}</TableCell>
+              <TableCell class="text-xs tabular-nums text-muted-foreground">{{ formatTime(row.createdAt) }}</TableCell>
               <TableCell class="max-w-56 text-xs">
                 <a
                   v-if="row.sourceUrl"

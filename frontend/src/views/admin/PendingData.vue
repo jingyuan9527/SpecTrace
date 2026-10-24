@@ -14,6 +14,7 @@ import {
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
 import { usePagedList } from '@/composables/usePagedList'
+import { formatTime } from '@/lib/utils'
 import {
   Alert,
   Badge,
@@ -339,7 +340,7 @@ function removeVariant(index: number) {
                 </a>
                 <span v-else class="text-muted-foreground">—</span>
               </TableCell>
-              <TableCell class="text-xs text-muted-foreground">{{ row.createdAt }}</TableCell>
+              <TableCell class="text-xs tabular-nums text-muted-foreground">{{ formatTime(row.createdAt) }}</TableCell>
               <TableCell>
                 <Badge :variant="statusMeta[row.status]?.variant ?? 'secondary'">
                   {{ statusMeta[row.status]?.label ?? row.status }}
