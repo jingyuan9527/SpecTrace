@@ -258,6 +258,8 @@ docker run -d --name spectrace-app -p 80:8080 \
 - 后端：Java 21 / Spring Boot 3.3 / MyBatis-Plus / AgentScope Java 2.0（Harness，内嵌），统一响应体 `R<T>`，全局异常处理 `GlobalExceptionHandler`；`mvn test` 跑单测（参数值解析、CSV 导入预览、世代回顾聚合、AI 摘要解析与限流）
 - 前端：`npm run build` 验证构建；`npm run typecheck` 做类型检查；`npm run test:e2e` 跑 Playwright 主链路（访客对比分享、后台审核入库、键盘登录与弹窗、键盘完成新增品牌/机型/提交抓取/审核、后台系列增改并删与拖拽排序、世代回顾参数/区间/移动端、后台账号与参数维护、纠错反馈处理、初始密码强制改密）
 - 列表页复用：后台分页列表统一走 `src/composables/usePagedList`（分页 / 筛选 / 加载态 / 竞态兜底），新增列表页不再手写 query 与双 watch；可搜索下拉需要远程联想时使用 `Combobox` 的 `remote` 模式 + `@search` 事件
+- 类型契约：前后端共享类型集中在 `frontend/src/types/api.ts`（以后端 VO 字段为准），`api/index.ts` 与各视图必须引用而非另写本地 interface；e2e 的 `mock-api.ts` 同样引用该文件，且未 mock 的接口会显式 404（不再静默返回 null），后端改字段名时 `typecheck`（含 `tsconfig.e2e.json`）会同时拦住前端与 mock
+- 图表与 AI 文案复用：ECharts 生命周期统一走 `src/composables/useECharts`（按 key 注册、容器重建自动重挂、resize/卸载自动处理），AI 摘要/回顾统一 `useInsight` + `InsightCard.vue`（available/failed/429 护栏语义收口一处），新页面不得再手写图表生命周期或复制文案卡片
 - 大体积依赖按需加载：`html2canvas` 与 `pinyin-pro` 词典均通过动态 `import()` 引入（截图导出与首次聚焦搜索时才加载），新增重依赖时保持同样的按需方式
 - 可访问性：键盘路径已由 e2e 覆盖——全程 Tab + Enter 可完成登录、新增品牌、新增机型、提交抓取与审核通过，弹窗打开后焦点自动进入、Esc 可关闭；真机与读屏环境的人工复核仍需发布前补一次，自动化无法替代
 - 表结构变更：新增列请同时改 `db/schema.sql` 与 `SqliteSchemaMigration`（老库靠后者补列）；**新列上的索引必须放在迁移里**，`schema.sql` 在 `CREATE TABLE IF NOT EXISTS` 之后执行，老库此时还没有该列，索引语句会直接中断启动

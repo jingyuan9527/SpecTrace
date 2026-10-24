@@ -639,8 +639,9 @@
 | T48 usePagedList | ✅ | 新增 `src/composables/usePagedList.ts`（query / load / silent 轮询 / onLoaded 钩子 / seq 竞态兜底）；Logs、Feedback、Users、PendingData、AgentTasks、Device 六页迁移；筛选变更合并为单次 load，修复 PendingData / AgentTasks 非首页切状态的双请求竞态 |
 | T52 pinyin-pro 按需加载 | ✅ | DeviceSearch 首次聚焦才动态 `import('pinyin-pro')` 并构建本地索引，DeviceSearch chunk 从 221KB 降到 4KB，词典变为异步 chunk |
 | T53 404 与对比候选 | ✅ | 路由补 `/:pathMatch(.*)*` + `NotFound.vue`（保留访客导航）；Combobox 增加 `remote` 模式与 `search` 事件（向后兼容），Compare 候选改为默认最近 50 台 + suggest 按需联想，不再一次拉 200 台 |
-| T51 截图库按需加载 | ⏳ | html2canvas 已改三页导出函数内动态 import（路由不再静态引入 200KB）；`useECharts` / `InsightCard` 抽取留待下一批（涉及三个大页重构，单独排期降低回归风险） |
-| T54 类型契约与 mock 绑定 | ☐ | 未开工，方案与验收标准见下文 |
+| T51 截图库按需加载 | ✅ | html2canvas 三页导出函数内动态 import；`useECharts`（图表生命周期 + 按需注册 + prune/dispose + 自适应 resize）与 `useInsight` + `InsightCard.vue`（AI 文案状态机与 UI）抽取完成，Compare / Evolution / History 三页迁移，页面 chunk 降到 12–15KB |
+| T54 类型契约与 mock 绑定 | ✅ | 新增 `src/types/api.ts`（实体/VO/请求类型，以后端 VO 为准）；`api/index.ts` 全量类型化；12 个视图本地接口删除改用共享类型；e2e `mock-api.ts` 引用共享类型，未匹配接口从静默 `ok(null)` 改为 404 报错；新增 `tsconfig.e2e.json` 并把 e2e 类型检查并入 `npm run typecheck` |
+| T55 SQLite 写连接池收敛 | ✅ | Hikari `maximum-pool-size` 收敛为 4（WAL 单写者下大池放大写锁竞争），配置内注释说明理由 |
 
 ### T41 采集任务可靠性收口（优先级 1）✅
 
@@ -788,7 +789,7 @@
 
 ---
 
-### T51 useECharts / InsightCard 收敛与 html2canvas 按需加载（优先级 11）⏳ 部分完成
+### T51 useECharts / InsightCard 收敛与 html2canvas 按需加载（优先级 11）✅
 
 **问题**：Evolution / History / Compare 三页各自维护一份 ECharts 生命周期（初始化、resize、dispose、暗色重渲染）与 AI insight 块（UI + 取缓存 + 生成 + 429 豁免 + 降级）；html2canvas 静态 import 进三个路由 chunk（各约 200KB）。
 
@@ -828,7 +829,7 @@
 
 ---
 
-### T54 前后端类型契约与 e2e mock 绑定（优先级 14）
+### T54 前后端类型契约与 e2e mock 绑定（优先级 14）✅
 
 **问题**：`api/index.ts` 几乎全 `any`；`e2e/mock-api.ts` 手写 VO 靠人肉对齐后端，且未匹配路径兜底 `ok(null)`——接口变更时前端编译期与 e2e 均不报警。
 
