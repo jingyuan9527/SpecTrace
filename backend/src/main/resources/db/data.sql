@@ -60,24 +60,34 @@ INSERT OR IGNORE INTO param_def (id, param_key, param_name, group_id, param_type
  (25, 'uwb',                 'UWB超宽频',      8, 'text',   NULL, NULL,  1, 1),
  (26, 'infrared',            '红外遥控',       8, 'text',   NULL, NULL,  2, 1);
 
--- 充电相关参数按 param_key 补写，而不是写死 id：
--- 上面的 INSERT OR IGNORE 在老库里遇到 id 被其他参数占用时会整行静默跳过，
--- 导致「无线充电」这类后加参数在老库中根本不存在、采集 Schema 里也就不会出现。
+-- 后加参数按 param_key 幂等补写，而不是继续往上面的定 id 列表里追加：
+-- 那里用的是 INSERT OR IGNORE，老库中 id 被别的参数占用时会整行静默跳过，
+-- 后加参数就会在老库里凭空消失，采集 Schema 里自然也不会有它。
 INSERT INTO param_def (param_key, param_name, group_id, param_type, enum_options, unit, sort_order, enabled)
-SELECT 'wireless_charging', '无线充电', 4, 'select', '["支持","不支持"]', NULL, 3, 1
- WHERE NOT EXISTS (SELECT 1 FROM param_def WHERE param_key = 'wireless_charging');
-
-INSERT INTO param_def (param_key, param_name, group_id, param_type, enum_options, unit, sort_order, enabled)
-SELECT 'wireless_charging_power', '无线充电功率', 4, 'number', NULL, 'W', 4, 1
- WHERE NOT EXISTS (SELECT 1 FROM param_def WHERE param_key = 'wireless_charging_power');
-
-INSERT INTO param_def (param_key, param_name, group_id, param_type, enum_options, unit, sort_order, enabled)
-SELECT 'charging_port', '充电接口', 4, 'text', NULL, NULL, 5, 1
- WHERE NOT EXISTS (SELECT 1 FROM param_def WHERE param_key = 'charging_port');
-
-INSERT INTO param_def (param_key, param_name, group_id, param_type, enum_options, unit, sort_order, enabled)
-SELECT 'usb_version', 'USB 接口速率', 4, 'text', NULL, NULL, 6, 1
- WHERE NOT EXISTS (SELECT 1 FROM param_def WHERE param_key = 'usb_version');
+SELECT param_key, param_name, group_id, param_type, enum_options, unit, sort_order, enabled
+  FROM (SELECT 'screen_peak_brightness' AS param_key, '峰值亮度' AS param_name, 2 AS group_id,
+               'number' AS param_type, NULL AS enum_options, 'nit' AS unit, 5 AS sort_order, 1 AS enabled
+        UNION ALL SELECT 'screen_pwm_dimming',   '高频调光',     2, 'number', NULL, 'Hz',  6, 1
+        UNION ALL SELECT 'storage_type',         '闪存规格',     3, 'text',   NULL, NULL,  5, 1
+        UNION ALL SELECT 'wireless_charging',    '无线充电',     4, 'select', '["支持","不支持"]', NULL, 3, 1
+        UNION ALL SELECT 'wireless_charging_power', '无线充电功率', 4, 'number', NULL, 'W', 4, 1
+        UNION ALL SELECT 'charging_port',        '充电接口',     4, 'text',   NULL, NULL,  5, 1
+        UNION ALL SELECT 'usb_version',          'USB 接口速率', 4, 'text',   NULL, NULL,  6, 1
+        UNION ALL SELECT 'charging_protocol',    '充电协议',     4, 'text',   NULL, NULL,  7, 1
+        UNION ALL SELECT 'reverse_charging',     '反向充电',     4, 'number', NULL, 'W',   8, 1
+        UNION ALL SELECT 'main_camera_sensor',   '主摄传感器',   5, 'text',   NULL, NULL,  4, 1
+        UNION ALL SELECT 'main_camera_aperture', '主摄光圈',     5, 'text',   NULL, NULL,  5, 1
+        UNION ALL SELECT 'telephoto_zoom',       '光学变焦',     5, 'text',   NULL, NULL,  6, 1
+        UNION ALL SELECT 'ois',                  '光学防抖',     5, 'select', '["支持","不支持"]', NULL, 7, 1
+        UNION ALL SELECT 'thickness',            '机身厚度',     6, 'number', NULL, 'mm',  5, 1
+        UNION ALL SELECT 'wifi_version',         'Wi-Fi 版本',   7, 'text',   NULL, NULL,  5, 1
+        UNION ALL SELECT 'esim',                 'eSIM',         7, 'select', '["支持","不支持"]', NULL, 6, 1
+        UNION ALL SELECT 'satellite',            '卫星通信',     7, 'select', '["支持","不支持"]', NULL, 7, 1
+        UNION ALL SELECT 'nfc',                  'NFC',          8, 'select', '["支持","不支持"]', NULL, 3, 1
+        UNION ALL SELECT 'stereo_speaker',       '立体声扬声器', 8, 'select', '["支持","不支持"]', NULL, 4, 1
+        UNION ALL SELECT 'vibration_motor',      '振动马达',     8, 'text',   NULL, NULL,  5, 1
+        UNION ALL SELECT 'fingerprint',          '指纹识别',     8, 'text',   NULL, NULL,  6, 1)
+ WHERE param_key NOT IN (SELECT param_key FROM param_def);
 
 -- 老库升级：无线充电原先是无枚举的文本（常被写成 "50W"），改为「支持/不支持」枚举；
 -- 存量取值的迁移交给重新采集，脚本不猜测改写既有数据
