@@ -142,6 +142,49 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         ].filter((series) => !brandId || series.brandId === brandId),
       )
     }
+    if (path === '/public/series/overview') {
+      const brandId = Number(url.searchParams.get('brandId') || 0)
+      const published = state.devices.filter((device) => device.status === 1)
+      const items = state.series
+        .filter((series) => !brandId || series.brandId === brandId)
+        .sort((left, right) => left.sortOrder - right.sortOrder)
+        .map((series) => {
+          const members = published
+            .filter((device) => device.seriesId === series.id)
+            .sort((left, right) => (left.releaseDate ?? '').localeCompare(right.releaseDate ?? ''))
+          const years = members
+            .map((device) => Number((device.releaseDate ?? '').slice(0, 4)))
+            .filter((year) => Number.isFinite(year) && year > 0)
+          const last = members[members.length - 1]
+          return {
+            id: series.id,
+            brandId: series.brandId,
+            brandName: brandNameOf(series.brandId),
+            name: series.name,
+            deviceCount: members.length,
+            startYear: years.length ? Math.min(...years) : null,
+            endYear: years.length ? Math.max(...years) : null,
+            latest: last
+              ? { id: last.id, name: last.name, thumbnail: last.thumbnail, releaseDate: last.releaseDate, launchPrice: 5999 }
+              : null,
+            screenTrend: members
+              .filter((device) => device.releaseDate && PARAMS[device.id]?.screen_size)
+              .map((device) => ({
+                year: Number(device.releaseDate!.slice(0, 4)),
+                value: Number(PARAMS[device.id]!.screen_size),
+                deviceName: device.name,
+              })),
+            priceTrend: members
+              .filter((device) => device.releaseDate)
+              .map((device) => ({ year: Number(device.releaseDate!.slice(0, 4)), value: 5999, deviceName: device.name })),
+          }
+        })
+      return ok({
+        items,
+        unassignedCount: published.filter((device) => !device.seriesId && (!brandId || device.brandId === brandId))
+          .length,
+      })
+    }
     if (/^\/public\/series\/\d+\/evolution$/.test(path)) {
       const seriesId = Number(path.split('/')[3])
       const defIds = (url.searchParams.get('paramDefIds') || '')

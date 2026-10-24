@@ -375,6 +375,32 @@ export interface EvolutionResult {
   params: EvolutionParam[]
 }
 
+/** 系列总览迷你趋势的单点：x 轴按发布年份 */
+export interface SeriesTrendPoint {
+  year: number
+  value: number
+  deviceName: string
+}
+
+/** 系列总览卡片：收录规模沿用公开口径（只计已上架），趋势固定屏幕尺寸 + 起售价 */
+export interface SeriesOverviewItem {
+  id: number
+  brandId: number
+  brandName?: string | null
+  name: string
+  deviceCount: number
+  startYear?: number | null
+  endYear?: number | null
+  latest?: EvolutionDevice | null
+  screenTrend: SeriesTrendPoint[]
+  priceTrend: SeriesTrendPoint[]
+}
+
+export interface SeriesOverviewResult {
+  items: SeriesOverviewItem[]
+  unassignedCount: number
+}
+
 /** 对比差异摘要与世代回顾文案共用 */
 export interface InsightResult {
   available: boolean

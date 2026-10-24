@@ -43,6 +43,7 @@ import type {
   SeriesDiscoveryDetail,
   SeriesItem,
   SeriesMissingDevice,
+  SeriesOverviewResult,
   SeriesSaveRequest,
   UnassignedDevice,
   UploadResult,
@@ -77,6 +78,8 @@ export const publicApi = {
     }),
   years: (brandId?: number) => request.get<unknown, number[]>('/public/years', { params: { brandId } }),
   series: (brandId?: number) => request.get<unknown, SeriesItem[]>('/public/series', { params: { brandId } }),
+  seriesOverview: (brandId?: number) =>
+    request.get<unknown, SeriesOverviewResult>('/public/series/overview', { params: { brandId } }),
   evolution: (seriesId: number, paramDefIds: number[]) =>
     request.get<unknown, EvolutionResult>(`/public/series/${seriesId}/evolution`, {
       params: { paramDefIds: paramDefIds.join(',') },
