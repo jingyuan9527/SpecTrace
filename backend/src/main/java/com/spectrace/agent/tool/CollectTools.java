@@ -2,6 +2,7 @@ package com.spectrace.agent.tool;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.spectrace.agent.CrawlSession;
 import com.spectrace.agent.TaskLogContext;
 import com.spectrace.agent.config.AgentProperties;
 import com.spectrace.service.AgentTaskLogService;
@@ -41,6 +42,12 @@ public class CollectTools {
                     + "(KHTML, like Gecko) Chrome/124.0 Safari/537.36";
     private static final int MAX_CHARS = 8000;
 
+    /**
+     * 预算安全储备：剩余时间低于该值时工具拒绝执行，逼模型立即交卷。
+     * 取值需覆盖一次慢模型往返（约 10~15s）加余量，否则模型收到「交卷」指令后还没输出完就被外层超时杀掉。
+     */
+    private static final long BUDGET_RESERVE_MS = 25_000;
+
     private final AgentProperties props;
     private final ObjectMapper objectMapper;
     private final RestClient.Builder restClientBuilder;
@@ -59,6 +66,16 @@ public class CollectTools {
     public String webSearch(
             @ToolParam(name = "query", description = "搜索关键词，例如 \"iPhone 17 参数 规格 官网\"")
             String query) {
+        String guard = budgetGuard();
+        if (guard != null) {
+            return guard;
+        }
+        String cacheKey = "q:" + query.trim().toLowerCase();
+        String cached = CrawlSession.cached(cacheKey);
+        if (cached != null) {
+            taskLog("INFO", "搜索缓存命中（相同关键词，请勿重复搜索）：" + query);
+            return cached;
+        }
         sleepCrawlInterval();
         long start = System.currentTimeMillis();
         String json;
@@ -73,6 +90,7 @@ public class CollectTools {
         }
         taskLog("INFO", "搜索「" + query + "」返回 " + resultCount(json) + " 条结果（"
                 + (System.currentTimeMillis() - start) + " ms）");
+        CrawlSession.cache(cacheKey, json);
         return json;
     }
 
@@ -89,6 +107,21 @@ public class CollectTools {
     public String fetchPage(
             @ToolParam(name = "url", description = "目标网页地址")
             String url) {
+        String guard = budgetGuard();
+        if (guard != null) {
+            return guard;
+        }
+        String host = hostOf(url);
+        if (CrawlSession.domainFailed(host)) {
+            taskLog("WARN", "域名熔断跳过抓取（此前已 401/403）：" + url);
+            return "站点 " + host + " 此前已拒绝自动抓取（401/403），请更换其他来源，不要重试本站。";
+        }
+        String cacheKey = "u:" + url;
+        String cached = CrawlSession.cached(cacheKey);
+        if (cached != null) {
+            taskLog("INFO", "页面缓存命中（该 URL 已抓取过）：" + url);
+            return cached;
+        }
         sleepCrawlInterval();
         long start = System.currentTimeMillis();
         try {
@@ -96,6 +129,10 @@ public class CollectTools {
                     .userAgent(UA)
                     .timeout(30000)
                     .followRedirects(true)
+                    // 反爬判定常查 Referer / Accept 系请求头，只带 UA 不够
+                    .referrer("https://" + host + "/")
+                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                    .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
                     .get();
             doc.select("script, style, noscript, svg, head").remove();
             Element body = doc.body();
@@ -106,11 +143,46 @@ public class CollectTools {
             String content = text.length() > MAX_CHARS ? text.substring(0, MAX_CHARS) : text;
             taskLog("INFO", "抓取网页成功：" + url + "（正文 " + content.length() + " 字，"
                     + (System.currentTimeMillis() - start) + " ms）");
+            CrawlSession.cache(cacheKey, content);
             return content;
+        } catch (org.jsoup.HttpStatusException e) {
+            log.warn("抓取网页失败 {}: HTTP {}", url, e.getStatusCode());
+            if (e.getStatusCode() == 401 || e.getStatusCode() == 403) {
+                // 定性拒绝：重试无意义，本任务内熔断整个域名，省下后续尝试与风控间隔
+                CrawlSession.markDomainFailed(host);
+                taskLog("WARN", "抓取网页失败：" + url + "（HTTP " + e.getStatusCode()
+                        + "，站点拒绝自动抓取，已熔断该域名）");
+                return "抓取失败：HTTP " + e.getStatusCode() + "，该站点拒绝自动抓取，请更换其他来源，不要重试本站。";
+            }
+            taskLog("WARN", "抓取网页失败：" + url + "，HTTP " + e.getStatusCode());
+            return "抓取失败: HTTP " + e.getStatusCode();
         } catch (Exception e) {
             log.warn("抓取网页失败 {}: {}", url, e.getMessage());
             taskLog("WARN", "抓取网页失败：" + url + "，" + e.getMessage());
             return "抓取失败: " + e.getMessage();
+        }
+    }
+
+    /**
+     * 预算闸门：剩余时间不足时拒绝执行工具，返回给模型明确的交卷指令。
+     * 模型想继续干活必须调用工具，工具拒绝就是最强的「交卷铃」。
+     */
+    private String budgetGuard() {
+        long remainMs = props.getTaskTimeoutSeconds() * 1000L - CrawlSession.elapsedMs();
+        if (remainMs >= BUDGET_RESERVE_MS) {
+            return null;
+        }
+        long remainSec = Math.max(0, remainMs / 1000);
+        taskLog("WARN", "剩余时间不足（" + remainSec + "s），工具停止执行，等待模型输出最终结果");
+        return "剩余时间不足（约 " + remainSec + " 秒），请立即停止搜索与抓取，"
+                + "基于已获取的信息输出最终 JSON；查不到的信息置 null，不要编造。";
+    }
+
+    private String hostOf(String url) {
+        try {
+            return java.net.URI.create(url).getHost();
+        } catch (Exception e) {
+            return null;
         }
     }
 

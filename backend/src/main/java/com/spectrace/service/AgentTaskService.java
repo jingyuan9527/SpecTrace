@@ -468,6 +468,10 @@ public class AgentTaskService {
             if (StringUtils.hasText(dropped)) {
                 taskLogService.warn(taskId, "以下参数不在参数定义中，已丢弃：" + dropped);
             }
+            String failedSources = joinTextArray(node.path("failedSources"));
+            if (StringUtils.hasText(failedSources)) {
+                taskLogService.warn(taskId, "以下来源域名拒绝抓取（401/403），结果未采用这些站点：" + failedSources);
+            }
         } catch (Exception e) {
             taskLogService.info(taskId, "采集摘要：" + logs);
         }

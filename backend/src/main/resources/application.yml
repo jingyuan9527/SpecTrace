@@ -111,9 +111,10 @@ spectrace:
     # 搜索：留空使用 DuckDuckGo 免 key 抓取，填入则使用 Serper
     serper-api-key: ${SERPER_API_KEY:}
     search-result-limit: ${SEARCH_RESULT_LIMIT:5}
-    # 抓取风控：每次请求间隔（秒）与单任务最长耗时
+    # 抓取风控：每次请求间隔（秒）；单任务最长耗时与单次模型请求超时
     crawl-interval-seconds: ${CRAWL_INTERVAL_SECONDS:2}
-    task-timeout-seconds: ${TASK_TIMEOUT_SECONDS:180}
+    task-timeout-seconds: ${TASK_TIMEOUT_SECONDS:300}
+    model-timeout-seconds: ${MODEL_TIMEOUT_SECONDS:90}
     # 连续失败告警：达到次数写 ERROR 日志（关键字 AGENT_CONSECUTIVE_FAILURE），webhook 可选
     alert-threshold: ${AGENT_ALERT_THRESHOLD:3}
     alert-webhook: ${AGENT_ALERT_WEBHOOK:}

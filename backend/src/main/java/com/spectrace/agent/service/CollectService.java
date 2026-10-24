@@ -2,6 +2,7 @@ package com.spectrace.agent.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.spectrace.agent.CrawlSession;
 import com.spectrace.agent.TaskLogContext;
 import com.spectrace.agent.config.AgentProperties;
 import com.spectrace.agent.tool.CollectTools;
@@ -18,6 +19,8 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.transport.HttpTransportConfig;
+import io.agentscope.core.model.transport.OkHttpTransport;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
@@ -84,6 +87,7 @@ public class CollectService {
     public AgentCallbackRequest collect(AgentTaskPayload payload, List<ParamDef> schemaDefs,
                                         ResolvedModel aiConfig) {
         TaskLogContext.bind(payload.getTaskId());
+        CrawlSession.begin();
         try {
             if (TaskType.parse(payload.getTaskType()) == TaskType.SERIES_DISCOVERY) {
                 taskLogService.info(payload.getTaskId(), String.format("开始系列发现：%s %s，AI 模型 %s/%s",
@@ -99,6 +103,7 @@ public class CollectService {
                     schemaDefs == null ? 0 : schemaDefs.size()));
             return doCollect(payload, schemaDefs, aiConfig);
         } finally {
+            CrawlSession.end();
             TaskLogContext.clear();
         }
     }
@@ -180,6 +185,7 @@ public class CollectService {
             summary.put("queries", List.of(query));
             summary.put("confidence", nullableText(data, "confidence"));
             summary.put("notes", nullableText(data, "notes"));
+            appendFailedSources(summary);
             result.setLogs(objectMapper.writeValueAsString(summary));
             taskLogService.info(payload.getTaskId(), "发现完成：共 " + models.size() + " 个机型");
             return result;
@@ -285,6 +291,7 @@ public class CollectService {
             summary.put("confidence", nullableText(data, "confidence"));
             summary.put("notes", nullableText(data, "notes"));
             summary.put("droppedUnknownKeys", dropped);
+            appendFailedSources(summary);
             result.setLogs(objectMapper.writeValueAsString(summary));
             taskLogService.info(payload.getTaskId(),
                     "抽取完成：识别参数 " + params.size() + " 项，丢弃未知参数 " + dropped.size() + " 项");
@@ -303,6 +310,14 @@ public class CollectService {
             result.setStatus("FAILED");
             result.setError(error);
             return result;
+        }
+    }
+
+    /** 采集期间被熔断的域名写入摘要，审核端能看到「结果未采用这些站点」。 */
+    private static void appendFailedSources(Map<String, Object> summary) {
+        List<String> failed = CrawlSession.failedDomains();
+        if (!failed.isEmpty()) {
+            summary.put("failedSources", failed);
         }
     }
 
@@ -344,12 +359,19 @@ public class CollectService {
                 ? null
                 : GenerateOptions.builder().temperature(temperature).build();
 
+        // 单次模型请求超时：模型 API 挂死时快速失败，而不是拖到外层任务超时才整体失败
+        HttpTransportConfig transport = HttpTransportConfig.builder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .responseTimeout(Duration.ofSeconds(props.getModelTimeoutSeconds()))
+                .build();
+
         if ("dashscope".equals(provider) && !looksOpenAiCompatible(baseUrl)) {
             var builder = DashScopeChatModel.builder()
                     .apiKey(apiKey)
                     .modelName(modelName)
                     .stream(false)
-                    .formatter(new DashScopeChatFormatter());
+                    .formatter(new DashScopeChatFormatter())
+                    .httpTransport(new OkHttpTransport(transport));
             if (notBlank(baseUrl)) {
                 builder.baseUrl(baseUrl);
             }
@@ -363,7 +385,8 @@ public class CollectService {
                 .apiKey(apiKey)
                 .modelName(modelName)
                 .stream(false)
-                .formatter(new OpenAIChatFormatter());
+                .formatter(new OpenAIChatFormatter())
+                .httpTransport(new OkHttpTransport(transport));
         if (notBlank(baseUrl)) {
             builder.baseUrl(baseUrl);
         }

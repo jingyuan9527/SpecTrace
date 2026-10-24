@@ -37,8 +37,15 @@ public class AgentProperties {
     /** 每次外网请求间隔（秒），用于抓取风控 */
     private int crawlIntervalSeconds = 2;
 
-    /** 单任务最长耗时（秒） */
-    private int taskTimeoutSeconds = 180;
+    /**
+     * 单任务最长耗时（秒）。
+     * 默认 300：慢模型一轮往返可达 10s+，46 项参数抽取约 15 轮，180s 偏紧；
+     * 工具层有剩余预算闸门兜底，调大不会造成超时颗粒无收。
+     */
+    private int taskTimeoutSeconds = 300;
+
+    /** 单次模型请求超时（秒）：模型 API 挂死时快速失败，避免拖到任务整体超时 */
+    private int modelTimeoutSeconds = 90;
 
     /** 连续失败达到该次数时告警，0 表示关闭 */
     private int alertThreshold = 3;
