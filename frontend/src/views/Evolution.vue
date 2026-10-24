@@ -2,12 +2,13 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { motion } from 'motion-v'
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Camera, Smartphone, TrendingUp } from '@lucide/vue'
+import { ArrowDownRight, ArrowRight, ArrowUpRight, Camera, Share2, Smartphone, TrendingUp } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
 import { useECharts } from '@/composables/useECharts'
 import { useInsight } from '@/composables/useInsight'
 import InsightCard from '@/components/InsightCard.vue'
+import SocialExportDialog from '@/components/SocialExportDialog.vue'
 import { cssVar } from '@/lib/utils'
 import type { Brand, EvolutionParam, EvolutionPoint, EvolutionResult, InsightResult, ParamDef, SeriesItem } from '@/types/api'
 import { useThemeStore } from '@/stores/theme'
@@ -58,6 +59,7 @@ const data = ref<EvolutionResult | null>(null)
 const isAdmin = computed(() => !!localStorage.getItem('spectrace-token'))
 const loading = ref(false)
 const capturing = ref(false)
+const socialOpen = ref(false)
 const fromIndex = ref(0)
 const toIndex = ref(0)
 /** 首屏数据装载完成前不回写 URL，避免把默认值当成用户选择 */
@@ -389,10 +391,16 @@ watch([seriesId, defKey], syncQuery)
         <h1 class="text-xl font-semibold tracking-tight sm:text-2xl">世代回顾</h1>
         <p class="text-sm text-muted-foreground">按产品线回看每一代的参数走势，快速定位升级与倒退</p>
       </div>
-      <Button variant="outline" :disabled="!data?.devices.length || capturing" @click="exportImage">
-        <Camera />
-        截图导出
-      </Button>
+      <div class="flex flex-wrap gap-2">
+        <Button variant="outline" :disabled="!data?.devices.length" @click="socialOpen = true">
+          <Share2 />
+          社媒导出
+        </Button>
+        <Button variant="outline" :disabled="!data?.devices.length || capturing" @click="exportImage">
+          <Camera />
+          截图导出
+        </Button>
+      </div>
     </div>
 
     <Card>
@@ -557,5 +565,12 @@ watch([seriesId, defKey], syncQuery)
         </div>
       </div>
     </motion.div>
+
+    <SocialExportDialog
+      v-model:open="socialOpen"
+      :data="data"
+      :devices="visibleDevices"
+      :params="visibleParams"
+    />
   </div>
 </template>

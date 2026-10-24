@@ -240,6 +240,17 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         params,
       })
     }
+    if (/^\/public\/series\/\d+\/social-copy$/.test(path)) {
+      return ok({
+        available: true,
+        cached: false,
+        style: 'xiaohongshu',
+        title: 'iPhone 数字系列 2 代进化',
+        summary: '屏幕由 6.1 增至 6.3 英寸，电池容量提升 39mAh。',
+        points: ['屏幕尺寸 +3.3%'],
+        tags: ['#iPhone', '#数码'],
+      })
+    }
     if (/^\/public\/series\/\d+\/insight$/.test(path)) {
       // GET 只读缓存：未生成过时只有 available，前端据此决定是否展示入口
       if (method === 'GET') return ok({ available: true })

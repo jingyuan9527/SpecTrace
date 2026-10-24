@@ -411,6 +411,19 @@ export interface InsightResult {
   generatedAt?: string | null
 }
 
+/** 社媒文案：按平台风格生成，可直接发布 */
+export interface SocialCopyResult {
+  available: boolean
+  failed?: boolean
+  cached?: boolean
+  style?: string
+  title?: string | null
+  summary?: string | null
+  points?: string[]
+  tags?: string[]
+  generatedAt?: string | null
+}
+
 export interface UnassignedDevice {
   id: number
   name: string

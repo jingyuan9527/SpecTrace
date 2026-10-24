@@ -49,7 +49,16 @@ public class AiInsightSupport {
     public record Parsed(String summary, List<String> points) {
     }
 
-    public record Entry(String summary, List<String> points, LocalDateTime generatedAt) {
+    /** 社媒文案解析结果：title/tags 为风格化扩展，纯文本兜底时为 null/空 */
+    public record ParsedCopy(String title, String summary, List<String> points, List<String> tags) {
+    }
+
+    public record Entry(String summary, List<String> points, LocalDateTime generatedAt, String title, List<String> tags) {
+
+        /** 站内摘要类结果不携带标题与话题标签 */
+        public Entry(String summary, List<String> points, LocalDateTime generatedAt) {
+            this(summary, points, generatedAt, null, null);
+        }
     }
 
     /** 命中未过期缓存返回条目，未命中或已过期返回 null。 */
@@ -128,6 +137,51 @@ public class AiInsightSupport {
             }
         }
         return new Parsed(truncate(text, SUMMARY_LIMIT), List.of());
+    }
+
+    /**
+     * 社媒文案解析：约定输出 {"title","summary","points","tags"}，解析失败退化为纯文本正文。
+     * tags 只保留以 # 开头的话题项，模型输出裸词时自动补 #。
+     */
+    public ParsedCopy parseCopy(String content) {
+        String text = content == null ? "" : content.trim();
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            try {
+                JsonNode node = objectMapper.readTree(text.substring(start, end + 1));
+                String title = truncate(node.path("title").asText(""), 60);
+                String summary = truncate(node.path("summary").asText(""), 600);
+                List<String> points = stringsFrom(node.path("points"), 3, POINT_LIMIT);
+                List<String> tags = stringsFrom(node.path("tags"), 5, 20);
+                if (StringUtils.hasText(summary)) {
+                    return new ParsedCopy(
+                            StringUtils.hasText(title) ? title : null,
+                            summary, points,
+                            tags.stream().map(tag -> tag.startsWith("#") ? tag : "#" + tag).toList());
+                }
+            } catch (Exception e) {
+                log.warn("AI 社媒文案不是合法 JSON，按纯文本兜底: {}", truncate(text, 100));
+            }
+        }
+        return new ParsedCopy(null, truncate(text, 600), List.of(), List.of());
+    }
+
+    private List<String> stringsFrom(JsonNode array, int max, int limit) {
+        List<String> result = new ArrayList<>();
+        if (array == null || !array.isArray()) {
+            return result;
+        }
+        for (JsonNode item : array) {
+            String value = truncate(item.asText(""), limit);
+            if (StringUtils.hasText(value)) {
+                result.add(value);
+            }
+            if (result.size() >= max) {
+                break;
+            }
+        }
+        return result;
     }
 
     private boolean expired(Entry entry) {

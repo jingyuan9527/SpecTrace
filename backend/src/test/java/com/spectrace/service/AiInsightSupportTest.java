@@ -76,4 +76,38 @@ class AiInsightSupportTest {
                 .hasMessageContaining("过于频繁");
         support.checkRate("5.6.7.8");
     }
+
+    @Test
+    @DisplayName("社媒文案：合法 JSON 解析出标题/正文/要点/话题")
+    void parsesSocialCopyJson() {
+        AiInsightSupport.ParsedCopy parsed = support.parseCopy("""
+                {"title": "小米 6 代电池翻倍", "summary": "从 4610mAh 到 8000mAh。",
+                 "points": ["电池 +73%"], "tags": ["#小米", "数码", "#手机"]}
+                """);
+        assertThat(parsed.title()).isEqualTo("小米 6 代电池翻倍");
+        assertThat(parsed.summary()).contains("8000mAh");
+        assertThat(parsed.points()).containsExactly("电池 +73%");
+        // 裸词自动补 #
+        assertThat(parsed.tags()).containsExactly("#小米", "#数码", "#手机");
+    }
+
+    @Test
+    @DisplayName("社媒文案：纯文本兜底为正文，标题与话题为空")
+    void fallsBackSocialCopyToPlainText() {
+        AiInsightSupport.ParsedCopy parsed = support.parseCopy("  这条产品线整体在进步。  ");
+        assertThat(parsed.title()).isNull();
+        assertThat(parsed.summary()).isEqualTo("这条产品线整体在进步。");
+        assertThat(parsed.points()).isEmpty();
+        assertThat(parsed.tags()).isEmpty();
+        assertThat(support.parseCopy(null).summary()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("社媒文案：标题超长被裁剪，要点上限 3 条")
+    void truncatesSocialCopy() {
+        AiInsightSupport.ParsedCopy parsed = support.parseCopy(
+                "{\"title\":\"" + "长".repeat(80) + "\",\"summary\":\"ok\",\"points\":[\"a\",\"b\",\"c\",\"d\"],\"tags\":[]}");
+        assertThat(parsed.title()).hasSize(60);
+        assertThat(parsed.points()).hasSize(3);
+    }
 }

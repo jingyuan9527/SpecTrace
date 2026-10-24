@@ -108,6 +108,30 @@ test('访客：世代回顾参数、区间与空状态', async ({ page }) => {
   await expect(page.getByText(/所选参数暂无可绘制的数值/)).toBeVisible()
 })
 
+
+/** 社媒导出：模板卡图片 Tab 与平台风格文案生成。 */
+test('访客：社媒导出弹窗与文案生成', async ({ page }) => {
+  await mockApi(page)
+
+  await page.goto('/evolution')
+  await expect(page.getByText('Apple · iPhone 数字系列').first()).toBeVisible()
+  await page.getByRole('button', { name: '社媒导出' }).click()
+
+  const dialog = page.getByRole('dialog', { name: '社媒导出' })
+  await expect(dialog).toBeVisible()
+  // 图片 Tab：默认标题 + 模板卡 + 下载按钮
+  await expect(dialog.getByText('iPhone 数字系列 历代参数进化')).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '下载图片' })).toBeEnabled()
+
+  // 文案 Tab：生成后渲染标题/正文/话题
+  await dialog.getByRole('tab', { name: '文案' }).click()
+  await dialog.getByRole('button', { name: '生成文案' }).click()
+  await expect(dialog.getByText('iPhone 数字系列 2 代进化')).toBeVisible()
+  await expect(dialog.getByText(/电池容量提升 39mAh/)).toBeVisible()
+  await expect(dialog.getByText('#iPhone')).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '复制全文' })).toBeVisible()
+})
+
 /** 世代回顾移动端：图表卡片纵向单列。 */
 test('访客：世代回顾移动端单列', async ({ page }) => {
   await mockApi(page)

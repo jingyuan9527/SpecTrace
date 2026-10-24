@@ -26,6 +26,7 @@ import type {
   FeedbackSubmitRequest,
   HistoryResult,
   InsightResult,
+  SocialCopyResult,
   LoginRequest,
   LoginResponse,
   OperationLog,
@@ -90,6 +91,10 @@ export const publicApi = {
     }),
   generateSeriesInsight: (seriesId: number, deviceIds: number[], paramDefIds: number[]) =>
     request.post<unknown, InsightResult>(`/public/series/${seriesId}/insight`, { deviceIds, paramDefIds }),
+  generateSocialCopy: (
+    seriesId: number,
+    body: { deviceIds?: number[]; paramDefIds?: number[]; style?: string },
+  ) => request.post<unknown, SocialCopyResult>(`/public/series/${seriesId}/social-copy`, body),
   submitFeedback: (data: FeedbackSubmitRequest) => request.post<unknown, number>('/public/feedback', data),
 }
 

@@ -12,7 +12,9 @@ import com.spectrace.dto.HistorySeriesVO;
 import com.spectrace.dto.SeriesInsightRequest;
 import com.spectrace.dto.SeriesInsightVO;
 import com.spectrace.dto.SeriesOverviewResult;
+import com.spectrace.dto.SeriesSocialCopyRequest;
 import com.spectrace.dto.SeriesVO;
+import com.spectrace.dto.SocialCopyVO;
 import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
 import com.spectrace.entity.ParamDef;
@@ -165,6 +167,26 @@ public class PublicController {
     public R<EvolutionVO> evolution(@PathVariable Long id,
                                     @RequestParam(required = false) String paramDefIds) {
         return R.ok(evolutionService.evolution(id, parseIds(paramDefIds)));
+    }
+
+    @Operation(summary = "社媒文案（只读缓存）")
+    @GetMapping("/series/{id}/social-copy")
+    public R<SocialCopyVO> socialCopy(@PathVariable Long id,
+                                      @RequestParam(defaultValue = "xiaohongshu") String style,
+                                      @RequestParam(required = false) String deviceIds,
+                                      @RequestParam(required = false) String paramDefIds,
+                                      HttpServletRequest request) {
+        return R.ok(seriesInsightService.socialCopy(id, parseIds(deviceIds), parseIds(paramDefIds),
+                style, clientKey(request), false));
+    }
+
+    @Operation(summary = "生成社媒文案（按平台风格，调用模型）")
+    @PostMapping("/series/{id}/social-copy")
+    public R<SocialCopyVO> generateSocialCopy(@PathVariable Long id,
+                                              @RequestBody SeriesSocialCopyRequest req,
+                                              HttpServletRequest request) {
+        return R.ok(seriesInsightService.socialCopy(id, req.getDeviceIds(), req.getParamDefIds(),
+                req.getStyle(), clientKey(request), true));
     }
 
     @Operation(summary = "世代回顾文案（只读缓存，用于判定入口是否展示）")

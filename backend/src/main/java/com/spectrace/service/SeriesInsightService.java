@@ -5,6 +5,7 @@ import com.spectrace.dto.EvolutionParamVO;
 import com.spectrace.dto.EvolutionPointVO;
 import com.spectrace.dto.EvolutionVO;
 import com.spectrace.dto.SeriesInsightVO;
+import com.spectrace.dto.SocialCopyVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -187,6 +188,104 @@ public class SeriesInsightService {
         vo.setCached(fromCache);
         vo.setSummary(entry.summary());
         vo.setPoints(entry.points());
+        vo.setGeneratedAt(entry.generatedAt());
+        return vo;
+    }
+
+    /** 支持的社媒风格：key 同时用于缓存隔离，新增风格需同步前端选项 */
+    private static final Set<String> COPY_STYLES = Set.of("xiaohongshu", "wechat");
+
+    private static final String XHS_PROMPT = """
+            你是数码自媒体作者，正在为小红书写一篇产品线历代对比的种草帖。
+            只依据用户给出的机型序列与参数取值，不得引入未提供的规格或外部知识。
+            输出严格 JSON：{"title": "标题", "summary": "正文", "points": ["要点"], "tags": ["#话题"]}
+            要求：title 不超过 20 字，带具体数字或对比钩子，不用夸张医美词汇；
+            summary 150-250 字，口语化短句，可用少量 emoji，逐条点出最有传播力的数据变化；
+            points 1-3 条，每条不超过 40 字且必须由给出的数值支撑；
+            tags 3-5 个以 # 开头的话题标签。
+            """;
+
+    private static final String WECHAT_PROMPT = """
+            你是数码栏目编辑，正在为公众号写一段产品线历代对比的点评。
+            只依据用户给出的机型序列与参数取值，不得引入未提供的规格或外部知识。
+            输出严格 JSON：{"title": "标题", "summary": "正文", "points": ["要点"], "tags": []}
+            要求：title 不超过 30 字，克制、信息量优先；
+            summary 180-300 字，段落式行文，先总述再分点，判断必须由给出的数值支撑；
+            points 2-3 条，每条不超过 50 字；tags 输出空数组。
+            """;
+
+    /**
+     * 社媒文案：与站内回顾同源数据，但按平台风格输出可直接发布的标题/正文/话题。
+     * 缓存 key 以 copy:style 前缀隔离——同一区间的小红书稿与公众号稿互不覆盖。
+     */
+    public SocialCopyVO socialCopy(Long seriesId,
+                                   List<Long> deviceIds,
+                                   List<Long> paramDefIds,
+                                   String style,
+                                   String clientKey,
+                                   boolean generate) {
+        SocialCopyVO vo = new SocialCopyVO();
+        String normalized = style == null ? "" : style.trim();
+        if (!COPY_STYLES.contains(normalized)) {
+            normalized = "xiaohongshu";
+        }
+        vo.setStyle(normalized);
+        vo.setAvailable(enabled && aiChatService.available());
+        if (!vo.isAvailable()) {
+            return vo;
+        }
+        if (generate) {
+            // 与回顾/对比摘要共用同一份每分钟限额：对用户是同一种「AI 生成」动作
+            insightSupport.checkRate(clientKey);
+        }
+
+        EvolutionVO evolution = evolutionService.evolution(seriesId, paramDefIds);
+        List<String> lines = trendLines(evolution, deviceIds);
+        String key = "copy:" + normalized + "|" + cacheKey(seriesId, evolution, deviceIds, paramDefIds, lines);
+
+        AiInsightSupport.Entry hit = insightSupport.cached(key);
+        if (hit != null && hit.title() != null) {
+            log.debug("社媒文案命中缓存: seriesId={} style={}", seriesId, normalized);
+            return toCopyVO(normalized, hit, true);
+        }
+
+        if (!generate) {
+            return vo;
+        }
+        if (lines.isEmpty()) {
+            AiInsightSupport.Entry entry = new AiInsightSupport.Entry(
+                    "当前区间内没有可比较的数值参数，勾选屏幕尺寸、电池容量等数值型参数后可生成文案。",
+                    List.of(), LocalDateTime.now());
+            insightSupport.store(key, entry);
+            return toCopyVO(normalized, entry, false);
+        }
+
+        try {
+            String content = aiChatService.complete(
+                    "xiaohongshu".equals(normalized) ? XHS_PROMPT : WECHAT_PROMPT,
+                    buildPrompt(evolution, lines), 600);
+            AiInsightSupport.ParsedCopy parsed = insightSupport.parseCopy(content);
+            AiInsightSupport.Entry entry = new AiInsightSupport.Entry(
+                    parsed.summary(), parsed.points(), LocalDateTime.now(), parsed.title(), parsed.tags());
+            insightSupport.store(key, entry);
+            log.info("生成社媒文案成功: seriesId={} style={} 参数行={}", seriesId, normalized, lines.size());
+            return toCopyVO(normalized, entry, false);
+        } catch (Exception e) {
+            log.error("生成社媒文案失败: seriesId={} style={}", seriesId, normalized, e);
+            vo.setFailed(true);
+            return vo;
+        }
+    }
+
+    private SocialCopyVO toCopyVO(String style, AiInsightSupport.Entry entry, boolean fromCache) {
+        SocialCopyVO vo = new SocialCopyVO();
+        vo.setAvailable(true);
+        vo.setCached(fromCache);
+        vo.setStyle(style);
+        vo.setTitle(entry.title());
+        vo.setSummary(entry.summary());
+        vo.setPoints(entry.points());
+        vo.setTags(entry.tags() == null ? List.of() : entry.tags());
         vo.setGeneratedAt(entry.generatedAt());
         return vo;
     }
