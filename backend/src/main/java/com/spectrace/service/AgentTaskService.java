@@ -701,6 +701,8 @@ public class AgentTaskService {
             if (save.getReleaseDate() == null) {
                 save.setReleaseDate(existing.getReleaseDate());
             }
+            // 审核表单不含系列字段：覆盖更新必须带上原归属，否则 save 的「取消归类需显式置空」逻辑会误清系列
+            save.setSeriesId(existing.getSeriesId());
         }
 
         // 版本数据：优先管理员确认后的，否则回落到采集结果里的 _variants
