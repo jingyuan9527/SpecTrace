@@ -89,6 +89,8 @@ public class AgentTaskService {
         }
 
         logService.record(adminId, adminName, "CREATE_AGENT_TASK", "agent_task", task.getId(), task.getModelName());
+        log.info("提交抓取任务: taskId={} type={} brand={} model={} admin={}",
+                task.getId(), task.getTaskType(), task.getBrandName(), task.getModelName(), adminName);
         return task;
     }
 
@@ -208,6 +210,8 @@ public class AgentTaskService {
         appendSummaryLogs(task.getId(), req.getLogs());
         AgentPendingData pending = savePending(task, req, params);
         taskLogService.info(task.getId(), "结果已写入待审核 #" + pending.getId());
+        log.info("抓取结果写入待审核: taskId={} pendingId={} 机型 {}（{}），参数 {} 项",
+                task.getId(), pending.getId(), req.getModelName(), req.getBrandName(), params.size());
 
         task.setStatus(TaskStatus.PENDING_REVIEW.name());
         task.setSourceUrl(req.getSourceUrl());
@@ -238,6 +242,8 @@ public class AgentTaskService {
         task.setDurationMs(req.getDurationMs());
         task.setUpdatedAt(LocalDateTime.now());
         taskMapper.updateById(task);
+        log.info("系列发现结果落库: taskId={} 品牌 {} 系列 {}，机型 {} 个，耗时 {}ms",
+                task.getId(), result.get("brandName"), result.get("seriesName"), found, req.getDurationMs());
     }
 
     /** 系列发现任务详情：解析 result 里的机型清单，并标注库中已存在的同名机型。 */
@@ -339,6 +345,8 @@ public class AgentTaskService {
         vo.setCreated(deviceIds.size());
         vo.setSkippedExisting(skipped);
         vo.setDeviceIds(deviceIds);
+        log.info("系列发现建档案: taskId={} 品牌 {} 创建 {} 个草稿机型，跳过已存在 {} 个，admin={}",
+                taskId, brand.getName(), deviceIds.size(), skipped.size(), adminName);
         return vo;
     }
 
@@ -676,6 +684,8 @@ public class AgentTaskService {
         }
         logService.record(adminId, adminName, "APPROVE_PENDING", "agent_pending_data", pendingId,
                 "迁移为机型: " + device.getName() + " (id=" + device.getId() + ")");
+        log.info("审核通过: pendingId={} -> deviceId={} 机型 {}（{}）admin={}",
+                pendingId, device.getId(), device.getName(), pending.getBrandName(), adminName);
         return device.getId();
     }
 

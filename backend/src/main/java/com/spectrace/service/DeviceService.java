@@ -20,6 +20,7 @@ import com.spectrace.mapper.DeviceParamValueMapper;
 import com.spectrace.mapper.DeviceSeriesMapper;
 import com.spectrace.mapper.DeviceVariantMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,7 @@ import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DeviceService {
@@ -252,6 +254,10 @@ public class DeviceService {
 
         logService.record(adminId, adminName, isNew ? "CREATE_DEVICE" : "UPDATE_DEVICE",
                 "device", device.getId(), device.getName());
+        log.info("机型{}: deviceId={} 品牌 {} 机型 {}，参数 {} 项、版本 {} 个，admin={}",
+                isNew ? "新增" : "更新", device.getId(), device.getBrandId(), device.getName(),
+                req.getParams() == null ? 0 : req.getParams().size(),
+                req.getVariants() == null ? 0 : req.getVariants().size(), adminName);
         return device;
     }
 
@@ -441,6 +447,8 @@ public class DeviceService {
                 .in(Device::getId, ids)
                 .set(Device::getStatus, status)
                 .set(Device::getUpdatedAt, LocalDateTime.now()));
+        log.info("机型批量{}: 请求 {} 台，实际更新 {} 台，admin={}",
+                status == 1 ? "上架" : "下架", ids.size(), updated, adminName);
         logService.record(adminId, adminName, status == 1 ? "BATCH_ONLINE_DEVICE" : "BATCH_OFFLINE_DEVICE",
                 "device", null, (status == 1 ? "批量上架 " : "批量下架 ") + updated + " 台机型");
         return updated;
@@ -454,6 +462,7 @@ public class DeviceService {
         valueMapper.delete(Wrappers.<DeviceParamValue>lambdaQuery().eq(DeviceParamValue::getDeviceId, id));
         variantMapper.delete(Wrappers.<DeviceVariant>lambdaQuery().eq(DeviceVariant::getDeviceId, id));
         logService.record(adminId, adminName, "DELETE_DEVICE", "device", id, null);
+        log.info("机型删除: deviceId={} admin={}", id, adminName);
     }
 
     /**

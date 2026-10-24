@@ -62,6 +62,10 @@ public class AiConfigService {
             }
             configMapper.updateById(config);
         }
+        // Key 属敏感信息，只记配置元数据与是否更换，不落 Key 内容
+        log.info("AI 连接已保存: id={} name={} provider={} key{}",
+                config.getId(), config.getName(), config.getProvider(),
+                config.getApiKey() == null || config.getApiKey().isEmpty() ? "未变更" : "已更新");
         return config;
     }
 
@@ -69,6 +73,7 @@ public class AiConfigService {
     public void deleteConfig(Long id) {
         configMapper.deleteById(id);
         modelMapper.delete(Wrappers.<AiModel>lambdaQuery().eq(AiModel::getConfigId, id));
+        log.info("AI 连接已删除（连同其下模型）: id={}", id);
     }
 
     // ---------------- 模型 ----------------

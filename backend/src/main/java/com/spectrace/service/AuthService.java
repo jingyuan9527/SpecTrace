@@ -45,6 +45,7 @@ public class AuthService {
             throw new BizException(403, "账号已被禁用");
         }
         loginGuard.reset(username);
+        log.info("登录成功: userId={} username={} role={}", user.getId(), username, user.getRole());
         LoginResponse resp = new LoginResponse();
         resp.setToken(jwtUtil.generate(user.getId(), user.getUsername(), user.getRole()));
         resp.setUserId(user.getId());
@@ -87,5 +88,6 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(next));
         user.setMustChangePassword(0);
         adminUserMapper.updateById(user);
+        log.info("密码已修改: userId={} username={}", adminId, user.getUsername());
     }
 }

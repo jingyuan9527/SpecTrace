@@ -124,5 +124,6 @@ springdoc:
 
 logging:
   level:
-    com.spectrace: debug
+    # info 起步：mapper 的 SQL DEBUG 日志不再输出，需要排查 SQL 时临时调 debug
+    com.spectrace: info
     io.agentscope: warn
