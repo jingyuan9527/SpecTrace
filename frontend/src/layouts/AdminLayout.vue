@@ -33,14 +33,15 @@ const theme = useThemeStore()
 const mobileOpen = ref(false)
 const logoutOpen = ref(false)
 
+// 按使用频率排序：核心工作流（机型 → 抓取 → 审核 → 数据口径）在前，配置居中，管理/运维垫底
 const menus = [
+  { path: '/admin/devices', label: '机型管理', icon: Smartphone },
+  { path: '/admin/agent-tasks', label: '抓取任务', icon: Bot },
+  { path: '/admin/pending', label: '抓取审核', icon: ClipboardCheck },
+  { path: '/admin/ai-config', label: 'AI 配置', icon: Sparkles },
   { path: '/admin/brands', label: '品牌管理', icon: Tags },
   { path: '/admin/series', label: '系列管理', icon: Layers },
   { path: '/admin/params', label: '参数元数据', icon: SlidersHorizontal },
-  { path: '/admin/devices', label: '机型管理', icon: Smartphone },
-  { path: '/admin/agent-tasks', label: '抓取任务', icon: Bot },
-  { path: '/admin/ai-config', label: 'AI 配置', icon: Sparkles },
-  { path: '/admin/pending', label: '待审核数据', icon: ClipboardCheck },
   { path: '/admin/feedback', label: '纠错反馈', icon: Flag },
   { path: '/admin/users', label: '账号权限', icon: Users },
   { path: '/admin/logs', label: '操作日志', icon: ScrollText },

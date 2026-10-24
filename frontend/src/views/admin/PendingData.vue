@@ -60,11 +60,12 @@ const form = reactive<any>({
   variants: [] as { id?: number; storage: string; ram: string; price: string }[],
 })
 
+// 页面定位是「抓取审核历史」，默认展示全部状态（徽标跳转的场景由 keyword 精准定位）
 const statusOptions = [
+  { label: '全部状态', value: '' },
   { label: '待审核', value: 'PENDING_REVIEW' },
   { label: '已通过', value: 'APPROVED' },
   { label: '已丢弃', value: 'DISCARDED' },
-  { label: '全部状态', value: '' },
 ]
 
 const statusMeta: Record<string, { label: string; variant: 'info' | 'success' | 'secondary' }> = {
@@ -79,7 +80,7 @@ const initialKeyword = typeof route.query.keyword === 'string' ? route.query.key
 
 const { list, total, loading, query, load, search } = usePagedList({
   size: 10,
-  filters: () => ({ status: 'PENDING_REVIEW' as string | undefined, keyword: initialKeyword }),
+  filters: () => ({ status: '' as string | undefined, keyword: initialKeyword }),
   fetcher: (params) =>
     adminApi.pendingData({
       ...params,
