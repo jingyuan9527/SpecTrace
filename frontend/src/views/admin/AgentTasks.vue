@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { Bot, CheckCircle2, ExternalLink, Loader2, RefreshCw, RotateCcw, Send, Terminal } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
@@ -275,8 +276,13 @@ async function loadAiModels() {
   if (def && form.aiModelId === null) form.aiModelId = def.id
 }
 
+// 系列管理页「系列发现」直达：?mode=SERIES_DISCOVERY&brand=xx 预填新建卡片
+const route = useRoute()
+
 onMounted(async () => {
   await Promise.all([load(), loadAiModels(), loadBrands()])
+  if (route.query.mode === 'SERIES_DISCOVERY') mode.value = 'SERIES_DISCOVERY'
+  if (typeof route.query.brand === 'string' && route.query.brand) form.brandName = route.query.brand
   startPolling()
 })
 

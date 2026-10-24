@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
-import { Combine, GripVertical, Loader2, Pencil, Plus, Sparkles, Trash2 } from '@lucide/vue'
+import { CloudDownload, Combine, GripVertical, Loader2, Pencil, Plus, Radar, Sparkles, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
+import { useRouter } from 'vue-router'
 import { adminApi } from '@/api'
-import type { Brand, DeviceSeries, SeriesSuggestion, UnassignedDevice } from '@/types/api'
+import type { AiModel, Brand, DeviceSeries, SeriesMissingDevice, SeriesSuggestion, UnassignedDevice } from '@/types/api'
 import {
   Badge,
   Button,
   Card,
   CardContent,
   Checkbox,
+  Combobox,
   Dialog,
   Empty,
   Input,
@@ -33,7 +35,7 @@ import PageHeader from '@/components/PageHeader.vue'
 /** 编辑表单：新建时 id 为空；brandName/统计字段由列表接口附带 */
 type SeriesForm = Omit<DeviceSeries, "id" | "brandName" | "deviceCount" | "startYear" | "endYear"> & { id: number | null }
 
-
+const router = useRouter()
 
 const brands = ref<Brand[]>([])
 const list = ref<DeviceSeries[]>([])
@@ -279,6 +281,79 @@ function yearRange(row: DeviceSeries) {
   if (!row.startYear) return '—'
   return row.startYear === row.endYear ? `${row.startYear}` : `${row.startYear}-${row.endYear}`
 }
+
+/** 系列发现：跳转抓取任务页并预填模式与品牌，发现结果建草稿后再回来补抓 */
+function openDiscovery(row: DeviceSeries) {
+  const brandName = brands.value.find((b) => b.id === row.brandId)?.name
+  if (!brandName) {
+    toast.warning('未找到系列所属品牌，请到抓取任务页手动选择')
+    return
+  }
+  router.push({ name: 'admin-agent-tasks', query: { mode: 'SERIES_DISCOVERY', brand: brandName } })
+}
+
+// ---- 补抓缺参机型：系列内无参数值的机型逐台发起抓取（复用机型页的弹窗模式） ----
+const scrapeDialog = ref(false)
+const scrapeSeries = ref<DeviceSeries | null>(null)
+const scrapeTargets = ref<SeriesMissingDevice[]>([])
+const scrapeTargetsLoading = ref(false)
+const scrapeModelId = ref<number | null>(null)
+const scrapeSubmitting = ref(false)
+const aiModels = ref<AiModel[]>([])
+
+const scrapeModelOptions = computed(() =>
+  aiModels.value.map((m) => ({
+    label: `${m.configName} / ${m.model}${m.isDefault === 1 ? '（默认）' : ''}`,
+    value: m.id,
+  })),
+)
+
+/** 完善度未满 100% 才提供补抓入口 */
+function needsBackfill(row: DeviceSeries) {
+  return (row.deviceCount ?? 0) > (row.paramDeviceCount ?? 0)
+}
+
+async function openScrape(row: DeviceSeries) {
+  if (!row.id) return
+  scrapeSeries.value = row
+  scrapeTargets.value = []
+  scrapeDialog.value = true
+  scrapeTargetsLoading.value = true
+  try {
+    const [targets, models] = await Promise.all([
+      adminApi.seriesMissingDevices(row.id),
+      aiModels.value.length ? Promise.resolve(aiModels.value) : adminApi.aiModels(),
+    ])
+    scrapeTargets.value = targets
+    aiModels.value = models
+    const def = models.find((m) => m.isDefault === 1)
+    scrapeModelId.value = def?.id ?? null
+  } finally {
+    scrapeTargetsLoading.value = false
+  }
+}
+
+async function confirmScrape() {
+  const series = scrapeSeries.value
+  if (!series || !scrapeTargets.value.length || scrapeSubmitting.value) return
+  scrapeSubmitting.value = true
+  try {
+    const brandName = brands.value.find((b) => b.id === series.brandId)?.name ?? ''
+    // 逐台顺序提交，与机型页批量抓取一致，避免一次并发打满任务队列
+    for (const target of scrapeTargets.value) {
+      await adminApi.createAgentTask({
+        modelName: target.name,
+        brandName,
+        aiModelId: scrapeModelId.value ?? undefined,
+      })
+    }
+    toast.success(`已为「${series.name}」提交 ${scrapeTargets.value.length} 个抓取任务，结果将进入待审核`)
+    scrapeDialog.value = false
+    await load()
+  } finally {
+    scrapeSubmitting.value = false
+  }
+}
 </script>
 
 <template>
@@ -316,10 +391,10 @@ function yearRange(row: DeviceSeries) {
               <TableHead class="w-16">ID</TableHead>
               <TableHead>系列名称</TableHead>
               <TableHead class="w-24">品牌</TableHead>
-              <TableHead class="w-20">机型数</TableHead>
+              <TableHead class="w-28">完善度</TableHead>
               <TableHead class="w-28">年份范围</TableHead>
               <TableHead class="w-20">状态</TableHead>
-              <TableHead class="w-32 text-right">操作</TableHead>
+              <TableHead class="w-44 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <VueDraggable v-model="list" tag="tbody" handle=".drag-handle" class="[&_tr:last-child]:border-0" @end="saveOrder">
@@ -336,13 +411,43 @@ function yearRange(row: DeviceSeries) {
               <TableCell class="text-muted-foreground">{{ row.id }}</TableCell>
               <TableCell class="font-medium">{{ row.name }}</TableCell>
               <TableCell class="text-muted-foreground">{{ row.brandName || '—' }}</TableCell>
-              <TableCell class="text-muted-foreground">{{ row.deviceCount ?? 0 }}</TableCell>
+              <TableCell>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-muted-foreground">带参 {{ row.paramDeviceCount ?? 0 }}/{{ row.deviceCount ?? 0 }}</span>
+                  <Badge
+                    v-if="needsBackfill(row)"
+                    variant="warning"
+                    title="系列内仍有机型没有参数值，可一键补抓"
+                  >
+                    缺参
+                  </Badge>
+                </div>
+              </TableCell>
               <TableCell class="text-muted-foreground">{{ yearRange(row) }}</TableCell>
               <TableCell>
                 <Badge :variant="row.status === 1 ? 'success' : 'secondary'">{{ row.status === 1 ? '启用' : '停用' }}</Badge>
               </TableCell>
               <TableCell class="text-right">
                 <div class="flex justify-end gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="补抓缺参机型"
+                    title="对系列内没有参数值的机型发起抓取"
+                    :disabled="!needsBackfill(row)"
+                    @click="openScrape(row)"
+                  >
+                    <CloudDownload />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="系列发现"
+                    title="到抓取任务页发现该系列的更多机型"
+                    @click="openDiscovery(row)"
+                  >
+                    <Radar />
+                  </Button>
                   <Button variant="ghost" size="icon-sm" aria-label="编辑" title="编辑" @click="openEdit(row)">
                     <Pencil />
                   </Button>
@@ -526,6 +631,55 @@ function yearRange(row: DeviceSeries) {
         >
           <Loader2 v-if="suggestCreating" class="animate-spin" />
           {{ suggestCreating ? '创建中…' : `创建所选（${selectedSuggestions.length}）` }}
+        </Button>
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model:open="scrapeDialog"
+      title="补抓缺参机型"
+      :description="`对「${scrapeSeries?.name ?? ''}」内没有参数值的机型发起抓取，结果进入待审核`"
+      class="max-w-md"
+    >
+      <div class="space-y-4">
+        <div v-if="scrapeTargetsLoading" class="space-y-2">
+          <Skeleton v-for="i in 3" :key="i" class="h-8" />
+        </div>
+        <template v-else>
+          <div class="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
+            <div
+              v-for="target in scrapeTargets"
+              :key="target.id"
+              class="flex items-center justify-between gap-2 px-1 py-0.5 text-sm"
+            >
+              <span class="min-w-0 truncate font-medium" :title="target.name">{{ target.name }}</span>
+              <Badge :variant="target.status === 1 ? 'secondary' : 'outline'">
+                {{ target.status === 1 ? '已上架' : '草稿' }}
+              </Badge>
+            </div>
+            <p v-if="!scrapeTargets.length" class="px-1 py-2 text-sm text-muted-foreground">
+              系列内所有机型都已有参数值，无需补抓。
+            </p>
+          </div>
+          <div class="space-y-1.5">
+            <Label>AI 模型（可选）</Label>
+            <Combobox
+              v-model="scrapeModelId"
+              :options="scrapeModelOptions"
+              placeholder="默认模型"
+              search-placeholder="搜索供应商 / 模型…"
+            />
+            <p class="text-xs text-muted-foreground">
+              选项为「供应商连接 / 模型名」，不选择时使用后台设置的默认模型
+            </p>
+          </div>
+        </template>
+      </div>
+      <template #footer>
+        <Button variant="outline" :disabled="scrapeSubmitting" @click="scrapeDialog = false">取消</Button>
+        <Button :disabled="scrapeSubmitting || !scrapeTargets.length" @click="confirmScrape">
+          <Loader2 v-if="scrapeSubmitting" class="animate-spin" />
+          {{ scrapeSubmitting ? '提交中…' : `提交 ${scrapeTargets.length} 个任务` }}
         </Button>
       </template>
     </Dialog>
