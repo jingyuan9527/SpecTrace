@@ -1,5 +1,6 @@
 package com.spectrace.controller;
 
+import com.spectrace.common.ClientIps;
 import com.spectrace.common.PageResult;
 import com.spectrace.common.R;
 import com.spectrace.dto.CompareInsightRequest;
@@ -25,7 +26,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Arrays;
@@ -73,20 +73,21 @@ public class PublicController {
                                          @RequestParam(required = false) Long brandId,
                                          @RequestParam(required = false) Integer year,
                                          @RequestParam(required = false) String keyword) {
-        return R.ok(PageResult.of(deviceService.page(current, size, brandId, year, keyword)));
+        // size 收敛上限：无上限时公开端可一次拉全库
+        return R.ok(PageResult.of(deviceService.page(current, Math.min(size, MAX_PAGE_SIZE), brandId, year, keyword)));
     }
 
     @Operation(summary = "机型搜索联想")
     @GetMapping("/devices/suggest")
     public R<List<DeviceSuggestVO>> suggest(@RequestParam String keyword,
                                             @RequestParam(defaultValue = "8") int limit) {
-        return R.ok(deviceService.suggest(keyword, limit));
+        return R.ok(deviceService.suggest(keyword, Math.min(limit, 50)));
     }
 
     @Operation(summary = "热门机型")
     @GetMapping("/devices/hot")
     public R<List<Device>> hot(@RequestParam(defaultValue = "8") int limit) {
-        return R.ok(deviceService.hot(limit));
+        return R.ok(deviceService.hot(Math.min(limit, 50)));
     }
 
     @Operation(summary = "机型详情")
@@ -120,14 +121,12 @@ public class PublicController {
         return R.ok(compareInsightService.insight(req.getIds(), clientKey(request), true));
     }
 
+    /** 单次分页/列表返回的行数上限，防止公开端一次拉全库 */
+    private static final long MAX_PAGE_SIZE = 100;
+
     /** 取真实来源 IP 作为限流维度；反向代理下优先读 X-Forwarded-For 首个地址。 */
     private String clientKey(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (StringUtils.hasText(forwarded)) {
-            return forwarded.split(",")[0].trim();
-        }
-        String remote = request.getRemoteAddr();
-        return StringUtils.hasText(remote) ? remote : "unknown";
+        return ClientIps.resolve(request);
     }
 
     @Operation(summary = "参数历史演变（支持多品牌叠加）")

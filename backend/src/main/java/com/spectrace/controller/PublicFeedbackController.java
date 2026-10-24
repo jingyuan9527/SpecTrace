@@ -1,5 +1,6 @@
 package com.spectrace.controller;
 
+import com.spectrace.common.ClientIps;
 import com.spectrace.common.R;
 import com.spectrace.dto.FeedbackRequest;
 import com.spectrace.service.FeedbackService;
@@ -9,7 +10,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -35,11 +35,6 @@ public class PublicFeedbackController {
 
     /** 取真实来源 IP 作为限流维度；反向代理下优先读 X-Forwarded-For 首个地址。 */
     private String clientKey(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (StringUtils.hasText(forwarded)) {
-            return forwarded.split(",")[0].trim();
-        }
-        String remote = request.getRemoteAddr();
-        return StringUtils.hasText(remote) ? remote : "unknown";
+        return ClientIps.resolve(request);
     }
 }

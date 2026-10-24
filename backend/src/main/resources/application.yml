@@ -29,7 +29,6 @@ spring:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     banner: false
     db-config:
@@ -57,8 +56,15 @@ management:
 
 spectrace:
   jwt:
-    secret: "spectrace-dev-secret-key-please-change-in-production-0123456789"
-    expire-seconds: 86400
+    # 必须通过环境变量提供（见 .env.example）；缺省为空，JwtUtil 启动时校验并拒绝启动
+    secret: ${SPECTRACE_JWT_SECRET:}
+    expire-seconds: ${SPECTRACE_JWT_EXPIRE_SECONDS:86400}
+  # 跨域白名单（逗号分隔，如 https://a.com,https://b.com）；未配置保持任意来源，公网部署务必收敛
+  cors:
+    origins: ${SPECTRACE_CORS_ORIGINS:}
+  # 公开接口基础限流：单 IP 每分钟请求数上限（feedback / insight 有各自更严格的限流，叠加生效）
+  public:
+    rate-limit-qpm: ${SPECTRACE_PUBLIC_QPM:120}
   # 站点对外域名（含协议，如 https://spectrace.example.com），用于 sitemap / robots；
   # 反向代理部署时务必配置，否则会回退到请求域名（可能拿到内网地址）
   public-base-url: ${SPECTRACE_PUBLIC_BASE_URL:}
@@ -77,6 +83,13 @@ spectrace:
   upload-dir: ${SPECTRACE_UPLOAD_DIR:uploads}
   upload:
     max-bytes: ${SPECTRACE_UPLOAD_MAX_BYTES:8388608}
+  # 增长数据保留策略：终态任务/已处理待审核/操作日志 定时清理，防止 SQLite 无界膨胀
+  retention:
+    enabled: ${SPECTRACE_RETENTION_ENABLED:true}
+    cron: ${SPECTRACE_RETENTION_CRON:0 0 4 * * *}
+    task-days: ${SPECTRACE_RETENTION_TASK_DAYS:30}
+    pending-days: ${SPECTRACE_RETENTION_PENDING_DAYS:30}
+    operation-log-days: ${SPECTRACE_RETENTION_OPERATION_LOG_DAYS:90}
   # ---- 内嵌采集 Agent（AgentScope Java 2.0 · Harness 模式，与后端同进程）----
   agent:
     # 是否随应用启动常驻消费抓取任务
