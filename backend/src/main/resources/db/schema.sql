@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS agent_task (
     model_name   VARCHAR(128) NOT NULL,
     brand_name   VARCHAR(64)  DEFAULT NULL,
     ai_model_id  BIGINT       DEFAULT NULL,
+    task_type    VARCHAR(24)  NOT NULL DEFAULT 'DEVICE_DETAIL',
     status       VARCHAR(24)  NOT NULL DEFAULT 'QUEUED',
     source_url   VARCHAR(512) DEFAULT NULL,
     result       TEXT         DEFAULT NULL,

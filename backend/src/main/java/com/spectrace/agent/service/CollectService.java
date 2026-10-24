@@ -5,10 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.spectrace.agent.TaskLogContext;
 import com.spectrace.agent.config.AgentProperties;
 import com.spectrace.agent.tool.CollectTools;
+import com.spectrace.common.TaskType;
 import com.spectrace.dto.AgentCallbackRequest;
 import com.spectrace.dto.AgentTaskPayload;
 import com.spectrace.dto.DeviceVariantDTO;
 import com.spectrace.dto.ResolvedModel;
+import com.spectrace.dto.SeriesModelDTO;
 import com.spectrace.entity.ParamDef;
 import com.spectrace.service.AgentTaskLogService;
 import io.agentscope.core.agent.RuntimeContext;
@@ -52,6 +54,29 @@ public class CollectService {
     private final ObjectMapper objectMapper;
 
     /**
+     * 系列发现模式的系统提示：显式覆盖工作区 persona 的参数抽取输出格式，
+     * 避免模型沿用参数 Schema 结构输出一堆空参数。
+     */
+    private static final String DISCOVERY_SYS_PROMPT = """
+            本次任务是「系列机型发现」，不抽取任何参数，只回答：指定手机系列下官方发布的全部机型清单。
+
+            工作方式：
+            1. 先用 web_search 搜索该系列的机型清单（品牌官网 / 发布会通稿 / 权威数码媒体优先）。
+            2. 结果不全或存疑时，用 fetch_page 打开列表页核对。
+            3. 宁可少列不要编造；尚未发布或只有传闻的机型不要列入。
+            4. 同一机型的运营商 / 地区专属小改款不单列，并入同名机型。
+
+            输出要求（极其重要）：
+            - 只输出一个 JSON 对象，不要任何解释文字、不要 Markdown 代码块。
+            - JSON 结构固定为：
+
+            {"brandName":"品牌名称","seriesName":"系列名称","sourceUrl":"主要来源链接","confidence":"high | medium | low","notes":"对存疑项的说明","models":[{"name":"机型完整官方名称","releaseDate":"YYYY-MM-DD 或 null"}]}
+
+            - models 按发布时间从新到旧排列；name 用完整官方名称（如 iPhone 17 Pro Max），不要缩写。
+            - releaseDate 无法确认具体日期时置 null，不要猜测。
+            """;
+
+    /**
      * 执行一次采集，返回可写入待审核库的结构化结果。
      *
      * <p>采集期间把任务 id 绑定到当前线程，工具调用（搜索 / 抓网页）才能把过程日志记到对应任务上。
@@ -60,6 +85,13 @@ public class CollectService {
                                         ResolvedModel aiConfig) {
         TaskLogContext.bind(payload.getTaskId());
         try {
+            if (TaskType.parse(payload.getTaskType()) == TaskType.SERIES_DISCOVERY) {
+                taskLogService.info(payload.getTaskId(), String.format("开始系列发现：%s %s，AI 模型 %s/%s",
+                        nullToEmpty(payload.getBrandName()), nullToEmpty(payload.getModelName()),
+                        aiConfig == null ? "-" : aiConfig.getProvider(),
+                        aiConfig == null ? "-" : aiConfig.getModel()));
+                return doDiscover(payload, aiConfig);
+            }
             taskLogService.info(payload.getTaskId(), String.format("开始采集：%s %s，AI 模型 %s/%s，参数定义 %d 项",
                     nullToEmpty(payload.getBrandName()), nullToEmpty(payload.getModelName()),
                     aiConfig == null ? "-" : aiConfig.getProvider(),
@@ -68,6 +100,103 @@ public class CollectService {
             return doCollect(payload, schemaDefs, aiConfig);
         } finally {
             TaskLogContext.clear();
+        }
+    }
+
+    /**
+     * 系列机型发现：搜索系列下的机型清单，结果由管理员勾选后创建草稿机型档案。
+     * 独立提示词与输出结构，与参数抓取互不复用。
+     */
+    private AgentCallbackRequest doDiscover(AgentTaskPayload payload, ResolvedModel aiConfig) {
+        String seriesName = payload.getModelName() == null ? "" : payload.getModelName();
+        String brandName = payload.getBrandName() == null ? "" : payload.getBrandName();
+        try {
+            Model model = buildModel(aiConfig);
+
+            Toolkit toolkit = new Toolkit();
+            toolkit.registerTool(collectTools);
+
+            String query = (brandName + " " + seriesName + " 系列 全部机型 型号 列表").trim();
+            String prompt = "请检索品牌「" + brandName + "」的「" + seriesName
+                    + "」系列包含的全部机型清单，按系统提示的 JSON 结构输出。";
+
+            // 每个任务独立的会话身份，任务之间互不共享上下文 / 记忆
+            String identity = "task-" + payload.getTaskId();
+            RuntimeContext ctx = RuntimeContext.builder()
+                    .userId(identity)
+                    .sessionId(identity)
+                    .build();
+
+            String text;
+            try (HarnessAgent agent = HarnessAgent.builder()
+                    .name("phone_series_discovery")
+                    .agentId("phone_series_discovery")
+                    .sysPrompt(DISCOVERY_SYS_PROMPT)
+                    .model(model)
+                    .toolkit(toolkit)
+                    .workspace(Path.of(props.getWorkspace()))
+                    // 清单发现通常 1~2 次搜索即可收敛，迭代上限低于参数抓取
+                    .maxIters(10)
+                    .disableShellTool()
+                    .disableFilesystemTools()
+                    .disableWebTools()
+                    .disableSubagents()
+                    .disableDynamicSkills()
+                    .disableDefaultWorkspaceSkills()
+                    .disableToolsConfig()
+                    .disableMemoryHooks()
+                    .disableMemoryTools()
+                    .build()) {
+                Msg msg = agent.call(List.<Msg>of(new UserMessage(prompt)), ctx)
+                        .block(Duration.ofSeconds(props.getTaskTimeoutSeconds()));
+                text = msg == null ? "" : msg.getTextContent();
+            }
+
+            JsonNode data = parseJson(text);
+            List<SeriesModelDTO> models = new ArrayList<>();
+            // 兼容两种输出：对象数组（标准）与纯字符串数组（模型偷懒时）
+            for (JsonNode item : data.path("models")) {
+                String name = item.isTextual() ? item.asText() : item.path("name").asText("");
+                if (name.isBlank()) {
+                    continue;
+                }
+                SeriesModelDTO dto = new SeriesModelDTO();
+                dto.setName(name.trim());
+                dto.setReleaseDate(item.isTextual() ? null : nullableText(item, "releaseDate"));
+                models.add(dto);
+            }
+            if (models.isEmpty()) {
+                throw new IllegalArgumentException("模型未返回任何机型");
+            }
+
+            AgentCallbackRequest result = new AgentCallbackRequest();
+            result.setTaskId(payload.getTaskId());
+            result.setModelName(textOrFallback(data, "seriesName", seriesName));
+            result.setBrandName(textOrFallback(data, "brandName", brandName.isEmpty() ? null : brandName));
+            result.setSourceUrl(nullableText(data, "sourceUrl"));
+            result.setStatus("SUCCESS");
+            result.setSeriesModels(models);
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("queries", List.of(query));
+            summary.put("confidence", nullableText(data, "confidence"));
+            summary.put("notes", nullableText(data, "notes"));
+            result.setLogs(objectMapper.writeValueAsString(summary));
+            taskLogService.info(payload.getTaskId(), "发现完成：共 " + models.size() + " 个机型");
+            return result;
+        } catch (Exception e) {
+            log.error("系列发现失败 taskId={}", payload.getTaskId(), e);
+            String message = e.getMessage() == null ? "" : e.getMessage();
+            String error = message.contains("Timeout") || message.contains("timeout")
+                    ? "发现超时（>" + props.getTaskTimeoutSeconds() + "s）"
+                    : e.getClass().getSimpleName() + ": " + message;
+            taskLogService.error(payload.getTaskId(), "系列发现异常：" + error);
+            AgentCallbackRequest result = new AgentCallbackRequest();
+            result.setTaskId(payload.getTaskId());
+            result.setModelName(seriesName);
+            result.setBrandName(brandName.isEmpty() ? null : brandName);
+            result.setStatus("FAILED");
+            result.setError(error);
+            return result;
         }
     }
 

@@ -35,6 +35,9 @@ public class AgentCallbackRequest {
     /** 存储版本与官方发布价（可选，缺省时从 params.variants 读取） */
     private List<DeviceVariantDTO> variants;
 
+    /** 系列发现任务的机型清单（仅 SERIES_DISCOVERY 回调使用） */
+    private List<SeriesModelDTO> seriesModels;
+
     /** 抓取日志（可选） */
     private String logs;
 }

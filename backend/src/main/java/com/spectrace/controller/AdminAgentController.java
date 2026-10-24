@@ -5,6 +5,9 @@ import com.spectrace.common.R;
 import com.spectrace.dto.ApproveRequest;
 import com.spectrace.dto.BatchIdsRequest;
 import com.spectrace.dto.PendingDataVO;
+import com.spectrace.dto.SeriesCreateDevicesRequest;
+import com.spectrace.dto.SeriesCreateResultVO;
+import com.spectrace.dto.SeriesDiscoveryVO;
 import com.spectrace.dto.TaskCreateRequest;
 import com.spectrace.entity.AgentPendingData;
 import com.spectrace.entity.AgentTask;
@@ -55,6 +58,21 @@ public class AdminAgentController {
     public R<java.util.List<AgentTaskLog>> taskLogs(@PathVariable Long id,
                                                     @RequestParam(required = false) Long afterId) {
         return R.ok(agentTaskLogService.list(id, afterId));
+    }
+
+    @Operation(summary = "系列发现任务详情（机型清单 + 库中同名标注）")
+    @GetMapping("/agent-tasks/{id}/discovery")
+    public R<SeriesDiscoveryVO> discovery(@PathVariable Long id) {
+        return R.ok(agentTaskService.getDiscoveryDetail(id));
+    }
+
+    @Operation(summary = "把系列发现勾选的机型创建为草稿机型档案")
+    @PostMapping("/agent-tasks/{id}/create-devices")
+    public R<SeriesCreateResultVO> createDevices(@PathVariable Long id,
+                                                 @Valid @RequestBody SeriesCreateDevicesRequest req,
+                                                 @RequestAttribute Long adminId,
+                                                 @RequestAttribute String adminName) {
+        return R.ok(agentTaskService.createDevicesFromDiscovery(id, req.getNames(), adminId, adminName));
     }
 
     @Operation(summary = "待审核数据列表")

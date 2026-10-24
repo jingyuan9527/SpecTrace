@@ -11,4 +11,7 @@ public class TaskCreateRequest {
     private String brandName;
     /** 可选，指定抓取使用的 AI 模型（ai_model.id），为空用默认模型 */
     private Long aiModelId;
+
+    /** 可选，任务类型（TaskType 枚举名），缺省 DEVICE_DETAIL；SERIES_DISCOVERY 时 brandName 必填 */
+    private String taskType;
 }

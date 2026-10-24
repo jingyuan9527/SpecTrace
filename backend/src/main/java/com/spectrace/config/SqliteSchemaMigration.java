@@ -38,6 +38,7 @@ public class SqliteSchemaMigration implements ApplicationRunner {
         ensureColumn("device_param_value", "confidence", "DECIMAL(3,2) DEFAULT NULL");
         ensureColumn("feedback", "handler_note", "TEXT DEFAULT NULL");
         ensureColumn("admin_user", "must_change_password", "TINYINT DEFAULT 0");
+        ensureColumn("agent_task", "task_type", "VARCHAR(24) NOT NULL DEFAULT 'DEVICE_DETAIL'");
         // 索引必须在补列之后创建，放在 schema.sql 里会在老库上因缺列直接中断启动
         ensureIndex("CREATE INDEX IF NOT EXISTS idx_device_series ON device (series_id)");
         flagDefaultPasswordUsers();

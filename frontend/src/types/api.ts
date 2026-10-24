@@ -143,6 +143,8 @@ export interface AgentTask {
   modelName: string
   brandName?: string | null
   aiModelId?: number | null
+  /** DEVICE_DETAIL（单机型参数抓取）/ SERIES_DISCOVERY（系列机型发现），缺省按 DEVICE_DETAIL 处理 */
+  taskType?: string | null
   status: AgentTaskStatus
   sourceUrl?: string | null
   result?: string | null
@@ -435,8 +437,32 @@ export interface AgentTaskCreateRequest {
   modelName: string
   brandName?: string
   aiModelId?: number | null
+  /** 缺省 DEVICE_DETAIL；SERIES_DISCOVERY 时 brandName 必填 */
+  taskType?: string
 }
 
+/** 系列发现得到的机型项（existing 表示库中已有同品牌同名机型） */
+export interface SeriesDiscoveredModel {
+  name: string
+  releaseDate?: string | null
+  existing?: boolean
+  deviceId?: number | null
+}
+
+export interface SeriesDiscoveryDetail {
+  taskId: number
+  brandName?: string | null
+  seriesName?: string | null
+  sourceUrl?: string | null
+  status?: string | null
+  models: SeriesDiscoveredModel[]
+}
+
+export interface SeriesCreateResult {
+  created: number
+  skippedExisting: string[]
+  deviceIds: number[]
+}
 
 export interface BrandSaveRequest extends Partial<Omit<Brand, 'id'>> {
   /** 表单里常用 null 表示「新建」，与 undefined 等价 */

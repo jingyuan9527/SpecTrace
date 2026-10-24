@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { Copy, Download, FileUp, ImagePlus, Loader2, Pencil, Plus, Search, Smartphone, Trash2 } from '@lucide/vue'
+import { Bot, Copy, Download, FileUp, ImagePlus, Loader2, Pencil, Plus, Search, Smartphone, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
 import { usePagedList } from '@/composables/usePagedList'
@@ -10,6 +10,7 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   Dialog,
   Empty,
   Input,
@@ -304,6 +305,54 @@ function brandName(id?: number) {
   return brands.value.find((b) => b.id === id)?.name ?? '—'
 }
 
+// ---------- 抓取详情：对库中机型（含系列发现的草稿档案）直接发起参数抓取任务 ----------
+const scrapingIds = ref<number[]>([])
+const batchScraping = ref(false)
+const selectedIds = ref<number[]>([])
+
+const allPageSelected = computed(
+  () => list.value.length > 0 && list.value.every((row: any) => selectedIds.value.includes(row.id)),
+)
+
+function toggleRow(id: number, checked: boolean) {
+  if (checked) {
+    if (!selectedIds.value.includes(id)) selectedIds.value.push(id)
+  } else {
+    selectedIds.value = selectedIds.value.filter((i) => i !== id)
+  }
+}
+
+function togglePage(checked: boolean) {
+  selectedIds.value = checked ? list.value.map((row: any) => row.id) : []
+}
+
+async function scrapeDevice(row: any) {
+  if (scrapingIds.value.includes(row.id)) return
+  scrapingIds.value.push(row.id)
+  try {
+    await adminApi.createAgentTask({ modelName: row.name, brandName: brandName(row.brandId) })
+    toast.success(`已提交「${row.name}」的抓取任务，结果将进入待审核`)
+  } finally {
+    scrapingIds.value = scrapingIds.value.filter((id) => id !== row.id)
+  }
+}
+
+async function scrapeSelected() {
+  const rows = list.value.filter((row: any) => selectedIds.value.includes(row.id))
+  if (!rows.length || batchScraping.value) return
+  batchScraping.value = true
+  try {
+    // 逐台顺序提交，避免一次并发打满任务队列
+    for (const row of rows) {
+      await adminApi.createAgentTask({ modelName: row.name, brandName: brandName(row.brandId) })
+    }
+    toast.success(`已提交 ${rows.length} 个抓取任务，结果将进入待审核`)
+    selectedIds.value = []
+  } finally {
+    batchScraping.value = false
+  }
+}
+
 function seriesName(id?: number | null) {
   if (!id) return '—'
   return seriesList.value.find((s) => s.id === id)?.name ?? '—'
@@ -426,6 +475,17 @@ function rowMessages(row: any) {
         </div>
         <Select v-model="query.brandId" :options="brandOptions" placeholder="全部品牌" class="w-full lg:w-44" />
         <Button variant="outline" @click="search">查询</Button>
+        <Button
+          v-if="selectedIds.length"
+          variant="outline"
+          size="sm"
+          :disabled="batchScraping"
+          @click="scrapeSelected"
+        >
+          <Loader2 v-if="batchScraping" class="animate-spin" />
+          <Bot v-else />
+          抓取选中（{{ selectedIds.length }}）
+        </Button>
         <div class="ml-auto text-xs text-muted-foreground">共 {{ total }} 台机型</div>
       </CardContent>
     </Card>
@@ -439,6 +499,9 @@ function rowMessages(row: any) {
         <Table v-else-if="list.length">
           <TableHeader>
             <TableRow class="hover:bg-transparent">
+              <TableHead class="w-10">
+                <Checkbox :model-value="allPageSelected" aria-label="全选本页" @update:model-value="togglePage" />
+              </TableHead>
               <TableHead class="w-16">ID</TableHead>
               <TableHead class="w-20">图片</TableHead>
               <TableHead>机型名称</TableHead>
@@ -446,11 +509,18 @@ function rowMessages(row: any) {
               <TableHead class="w-36">系列</TableHead>
               <TableHead class="w-32">发布时间</TableHead>
               <TableHead class="w-24">状态</TableHead>
-              <TableHead class="w-28 text-right">操作</TableHead>
+              <TableHead class="w-36 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             <TableRow v-for="row in list" :key="row.id">
+              <TableCell>
+                <Checkbox
+                  :model-value="selectedIds.includes(row.id)"
+                  :aria-label="`选择 ${row.name}`"
+                  @update:model-value="toggleRow(row.id, $event)"
+                />
+              </TableCell>
               <TableCell class="text-muted-foreground">{{ row.id }}</TableCell>
               <TableCell>
                 <ImageWithFallback :src="row.thumbnail" :alt="row.name" img-class="h-9 max-w-16 object-contain">
@@ -466,6 +536,17 @@ function rowMessages(row: any) {
               </TableCell>
               <TableCell class="text-right">
                 <div class="flex justify-end gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="抓取详情"
+                    title="抓取详情"
+                    :disabled="scrapingIds.includes(row.id)"
+                    @click="scrapeDevice(row)"
+                  >
+                    <Loader2 v-if="scrapingIds.includes(row.id)" class="animate-spin" />
+                    <Bot v-else />
+                  </Button>
                   <Button variant="ghost" size="icon-sm" aria-label="编辑" title="编辑" @click="openEdit(row)">
                     <Pencil />
                   </Button>

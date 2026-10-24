@@ -35,6 +35,8 @@ import type {
   PendingData,
   PendingDataDetail,
   RetentionOverview,
+  SeriesCreateResult,
+  SeriesDiscoveryDetail,
   SeriesItem,
   SeriesSaveRequest,
   UnassignedDevice,
@@ -142,6 +144,10 @@ export const adminApi = {
   // 过程日志按 id 增量拉取，afterId 传已拿到的最后一条
   agentTaskLogs: (id: number, afterId?: number) =>
     request.get<unknown, AgentTaskLog[]>(`/admin/agent-tasks/${id}/logs`, { params: { afterId } }),
+  agentTaskDiscovery: (id: number) =>
+    request.get<unknown, SeriesDiscoveryDetail>(`/admin/agent-tasks/${id}/discovery`),
+  createDiscoveryDevices: (id: number, names: string[]) =>
+    request.post<unknown, SeriesCreateResult>(`/admin/agent-tasks/${id}/create-devices`, { names }),
 
   // AI 连接（供应商）
   aiConfigs: () => request.get<unknown, AiConfig[]>('/admin/ai-configs'),

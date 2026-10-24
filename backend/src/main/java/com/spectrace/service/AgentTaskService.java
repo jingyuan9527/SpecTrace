@@ -10,6 +10,7 @@ import com.spectrace.common.BizException;
 import com.spectrace.common.ParamValueParser;
 import com.spectrace.common.PendingStatus;
 import com.spectrace.common.TaskStatus;
+import com.spectrace.common.TaskType;
 import com.spectrace.dto.*;
 import com.spectrace.entity.AgentPendingData;
 import com.spectrace.entity.AgentTask;
@@ -56,10 +57,16 @@ public class AgentTaskService {
 
     /** 管理员提交抓取任务。 */
     public AgentTask createTask(TaskCreateRequest req, Long adminId, String adminName) {
+        TaskType taskType = TaskType.parse(req.getTaskType());
+        if (taskType == TaskType.SERIES_DISCOVERY && !StringUtils.hasText(req.getBrandName())) {
+            // 发现结果要落成机型档案，必须有归属品牌；Agent 推断可能命中库外品牌，一期不自动建品牌
+            throw new BizException("系列发现任务必须选择品牌");
+        }
         AgentTask task = new AgentTask();
         task.setModelName(req.getModelName());
         task.setBrandName(req.getBrandName());
         task.setAiModelId(req.getAiModelId());
+        task.setTaskType(taskType.name());
         task.setStatus(TaskStatus.QUEUED.name());
         taskMapper.insert(task);
 
@@ -68,6 +75,7 @@ public class AgentTaskService {
         payload.setModelName(task.getModelName());
         payload.setBrandName(task.getBrandName());
         payload.setAiModelId(task.getAiModelId());
+        payload.setTaskType(task.getTaskType());
         try {
             taskQueue.push(payload);
         } catch (Exception e) {
@@ -110,6 +118,7 @@ public class AgentTaskService {
             payload.setModelName(task.getModelName());
             payload.setBrandName(task.getBrandName());
             payload.setAiModelId(task.getAiModelId());
+            payload.setTaskType(task.getTaskType());
             taskQueue.push(payload);
             log.info("重启恢复：内存队列丢失，任务重新入队 taskId={} model={}", task.getId(), task.getModelName());
         }
@@ -128,6 +137,7 @@ public class AgentTaskService {
         req.setModelName(origin.getModelName());
         req.setBrandName(origin.getBrandName());
         req.setAiModelId(origin.getAiModelId());
+        req.setTaskType(origin.getTaskType());
         AgentTask task = createTask(req, adminId, adminName);
         log.info("重试抓取任务: originId={} newId={} model={} admin={}", taskId, task.getId(), task.getModelName(), adminName);
         logService.record(adminId, adminName, "RETRY_AGENT_TASK", "agent_task", task.getId(),
@@ -168,6 +178,11 @@ public class AgentTaskService {
             return;
         }
 
+        if (TaskType.parse(task.getTaskType()) == TaskType.SERIES_DISCOVERY) {
+            handleSeriesResult(task, req);
+            return;
+        }
+
         Map<String, Object> params = req.getParams() == null
                 ? new LinkedHashMap<>()
                 : new LinkedHashMap<>(req.getParams());
@@ -200,6 +215,147 @@ public class AgentTaskService {
         task.setDurationMs(req.getDurationMs());
         task.setUpdatedAt(LocalDateTime.now());
         taskMapper.updateById(task);
+    }
+
+    /**
+     * 系列发现结果落库：清单写进 task.result 供任务详情勾选，不进待审核库（那是参数集语义）。
+     */
+    @SneakyThrows
+    private void handleSeriesResult(AgentTask task, AgentCallbackRequest req) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("brandName", StringUtils.hasText(req.getBrandName()) ? req.getBrandName() : task.getBrandName());
+        result.put("seriesName", req.getModelName() != null ? req.getModelName() : task.getModelName());
+        result.put("sourceUrl", req.getSourceUrl());
+        result.put("models", req.getSeriesModels() == null ? List.of() : req.getSeriesModels());
+
+        appendSummaryLogs(task.getId(), req.getLogs());
+        int found = req.getSeriesModels() == null ? 0 : req.getSeriesModels().size();
+        taskLogService.info(task.getId(), "系列发现完成：共识别 " + found + " 个机型");
+
+        task.setStatus(TaskStatus.PENDING_REVIEW.name());
+        task.setSourceUrl(req.getSourceUrl());
+        task.setResult(objectMapper.writeValueAsString(result));
+        task.setDurationMs(req.getDurationMs());
+        task.setUpdatedAt(LocalDateTime.now());
+        taskMapper.updateById(task);
+    }
+
+    /** 系列发现任务详情：解析 result 里的机型清单，并标注库中已存在的同名机型。 */
+    @SneakyThrows
+    public SeriesDiscoveryVO getDiscoveryDetail(Long taskId) {
+        AgentTask task = taskMapper.selectById(taskId);
+        if (task == null) {
+            throw new BizException("抓取任务不存在");
+        }
+        if (TaskType.parse(task.getTaskType()) != TaskType.SERIES_DISCOVERY) {
+            throw new BizException("该任务不是系列发现任务");
+        }
+        SeriesDiscoveryVO vo = new SeriesDiscoveryVO();
+        vo.setTaskId(task.getId());
+        vo.setBrandName(task.getBrandName());
+        vo.setSourceUrl(task.getSourceUrl());
+        vo.setStatus(task.getStatus());
+        List<SeriesDiscoveryVO.Item> models = new ArrayList<>();
+        if (StringUtils.hasText(task.getResult())) {
+            JsonNode root = objectMapper.readTree(task.getResult());
+            vo.setSeriesName(root.path("seriesName").asText(null));
+            for (JsonNode item : root.path("models")) {
+                String name = item.isTextual() ? item.asText() : item.path("name").asText("");
+                if (!StringUtils.hasText(name)) {
+                    continue;
+                }
+                SeriesDiscoveryVO.Item model = new SeriesDiscoveryVO.Item();
+                model.setName(name.trim());
+                model.setReleaseDate(item.isTextual() ? null : item.path("releaseDate").asText(null));
+                Device existing = findExistingDevice(task.getBrandName(), model.getName());
+                model.setExisting(existing != null);
+                if (existing != null) {
+                    model.setDeviceId(existing.getId());
+                }
+                models.add(model);
+            }
+        }
+        vo.setModels(models);
+        return vo;
+    }
+
+    /**
+     * 把勾选的发现机型创建为草稿档案（status=0，前台不可见、参数为空）。
+     *
+     * <p>后续在机型管理页发起详情抓取，审核通过时现有覆盖逻辑会把 status 置 1 自动上架。
+     * 已存在同名机型的跳过，保证重复点击幂等。
+     */
+    @Transactional
+    public SeriesCreateResultVO createDevicesFromDiscovery(Long taskId, List<String> names,
+                                                           Long adminId, String adminName) {
+        AgentTask task = taskMapper.selectById(taskId);
+        if (task == null) {
+            throw new BizException("抓取任务不存在");
+        }
+        if (TaskType.parse(task.getTaskType()) != TaskType.SERIES_DISCOVERY) {
+            throw new BizException("该任务不是系列发现任务");
+        }
+        if (!TaskStatus.PENDING_REVIEW.name().equals(task.getStatus())
+                && !TaskStatus.APPROVED.name().equals(task.getStatus())) {
+            throw new BizException("任务尚未完成发现，无法创建机型");
+        }
+        Brand brand = null;
+        if (StringUtils.hasText(task.getBrandName())) {
+            brand = brandMapper.selectOne(Wrappers.<Brand>lambdaQuery()
+                    .eq(Brand::getName, task.getBrandName().trim())
+                    .last("LIMIT 1"));
+        }
+        if (brand == null) {
+            throw new BizException("品牌不存在或已删除：" + task.getBrandName());
+        }
+
+        Map<String, String> releaseDates = releaseDatesOf(task);
+        List<Long> deviceIds = new ArrayList<>();
+        List<String> skipped = new ArrayList<>();
+        for (String name : names.stream().filter(StringUtils::hasText).map(String::trim).distinct().toList()) {
+            if (findExistingDevice(brand.getId(), name) != null) {
+                skipped.add(name);
+                continue;
+            }
+            DeviceSaveRequest save = new DeviceSaveRequest();
+            save.setBrandId(brand.getId());
+            save.setName(name);
+            save.setReleaseDate(parseDate(releaseDates.get(name)));
+            save.setStatus(0);
+            Device device = deviceService.save(save, adminId, adminName, task.getSourceUrl());
+            deviceIds.add(device.getId());
+        }
+
+        if (!deviceIds.isEmpty()) {
+            task.setStatus(TaskStatus.APPROVED.name());
+            task.setUpdatedAt(LocalDateTime.now());
+            taskMapper.updateById(task);
+            logService.record(adminId, adminName, "CREATE_DEVICES_FROM_DISCOVERY", "agent_task", taskId,
+                    "创建草稿机型 " + deviceIds.size() + " 个（品牌：" + brand.getName() + "）");
+            taskLogService.info(taskId,
+                    "已创建草稿机型 " + deviceIds.size() + " 个，跳过已存在 " + skipped.size() + " 个");
+        }
+        SeriesCreateResultVO vo = new SeriesCreateResultVO();
+        vo.setCreated(deviceIds.size());
+        vo.setSkippedExisting(skipped);
+        vo.setDeviceIds(deviceIds);
+        return vo;
+    }
+
+    /** 从系列发现结果里取 机型名 -> 发布日期 映射；结果缺失的机型名在返回 map 中没有对应键。 */
+    @SneakyThrows
+    private Map<String, String> releaseDatesOf(AgentTask task) {
+        Map<String, String> dates = new LinkedHashMap<>();
+        if (!StringUtils.hasText(task.getResult())) {
+            return dates;
+        }
+        for (JsonNode item : objectMapper.readTree(task.getResult()).path("models")) {
+            String name = item.isTextual() ? item.asText() : item.path("name").asText("");
+            if (StringUtils.hasText(name)) {
+                dates.put(name.trim(), item.isTextual() ? null : item.path("releaseDate").asText(null));
+            }
+        }
+        return dates;
     }
 
     /**

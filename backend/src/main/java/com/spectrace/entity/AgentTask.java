@@ -26,6 +26,9 @@ public class AgentTask {
     /** 指定使用的 AI 模型（ai_model.id），为空则用默认模型 */
     private Long aiModelId;
 
+    /** DEVICE_DETAIL（单机型参数抓取）/ SERIES_DISCOVERY（系列机型发现），存量数据无值按 DEVICE_DETAIL 处理 */
+    private String taskType;
+
     /** QUEUED / RUNNING / PENDING_REVIEW / APPROVED / DISCARDED / FAILED */
     private String status;
 
