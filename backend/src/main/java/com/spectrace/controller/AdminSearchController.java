@@ -40,7 +40,8 @@ public class AdminSearchController {
                                   @RequestAttribute Long adminId, @RequestAttribute String adminName) {
         SearchConfigVO vo = searchConfigService.save(req);
         logService.record(adminId, adminName, "SAVE_SEARCH_CONFIG", "agent_search_config", null,
-                "搜索引擎：" + vo.getProvider());
+                "搜索引擎：" + (vo.getEngines() == null || vo.getEngines().isEmpty()
+                        ? "系统默认" : String.join("→", vo.getEngines())));
         return R.ok(vo);
     }
 

@@ -948,6 +948,8 @@
 
 **验证**：编译 + 28 测试、typecheck/build/e2e 11 全绿；**真实浏览器走查**——登录→改密→提交任务→失败→点重试弹窗正常弹出且含模型 Combobox；AI 配置页搜索源弹窗三引擎勾选、勾选 Tavily 后 Key 字段出现、弹窗内测试（缺 Key）被 400 拦截并 toast 提示。
 
+**CI 事故与教训（2026-10-24）**：T64 首推 CI 失败——save() 操作日志仍调已删除的 `SearchConfigVO.getProvider()`；本地 `mvn package` 增量编译用旧 .class 兜住符号未报错，CI 干净构建暴露。已修复并改用 `mvn clean package` 本地对齐 CI 验证（后续一律 clean 构建）。
+
 ---
 
 ## 依赖与并行建议
