@@ -185,6 +185,10 @@ test('后台：系统运维页运行时指标', async ({ page }) => {
   await expect(page.getByText('运行时指标（重启清零）')).toBeVisible()
   await expect(page.getByText(/95%/)).toBeVisible()
   await expect(page.getByText('3 次')).toBeVisible()
+  // T107：SQLite / 磁盘 / JVM / 备份概要
+  await expect(page.getByText('SQLite 主库')).toBeVisible()
+  await expect(page.getByText(/备份耗时/)).toBeVisible()
+  await expect(page.getByText('待下载产品图 1 张')).toBeVisible()
 })
 
 test('后台：初始密码必须先改密才能进入', async ({ page }) => {

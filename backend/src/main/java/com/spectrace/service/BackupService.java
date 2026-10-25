@@ -93,6 +93,9 @@ public class BackupService {
         return vo;
     }
 
+    /** 最近一次备份耗时（毫秒），供运维页运行时卡片观察趋势；重启清零。 */
+    private volatile long lastBackupDurationMs;
+
     /** 执行一次备份并清理超出保留数量的旧文件，返回新备份文件。 */
     public Path backup() throws IOException {
         Path dir = Path.of(backupDir).toAbsolutePath();
@@ -104,11 +107,17 @@ public class BackupService {
         }
         // VACUUM INTO 不支持占位符，路径需内联并对单引号转义
         String sqlPath = target.toString().replace("'", "''");
+        long startedAt = System.currentTimeMillis();
         jdbcTemplate.execute("VACUUM INTO '" + sqlPath + "'");
-        log.info("SQLite 快照已生成: {} ({} bytes)", target, Files.size(target));
+        lastBackupDurationMs = System.currentTimeMillis() - startedAt;
+        log.info("SQLite 快照已生成: {} ({} bytes, {} ms)", target, Files.size(target), lastBackupDurationMs);
 
         cleanup(dir);
         return target;
+    }
+
+    public long getLastBackupDurationMs() {
+        return lastBackupDurationMs;
     }
 
     /** 现有备份文件，按文件名（含时间戳）倒序。 */

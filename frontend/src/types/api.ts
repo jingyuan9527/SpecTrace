@@ -248,11 +248,22 @@ export interface QualityMetrics {
   topErrorParams: FeedbackParamStat[]
 }
 
-/** 技术运行时指标（T105 起） */
+/** 技术运行时指标（T105 起；T107 扩充 SQLite/磁盘/JVM/备份） */
 export interface RuntimeMetrics {
   caches: CacheStat[]
   /** 限流拒绝计数（key 为归一化路径），重启清零 */
   rateLimitRejected: Record<string, number>
+  sqlitePath: string
+  sqliteSizeBytes: number
+  diskTotalBytes: number
+  diskFreeBytes: number
+  heapUsedBytes: number
+  heapMaxBytes: number
+  threads: number
+  /** 最近一次备份耗时（毫秒），重启后为 0 */
+  lastBackupDurationMs: number
+  /** 产品图待下载数量 */
+  imagePending: number
 }
 
 /** 访客流量监控（T103） */

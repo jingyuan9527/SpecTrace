@@ -20,6 +20,15 @@ interface CacheStat {
 interface RuntimeMetrics {
   caches: CacheStat[]
   rateLimitRejected: Record<string, number>
+  sqlitePath: string
+  sqliteSizeBytes: number
+  diskTotalBytes: number
+  diskFreeBytes: number
+  heapUsedBytes: number
+  heapMaxBytes: number
+  threads: number
+  lastBackupDurationMs: number
+  imagePending: number
 }
 
 interface BackupFile {
@@ -259,7 +268,37 @@ onMounted(() => {
           刷新
         </Button>
       </div>
-      <CardContent class="grid gap-4 p-4 lg:grid-cols-2">
+      <CardContent class="space-y-4">
+        <!-- T107 运行时概要：SQLite / 磁盘 / JVM / 备份 / 图片队列 -->
+        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" v-if="runtime.sqlitePath !== undefined">
+          <div class="rounded-lg border p-3">
+            <p class="text-xs text-muted-foreground">SQLite 主库</p>
+            <p class="mt-1 text-sm font-semibold">{{ formatBytes(runtime.sqliteSizeBytes) }}</p>
+            <p class="mt-0.5 truncate text-[11px] text-muted-foreground" :title="runtime.sqlitePath">{{ runtime.sqlitePath }}</p>
+          </div>
+          <div class="rounded-lg border p-3">
+            <p class="text-xs text-muted-foreground">磁盘剩余（数据盘）</p>
+            <p class="mt-1 text-sm font-semibold">{{ formatBytes(runtime.diskFreeBytes) }}</p>
+            <p class="mt-0.5 text-[11px] text-muted-foreground">
+              共 {{ formatBytes(runtime.diskTotalBytes) }} · 告警阈值见 SPECTRACE_ALERT_DISK_FREE_MB
+            </p>
+          </div>
+          <div class="rounded-lg border p-3">
+            <p class="text-xs text-muted-foreground">JVM 堆 / 线程</p>
+            <p class="mt-1 text-sm font-semibold">
+              {{ formatBytes(runtime.heapUsedBytes) }} / {{ formatBytes(runtime.heapMaxBytes) }}
+            </p>
+            <p class="mt-0.5 text-[11px] text-muted-foreground">活跃线程 {{ runtime.threads }}</p>
+          </div>
+          <div class="rounded-lg border p-3">
+            <p class="text-xs text-muted-foreground">备份耗时 / 图片队列</p>
+            <p class="mt-1 text-sm font-semibold">
+              {{ runtime.lastBackupDurationMs ? runtime.lastBackupDurationMs + ' ms' : '—' }}
+            </p>
+            <p class="mt-0.5 text-[11px] text-muted-foreground">待下载产品图 {{ runtime.imagePending }} 张</p>
+          </div>
+        </div>
+        <div class="grid gap-4 lg:grid-cols-2">
         <div>
           <p class="mb-2 text-xs font-medium text-muted-foreground">公开读缓存命中率</p>
           <div class="space-y-1.5">
@@ -283,6 +322,7 @@ onMounted(() => {
               暂无限流触发。
             </p>
           </div>
+        </div>
         </div>
       </CardContent>
     </Card>

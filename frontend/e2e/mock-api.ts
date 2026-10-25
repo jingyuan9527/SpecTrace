@@ -799,6 +799,15 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
           { name: 'paramMeta', hitCount: 30, missCount: 3, hitRate: 0.91, estimatedSize: 46, evictionCount: 0 },
         ],
         rateLimitRejected: { '429:/api/public/devices': 3 },
+        sqlitePath: '/data/spectrace.db',
+        sqliteSizeBytes: 1_234_567,
+        diskTotalBytes: 40_000_000_000,
+        diskFreeBytes: 12_000_000_000,
+        heapUsedBytes: 256_000_000,
+        heapMaxBytes: 4_000_000_000,
+        threads: 42,
+        lastBackupDurationMs: 3_200,
+        imagePending: 1,
       })
     }
     if (path === '/admin/metrics/traffic') {
