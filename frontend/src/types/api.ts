@@ -153,6 +153,10 @@ export interface FeedbackStatus {
 /** 后台侧栏徽标计数汇总 */
 export interface AdminBadges {
   openFeedback: number
+  /** 待审核抓取数据条数（T100） */
+  pendingReview: number
+  /** 最老一条待审核已等待的小时数，无积压为 0 */
+  pendingOldestHours: number
 }
 
 /** 单个参数的全库覆盖情况（数据健康度） */

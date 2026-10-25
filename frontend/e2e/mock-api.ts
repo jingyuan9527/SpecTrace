@@ -729,7 +729,11 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
       return ok(true)
     }
     if (path === '/admin/badges') {
-      return ok({ openFeedback: state.feedback.filter((item) => item.status === 'OPEN').length })
+      return ok({
+        openFeedback: state.feedback.filter((item) => item.status === 'OPEN').length,
+        pendingReview: state.pending.filter((item) => item.status === 'PENDING_REVIEW').length,
+        pendingOldestHours: 2,
+      })
     }
     if (path === '/admin/metrics/collect') {
       const today = new Date('2026-10-25')

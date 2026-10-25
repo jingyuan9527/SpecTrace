@@ -146,6 +146,14 @@ function doLogout() {
           >
             {{ badges.openFeedback }}
           </Badge>
+          <Badge
+            v-if="item.path === '/admin/pending' && badges && badges.pendingReview > 0"
+            variant="info"
+            class="ml-auto px-1.5"
+            :title="`最老一条已等待 ${badges.pendingOldestHours} 小时`"
+          >
+            {{ badges.pendingReview }}
+          </Badge>
         </router-link>
       </nav>
 
@@ -207,6 +215,14 @@ function doLogout() {
             class="ml-auto px-1.5"
           >
             {{ badges.openFeedback }}
+          </Badge>
+          <Badge
+            v-if="item.path === '/admin/pending' && badges && badges.pendingReview > 0"
+            variant="info"
+            class="ml-auto px-1.5"
+            :title="`最老一条已等待 ${badges.pendingOldestHours} 小时`"
+          >
+            {{ badges.pendingReview }}
           </Badge>
         </router-link>
       </nav>

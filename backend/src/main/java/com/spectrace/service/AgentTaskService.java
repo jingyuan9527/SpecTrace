@@ -616,6 +616,23 @@ public class AgentTaskService {
         return result;
     }
 
+    /** 待审核条数与最老一条的等待小时数（T100 侧栏徽标与监控页共用）。 */
+    public long countPendingReview() {
+        return pendingMapper.selectCount(Wrappers.<AgentPendingData>lambdaQuery()
+                .eq(AgentPendingData::getStatus, PendingStatus.PENDING_REVIEW.name()));
+    }
+
+    public long oldestPendingHours() {
+        AgentPendingData oldest = pendingMapper.selectOne(Wrappers.<AgentPendingData>lambdaQuery()
+                .eq(AgentPendingData::getStatus, PendingStatus.PENDING_REVIEW.name())
+                .orderByAsc(AgentPendingData::getCreatedAt)
+                .last("LIMIT 1"));
+        if (oldest == null || oldest.getCreatedAt() == null) {
+            return 0;
+        }
+        return java.time.Duration.between(oldest.getCreatedAt(), LocalDateTime.now()).toHours();
+    }
+
     public AgentPendingData getPending(Long id) {
         AgentPendingData data = pendingMapper.selectById(id);
         if (data == null) {
