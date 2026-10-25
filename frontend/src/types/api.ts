@@ -192,6 +192,20 @@ export interface CollectDayPoint {
   failed: number
 }
 
+/** 单个 AI 模型的采集表现（T101） */
+export interface ModelStat {
+  aiModelId?: number | null
+  /** 供应商连接名 / 模型名 */
+  label: string
+  total: number
+  approved: number
+  failed: number
+  successRate?: number | null
+  avgMs: number
+  p95Ms: number
+  nearTimeout: number
+}
+
 /** 采集链路监控（T99） */
 export interface CollectMetrics {
   windowDays: number
@@ -209,6 +223,8 @@ export interface CollectMetrics {
   nearTimeout: number
   imagePending: number
   daily: CollectDayPoint[]
+  /** 按模型维度的表现排行（T101） */
+  modelStats: ModelStat[]
 }
 
 /** 数据健康度总览（T85） */

@@ -159,6 +159,9 @@ test('后台：运行监控页采集漏斗', async ({ page }) => {
   await expect(page.getByText('每日任务量与失败趋势')).toBeVisible()
   // T100：抓取审核侧栏徽标（mock 有 1 条待审核）
   await expect(page.locator('aside').getByRole('link', { name: /抓取审核/ })).toContainText('1')
+  // T101：模型排行表
+  await expect(page.getByRole('cell', { name: 'OpenRouter / random' })).toBeVisible()
+  await expect(page.getByRole('cell', { name: '80%', exact: true })).toBeVisible()
 })
 
 test('后台：初始密码必须先改密才能进入', async ({ page }) => {

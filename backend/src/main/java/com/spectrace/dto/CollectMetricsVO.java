@@ -41,4 +41,7 @@ public class CollectMetricsVO {
     private long imagePending;
 
     private List<CollectDayPoint> daily;
+
+    /** 按模型维度的表现排行（T101） */
+    private List<ModelStatVO> modelStats;
 }

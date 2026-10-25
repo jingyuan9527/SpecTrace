@@ -13,6 +13,12 @@ import {
   Card,
   CardContent,
   Skeleton,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from '@/components/ui'
 
 const theme = useThemeStore()
@@ -151,6 +157,48 @@ watch([collect, () => theme.dark], () => {
         </div>
         <CardContent class="p-4">
           <div :ref="bind('daily')" class="h-64 w-full" />
+        </CardContent>
+      </Card>
+
+      <!-- T101 模型表现：失败多的排前面，问题模型优先进入视线 -->
+      <Card v-if="collect.modelStats?.length">
+        <div class="flex items-center justify-between border-b bg-muted/40 px-5 py-3">
+          <h2 class="text-sm font-semibold">模型表现排行</h2>
+          <span class="text-xs text-muted-foreground">近 {{ collect.windowDays }} 天 · 重试换模型的决策依据</span>
+        </div>
+        <CardContent class="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow class="hover:bg-transparent">
+                <TableHead class="min-w-44">模型</TableHead>
+                <TableHead class="w-20 text-right">任务</TableHead>
+                <TableHead class="w-24 text-right">成功率</TableHead>
+                <TableHead class="w-20 text-right">失败</TableHead>
+                <TableHead class="w-24 text-right">平均耗时</TableHead>
+                <TableHead class="w-24 text-right">P95</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="stat in collect.modelStats" :key="stat.aiModelId ?? stat.label">
+                <TableCell class="font-medium">{{ stat.label }}</TableCell>
+                <TableCell class="text-right text-muted-foreground">{{ stat.total }}</TableCell>
+                <TableCell class="text-right">
+                  <Badge
+                    v-if="stat.successRate != null"
+                    :variant="stat.successRate >= 0.8 ? 'success' : stat.successRate >= 0.5 ? 'warning' : 'destructive'"
+                  >
+                    {{ Math.round(stat.successRate * 100) }}%
+                  </Badge>
+                  <span v-else class="text-muted-foreground">—</span>
+                </TableCell>
+                <TableCell class="text-right" :class="stat.failed > 0 ? 'text-destructive' : 'text-muted-foreground'">
+                  {{ stat.failed }}
+                </TableCell>
+                <TableCell class="text-right text-muted-foreground">{{ formatDuration(stat.avgMs) }}</TableCell>
+                <TableCell class="text-right text-muted-foreground">{{ formatDuration(stat.p95Ms) }}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </template>

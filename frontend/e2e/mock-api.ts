@@ -757,6 +757,10 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         nearTimeout: 2,
         imagePending: 1,
         daily,
+        modelStats: [
+          { aiModelId: 1, label: 'DashScope / qwen-max', total: 40, approved: 32, failed: 8, successRate: 0.8, avgMs: 55_000, p95Ms: 180_000, nearTimeout: 1 },
+          { aiModelId: 2, label: 'OpenRouter / random', total: 22, approved: 0, failed: 22, successRate: 0, avgMs: 290_000, p95Ms: 299_000, nearTimeout: 1 },
+        ],
       })
     }
     if (path === '/admin/data-health') {
