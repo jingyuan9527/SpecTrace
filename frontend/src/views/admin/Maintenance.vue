@@ -8,6 +8,20 @@ import { formatTime } from '@/lib/utils'
 import PageHeader from '@/components/PageHeader.vue'
 import { Alert, Badge, Button, Card, CardContent, Empty, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui'
 
+interface CacheStat {
+  name: string
+  hitCount: number
+  missCount: number
+  hitRate?: number | null
+  estimatedSize: number
+  evictionCount: number
+}
+
+interface RuntimeMetrics {
+  caches: CacheStat[]
+  rateLimitRejected: Record<string, number>
+}
+
 interface BackupFile {
   fileName: string
   size?: number | null
@@ -48,6 +62,17 @@ const backingUp = ref(false)
 const retention = ref<RetentionOverview | null>(null)
 const retentionLoading = ref(false)
 const cleaning = ref(false)
+
+// T105 技术运行时：缓存命中率与限流拒绝（进程内快照，重启清零）
+const runtime = ref<RuntimeMetrics | null>(null)
+
+async function loadRuntime() {
+  try {
+    runtime.value = await adminApi.runtimeMetrics()
+  } catch {
+    runtime.value = null
+  }
+}
 
 async function load() {
   loading.value = true
@@ -93,6 +118,7 @@ async function cleanupNow() {
 onMounted(() => {
   load()
   loadRetention()
+  loadRuntime()
 })
 </script>
 
@@ -221,6 +247,43 @@ onMounted(() => {
           定时计划：<code class="rounded bg-muted px-1 py-0.5">{{ retention?.cron || '—' }}</code>
           <template v-if="retention?.nextRunAt">，下次执行 {{ formatTime(retention.nextRunAt) }}</template>
         </p>
+      </CardContent>
+    </Card>
+
+    <!-- T105 技术运行时：缓存命中与限流拒绝，进程内快照 -->
+    <Card v-if="runtime">
+      <div class="flex items-center justify-between border-b bg-muted/40 px-5 py-3">
+        <h3 class="text-sm font-medium">运行时指标（重启清零）</h3>
+        <Button variant="ghost" size="sm" @click="loadRuntime">
+          <RefreshCw />
+          刷新
+        </Button>
+      </div>
+      <CardContent class="grid gap-4 p-4 lg:grid-cols-2">
+        <div>
+          <p class="mb-2 text-xs font-medium text-muted-foreground">公开读缓存命中率</p>
+          <div class="space-y-1.5">
+            <div v-for="item in runtime.caches" :key="item.name" class="flex items-center justify-between gap-2 text-sm">
+              <span class="font-mono text-xs">{{ item.name }}</span>
+              <span class="text-xs text-muted-foreground">
+                {{ item.hitRate == null ? '暂无请求' : Math.round(item.hitRate * 100) + '%' }}
+                （命中 {{ item.hitCount }} / 未中 {{ item.missCount }}）
+              </span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <p class="mb-2 text-xs font-medium text-muted-foreground">限流拒绝（429）</p>
+          <div class="space-y-1">
+            <div v-for="(count, key) in runtime.rateLimitRejected" :key="key" class="flex items-center justify-between gap-2 text-sm">
+              <span class="min-w-0 truncate font-mono text-xs" :title="key">{{ key }}</span>
+              <span class="shrink-0 text-xs text-muted-foreground">{{ count }} 次</span>
+            </div>
+            <p v-if="!Object.keys(runtime.rateLimitRejected).length" class="text-sm text-muted-foreground">
+              暂无限流触发。
+            </p>
+          </div>
+        </div>
       </CardContent>
     </Card>
   </div>

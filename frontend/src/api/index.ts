@@ -42,6 +42,7 @@ import type {
   RetentionOverview,
   SearchMetrics,
   SeriesSuggestion,
+  RuntimeMetrics,
   SearchConfig,
   TrafficMetrics,
   SearchConfigSaveRequest,
@@ -129,6 +130,7 @@ export const adminApi = {
     request.get<unknown, SearchMetrics>('/admin/metrics/search', { params: { windowDays } }),
   trafficMetrics: (windowDays = 30) =>
     request.get<unknown, TrafficMetrics>('/admin/metrics/traffic', { params: { windowDays } }),
+  runtimeMetrics: () => request.get<unknown, RuntimeMetrics>('/admin/metrics/runtime'),
 
   brands: () => request.get<unknown, Brand[]>('/admin/brands'),
   saveBrand: (data: BrandSaveRequest) =>

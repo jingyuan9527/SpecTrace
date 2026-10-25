@@ -219,6 +219,24 @@ export interface TopDevicePv {
   pv: number
 }
 
+/** 单个 Caffeine 缓存的命中统计（T105） */
+export interface CacheStat {
+  name: string
+  hitCount: number
+  missCount: number
+  /** 命中率 0~1，无请求为 null */
+  hitRate?: number | null
+  estimatedSize: number
+  evictionCount: number
+}
+
+/** 技术运行时指标（T105 起） */
+export interface RuntimeMetrics {
+  caches: CacheStat[]
+  /** 限流拒绝计数（key 为归一化路径），重启清零 */
+  rateLimitRejected: Record<string, number>
+}
+
 /** 访客流量监控（T103） */
 export interface TrafficMetrics {
   windowDays: number

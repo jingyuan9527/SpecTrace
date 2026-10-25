@@ -763,6 +763,31 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         ],
       })
     }
+    if (path === '/admin/maintenance/backups') {
+      return ok({ enabled: true, dir: '/data/backups', keep: 7, nextRunAt: '2026-10-26T03:30:00', backups: [] })
+    }
+    if (path === '/admin/maintenance/retention') {
+      return ok({
+        enabled: true,
+        cron: '0 0 4 * * *',
+        taskDays: 30,
+        pendingDays: 30,
+        operationLogDays: 90,
+        viewDailyDays: 90,
+        searchLogDays: 90,
+        nextRunAt: '2026-10-26T04:00:00',
+        counts: {},
+      })
+    }
+    if (path === '/admin/metrics/runtime') {
+      return ok({
+        caches: [
+          { name: 'brands', hitCount: 40, missCount: 2, hitRate: 0.95, estimatedSize: 7, evictionCount: 0 },
+          { name: 'paramMeta', hitCount: 30, missCount: 3, hitRate: 0.91, estimatedSize: 46, evictionCount: 0 },
+        ],
+        rateLimitRejected: { '429:/api/public/devices': 3 },
+      })
+    }
     if (path === '/admin/metrics/traffic') {
       const today = new Date('2026-10-25')
       const daily = Array.from({ length: 30 }, (_, index) => ({

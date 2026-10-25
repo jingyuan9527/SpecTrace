@@ -172,6 +172,18 @@ test('后台：运行监控页采集漏斗', async ({ page }) => {
   await expect(page.getByText(/空结果率/)).toBeVisible()
 })
 
+test('后台：系统运维页运行时指标', async ({ page }) => {
+  await mockApi(page)
+  await login(page)
+
+  await page.goto('/admin/maintenance')
+  await expect(page.getByRole('heading', { name: '系统运维' })).toBeVisible()
+  // T105：缓存命中率与限流拒绝
+  await expect(page.getByText('运行时指标（重启清零）')).toBeVisible()
+  await expect(page.getByText(/95%/)).toBeVisible()
+  await expect(page.getByText('3 次')).toBeVisible()
+})
+
 test('后台：初始密码必须先改密才能进入', async ({ page }) => {
   await mockApi(page, { mustChangePassword: true })
 

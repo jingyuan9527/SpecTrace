@@ -3,9 +3,11 @@ package com.spectrace.controller;
 import com.spectrace.common.R;
 import com.spectrace.dto.CollectMetricsVO;
 import com.spectrace.dto.SearchMetricsVO;
+import com.spectrace.dto.RuntimeMetricsVO;
 import com.spectrace.dto.TrafficMetricsVO;
 import com.spectrace.service.CollectMetricsService;
 import com.spectrace.service.SearchLogService;
+import com.spectrace.service.RuntimeMetricsService;
 import com.spectrace.service.TrafficMetricsService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,6 +31,7 @@ public class AdminMetricsController {
     private final CollectMetricsService collectMetricsService;
     private final SearchLogService searchLogService;
     private final TrafficMetricsService trafficMetricsService;
+    private final RuntimeMetricsService runtimeMetricsService;
 
     @Operation(summary = "采集链路监控（漏斗 / 成功率 / 耗时 / 图片队列）")
     @GetMapping("/collect")
@@ -41,6 +44,12 @@ public class AdminMetricsController {
     @GetMapping("/traffic")
     public R<TrafficMetricsVO> traffic(@RequestParam(defaultValue = "30") int windowDays) {
         return R.ok(trafficMetricsService.overview(Math.max(1, Math.min(windowDays, 90))));
+    }
+
+    @Operation(summary = "技术运行时（缓存命中率 / 限流拒绝）")
+    @GetMapping("/runtime")
+    public R<RuntimeMetricsVO> runtime() {
+        return R.ok(runtimeMetricsService.snapshot());
     }
 
     @Operation(summary = "搜索需求信号（TOP 词 / 空结果率）")

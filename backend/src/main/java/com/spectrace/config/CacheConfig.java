@@ -28,9 +28,11 @@ public class CacheConfig {
     @Bean
     public CacheManager cacheManager() {
         CaffeineCacheManager manager = new CaffeineCacheManager(BRANDS, PARAM_META, SERIES_LIST, DEVICE_DETAIL);
+        // recordStats 供运维页展示命中率（T105），开销可忽略
         manager.setCaffeine(Caffeine.newBuilder()
                 .expireAfterWrite(Duration.ofMinutes(5))
-                .maximumSize(2_000));
+                .maximumSize(2_000)
+                .recordStats());
         return manager;
     }
 }

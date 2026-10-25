@@ -2,6 +2,7 @@ package com.spectrace.config;
 
 import com.spectrace.common.ClientIps;
 import com.spectrace.common.MemoryRateLimiter;
+import com.spectrace.common.MetricsCounter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -25,6 +26,7 @@ import java.time.Duration;
 public class PublicRateLimitFilter extends OncePerRequestFilter {
 
     private final MemoryRateLimiter rateLimiter;
+    private final MetricsCounter metricsCounter;
 
     @Value("${spectrace.public.rate-limit-qpm:120}")
     private int qpm;
@@ -34,6 +36,8 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String uri = request.getRequestURI();
         if (uri.startsWith("/api/public/") && !rateLimiter.allow("public:" + ClientIps.resolve(request), qpm, Duration.ofMinutes(1))) {
+            // 429 按归一化路径（数字 id 折叠）计数，运维页可看哪些接口被限流（T105）
+            metricsCounter.increment("429:" + uri.replaceAll("\\d+", "{id}"));
             response.setStatus(429);
             response.setContentType("application/json;charset=UTF-8");
             response.getWriter().write("{\"code\":429,\"message\":\"请求过于频繁，请稍后再试\"}");
