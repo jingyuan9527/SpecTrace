@@ -117,6 +117,15 @@ function isNumericValue(value: string) {
   return /^\d/.test(value.trim())
 }
 
+/** T87 参数陈旧度：超过 180 天未更新的参数提示可能过期（OTA、新配色、调价都会让旧值失真） */
+const STALE_DAYS = 180
+
+function isStale(updatedAt?: string | null) {
+  if (!updatedAt) return false
+  const time = Date.parse(updatedAt)
+  return Number.isFinite(time) && Date.now() - time > STALE_DAYS * 24 * 3600 * 1000
+}
+
 function openParamHistory(paramDefId?: number | null) {
   // 走本机所属系列的跨代趋势并聚焦到该参数；未归类机型没有世代上下文，入口不展示
   if (!device.value || !paramDefId || !series.value) return
@@ -260,6 +269,12 @@ function queryFromReceipt() {
                 <span v-if="lastUpdated" class="flex items-center gap-1.5">
                   <Clock3 class="h-4 w-4" />
                   最后更新：{{ formatTime(lastUpdated) }}
+                  <span
+                    v-if="isStale(lastUpdated)"
+                    class="rounded bg-amber-500/10 px-1.5 py-0.5 text-xs text-amber-600 dark:text-amber-400"
+                  >
+                    超过 {{ STALE_DAYS }} 天未更新 · 可能过期
+                  </span>
                 </span>
               </div>
 
@@ -377,6 +392,13 @@ function queryFromReceipt() {
                         更新于
                         <span class="hidden sm:inline">{{ formatTime(item.meta.updatedAt) }}</span>
                         <span class="sm:hidden">{{ formatTime(item.meta.updatedAt).slice(0, 10) }}</span>
+                        <span
+                          v-if="isStale(item.meta.updatedAt)"
+                          class="ml-1 text-amber-600 dark:text-amber-400"
+                          title="该参数已超过 180 天未更新，数值可能已因 OTA 或调价变化"
+                        >
+                          · 可能过期
+                        </span>
                       </span>
                       <span
                         v-if="item.meta?.confidence != null"

@@ -538,6 +538,24 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
           })),
       )
     }
+    if (/^\/admin\/series\/\d+\/stale-devices$/.test(path)) {
+      // T87 重抓全系列：固定把 iPhone 16 当作「陈旧」目标，验证弹窗与提交链路
+      const seriesId = Number(path.split('/')[3])
+      const member = state.devices.find((device) => device.seriesId === seriesId && device.id === 4)
+      return ok(
+        member
+          ? [
+              {
+                id: member.id,
+                name: member.name,
+                status: member.status,
+                releaseDate: member.releaseDate,
+                thumbnail: member.thumbnail,
+              },
+            ]
+          : [],
+      )
+    }
     if (/^\/admin\/series\/\d+$/.test(path)) {
       if (method === 'PUT') {
         const body = request.postDataJSON()

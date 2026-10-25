@@ -1,6 +1,7 @@
 package com.spectrace.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.spectrace.dto.DeviceLastUpdate;
 import com.spectrace.dto.DeviceParamCount;
 import com.spectrace.dto.HistoryPoint;
 import com.spectrace.dto.ParamCoverage;
@@ -8,6 +9,7 @@ import com.spectrace.entity.DeviceParamValue;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface DeviceParamValueMapper extends BaseMapper<DeviceParamValue> {
@@ -45,4 +47,16 @@ public interface DeviceParamValueMapper extends BaseMapper<DeviceParamValue> {
             GROUP BY device_id
             """)
     List<DeviceParamCount> selectParamCountByDevice();
+
+    /** 各机型参数最近一次更新时间（系列陈旧度重抓圈定目标用，T87） */
+    @Select("""
+            <script>
+            SELECT device_id AS deviceId, MAX(updated_at) AS lastUpdated
+            FROM device_param_value
+            WHERE device_id IN
+            <foreach collection="deviceIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+            GROUP BY device_id
+            </script>
+            """)
+    List<DeviceLastUpdate> selectLastUpdateByDevice(@Param("deviceIds") Collection<Long> deviceIds);
 }

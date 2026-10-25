@@ -52,6 +52,13 @@ public class AdminSeriesController {
         return R.ok(seriesService.devicesWithoutParams(id));
     }
 
+    @Operation(summary = "系列内参数陈旧的机型（无参数或超过 N 天未更新，供重抓全系列）")
+    @GetMapping("/{id}/stale-devices")
+    public R<List<SeriesMissingDeviceVO>> staleDevices(@PathVariable Long id,
+                                                       @RequestParam(defaultValue = "180") int days) {
+        return R.ok(seriesService.staleDevices(id, Math.max(days, 0)));
+    }
+
     @Operation(summary = "机型归类（seriesId 为空表示取消归类）")
     @PostMapping("/assign")
     public R<Integer> assign(@RequestBody AssignSeriesRequest req,

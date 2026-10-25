@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
-import { CloudDownload, Combine, GripVertical, Loader2, Pencil, Plus, Radar, Sparkles, Trash2 } from '@lucide/vue'
+import { CloudDownload, Combine, GripVertical, History, Loader2, Pencil, Plus, Radar, Sparkles, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { useRouter } from 'vue-router'
 import { adminApi } from '@/api'
@@ -292,14 +292,22 @@ function openDiscovery(row: DeviceSeries) {
   router.push({ name: 'admin-agent-tasks', query: { mode: 'SERIES_DISCOVERY', brand: brandName } })
 }
 
-// ---- 补抓缺参机型：系列内无参数值的机型逐台发起抓取（复用机型页的弹窗模式） ----
+// ---- 抓取弹窗：missing=补抓缺参机型，stale=重抓参数陈旧机型（T87），共用目标列表与模型选择 ----
 const scrapeDialog = ref(false)
+const scrapeMode = ref<'missing' | 'stale'>('missing')
 const scrapeSeries = ref<DeviceSeries | null>(null)
 const scrapeTargets = ref<SeriesMissingDevice[]>([])
 const scrapeTargetsLoading = ref(false)
 const scrapeModelId = ref<number | null>(null)
 const scrapeSubmitting = ref(false)
 const aiModels = ref<AiModel[]>([])
+
+const scrapeTitle = computed(() => (scrapeMode.value === 'stale' ? '重抓全系列（参数陈旧）' : '补抓缺参机型'))
+const scrapeDescription = computed(() =>
+  scrapeMode.value === 'stale'
+    ? `对「${scrapeSeries.value?.name ?? ''}」内超过 180 天未更新或没有参数值的机型重新抓取，结果进入待审核`
+    : `对「${scrapeSeries.value?.name ?? ''}」内没有参数值的机型发起抓取，结果进入待审核`,
+)
 
 const scrapeModelOptions = computed(() =>
   aiModels.value.map((m) => ({
@@ -314,14 +322,24 @@ function needsBackfill(row: DeviceSeries) {
 }
 
 async function openScrape(row: DeviceSeries) {
+  await openScrapeDialog(row, 'missing')
+}
+
+/** T87 重抓全系列：目标为无参数或参数超 180 天未更新的机型 */
+async function openStaleScrape(row: DeviceSeries) {
+  await openScrapeDialog(row, 'stale')
+}
+
+async function openScrapeDialog(row: DeviceSeries, mode: 'missing' | 'stale') {
   if (!row.id) return
+  scrapeMode.value = mode
   scrapeSeries.value = row
   scrapeTargets.value = []
   scrapeDialog.value = true
   scrapeTargetsLoading.value = true
   try {
     const [targets, models] = await Promise.all([
-      adminApi.seriesMissingDevices(row.id),
+      mode === 'stale' ? adminApi.seriesStaleDevices(row.id) : adminApi.seriesMissingDevices(row.id),
       aiModels.value.length ? Promise.resolve(aiModels.value) : adminApi.aiModels(),
     ])
     scrapeTargets.value = targets
@@ -438,6 +456,16 @@ async function confirmScrape() {
                     @click="openScrape(row)"
                   >
                     <CloudDownload />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="重抓全系列"
+                    title="对系列内参数超过 180 天未更新或没有参数值的机型重新抓取"
+                    :disabled="!row.deviceCount"
+                    @click="openStaleScrape(row)"
+                  >
+                    <History />
                   </Button>
                   <Button
                     variant="ghost"
@@ -637,8 +665,8 @@ async function confirmScrape() {
 
     <Dialog
       v-model:open="scrapeDialog"
-      title="补抓缺参机型"
-      :description="`对「${scrapeSeries?.name ?? ''}」内没有参数值的机型发起抓取，结果进入待审核`"
+      :title="scrapeTitle"
+      :description="scrapeDescription"
       class="max-w-md"
     >
       <div class="space-y-4">
@@ -658,7 +686,7 @@ async function confirmScrape() {
               </Badge>
             </div>
             <p v-if="!scrapeTargets.length" class="px-1 py-2 text-sm text-muted-foreground">
-              系列内所有机型都已有参数值，无需补抓。
+              {{ scrapeMode === 'stale' ? '系列内没有参数陈旧的机型，暂无需重抓。' : '系列内所有机型都已有参数值，无需补抓。' }}
             </p>
           </div>
           <div class="space-y-1.5">

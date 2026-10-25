@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.spectrace.common.BizException;
 import com.spectrace.config.CacheConfig;
+import com.spectrace.dto.DeviceLastUpdate;
 import com.spectrace.dto.SeriesMissingDeviceVO;
 import com.spectrace.dto.SeriesSuggestVO;
 import com.spectrace.dto.SeriesVO;
@@ -25,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -204,29 +206,74 @@ public class DeviceSeriesService {
      * 草稿机型是系列发现链路的产物，同样需要抓详情补参数，因此不按上架状态过滤。
      */
     public List<SeriesMissingDeviceVO> devicesWithoutParams(Long seriesId) {
+        DeviceSeries series = requireSeries(seriesId);
+        List<Device> devices = seriesDevices(seriesId);
+        Set<Long> withParams = deviceIdsWithParams(devices.stream().map(Device::getId).toList());
+        return devices.stream()
+                .filter(d -> !withParams.contains(d.getId()))
+                .map(this::toMissingVO)
+                .toList();
+    }
+
+    /**
+     * 系列内参数陈旧的机型（T87）：无参数，或参数最近更新早于 N 天前。
+     * updated_at 无法解析的按陈旧处理——宁多抓不漏抓；days 传 0 可圈定全部有机型的目标（冒烟用）。
+     */
+    public List<SeriesMissingDeviceVO> staleDevices(Long seriesId, int days) {
+        requireSeries(seriesId);
+        List<Device> devices = seriesDevices(seriesId);
+        if (devices.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, LocalDateTime> lastUpdates = new HashMap<>();
+        for (DeviceLastUpdate row : valueMapper.selectLastUpdateByDevice(devices.stream().map(Device::getId).toList())) {
+            LocalDateTime parsed = parseStorageTime(row.getLastUpdated());
+            if (parsed != null) {
+                lastUpdates.put(row.getDeviceId(), parsed);
+            }
+        }
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(days);
+        return devices.stream()
+                .filter(d -> lastUpdates.getOrDefault(d.getId(), LocalDateTime.MIN).isBefore(cutoff))
+                .map(this::toMissingVO)
+                .toList();
+    }
+
+    private DeviceSeries requireSeries(Long seriesId) {
         DeviceSeries series = seriesMapper.selectById(seriesId);
         if (series == null) {
             throw new BizException("系列不存在：" + seriesId);
         }
-        List<Device> devices = deviceMapper.selectList(Wrappers.<Device>lambdaQuery()
+        return series;
+    }
+
+    private List<Device> seriesDevices(Long seriesId) {
+        return deviceMapper.selectList(Wrappers.<Device>lambdaQuery()
                 .eq(Device::getSeriesId, seriesId)
                 .orderByDesc(Device::getReleaseDate));
-        if (devices.isEmpty()) {
-            return List.of();
+    }
+
+    private SeriesMissingDeviceVO toMissingVO(Device device) {
+        SeriesMissingDeviceVO vo = new SeriesMissingDeviceVO();
+        vo.setId(device.getId());
+        vo.setName(device.getName());
+        vo.setStatus(device.getStatus());
+        vo.setReleaseDate(device.getReleaseDate());
+        vo.setThumbnail(device.getThumbnail());
+        return vo;
+    }
+
+    /** SQLite DATETIME 读回的字符串兼容 T 与空格两种分隔符；解析失败返回 null 由调用方兜底。 */
+    private LocalDateTime parseStorageTime(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
         }
-        Set<Long> withParams = deviceIdsWithParams(devices.stream().map(Device::getId).toList());
-        return devices.stream()
-                .filter(d -> !withParams.contains(d.getId()))
-                .map(d -> {
-                    SeriesMissingDeviceVO vo = new SeriesMissingDeviceVO();
-                    vo.setId(d.getId());
-                    vo.setName(d.getName());
-                    vo.setStatus(d.getStatus());
-                    vo.setReleaseDate(d.getReleaseDate());
-                    vo.setThumbnail(d.getThumbnail());
-                    return vo;
-                })
-                .toList();
+        try {
+            return LocalDateTime.parse(raw.trim().replace(' ', 'T').substring(0, 19));
+        } catch (Exception e) {
+            log.warn("参数更新时间无法解析，按陈旧处理: raw={}", raw);
+            return null;
+        }
     }
 
     /** 未归类机型：后台逐个选择系列即时归类。 */

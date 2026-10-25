@@ -65,6 +65,21 @@ test('后台：参数分组与参数定义维护', async ({ page }) => {
   await expect(page.getByRole('cell', { name: '摄像头数量' })).toBeVisible()
 })
 
+test('后台：系列重抓全系列（参数陈旧）', async ({ page }) => {
+  await mockApi(page)
+  await login(page)
+
+  await page.goto('/admin/series')
+  await expect(page.getByRole('heading', { name: '系列管理' })).toBeVisible()
+  await page.getByRole('row', { name: /iPhone 数字系列/ }).getByRole('button', { name: '重抓全系列' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await expect(page.getByRole('dialog')).toContainText('重抓全系列（参数陈旧）')
+  // mock 把 iPhone 16 圈定为陈旧目标
+  await expect(page.getByRole('dialog')).toContainText('iPhone 16')
+  await page.getByRole('dialog').getByRole('button', { name: '提交 1 个任务' }).click()
+  await expect(page.getByText(/提交 1 个抓取任务/)).toBeVisible()
+})
+
 test('后台：数据健康度看板与缺参补抓', async ({ page }) => {
   await mockApi(page)
   await login(page)
