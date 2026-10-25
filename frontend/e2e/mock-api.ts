@@ -11,6 +11,7 @@ const PARAMS: Record<number, Record<string, string>> = {
   7: { release_date: '2025-09-19', screen_size: '6.3', battery_capacity: '3600', chipset: 'A19 Pro' },
   4: { release_date: '2024-09-20', screen_size: '6.1', battery_capacity: '3561' },
   9: { release_date: '2024-11-26', screen_size: '6.7', battery_capacity: '5000' },
+  11: { release_date: '2025-09-19', screen_size: '6.3', battery_capacity: '3900', chipset: 'A19 Pro' },
 }
 
 export async function mockApi(page: Page, options: { mustChangePassword?: boolean } = {}) {
@@ -24,11 +25,13 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
     series: [
       { id: 1, brandId: 1, name: 'iPhone 数字系列', sortOrder: 1, status: 1 },
       { id: 2, brandId: 2, name: 'Mate 系列', sortOrder: 2, status: 1 },
+      { id: 3, brandId: 1, name: 'iPhone Pro 系列', sortOrder: 3, status: 1 },
     ] as DeviceSeries[],
     devices: [
       { id: 7, brandId: 1, name: 'iPhone 17', releaseDate: '2025-09-19', thumbnail: '/devices/placeholder.svg', status: 1, seriesId: 1 },
       { id: 4, brandId: 1, name: 'iPhone 16', releaseDate: '2024-09-20', thumbnail: '/devices/placeholder.svg', status: 1, seriesId: 1 },
       { id: 9, brandId: 2, name: 'Mate 70', releaseDate: '2024-11-26', thumbnail: '/devices/placeholder.svg', status: 1, seriesId: 2 },
+      { id: 11, brandId: 1, name: 'iPhone 17 Pro', releaseDate: '2025-09-19', thumbnail: '/devices/placeholder.svg', status: 1, seriesId: 3 },
     ] as Device[],
     // 列表行附带 params，供审核详情直接复用
     pending: [
@@ -139,6 +142,7 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         [
           { id: 1, brandId: 1, brandName: 'Apple', name: 'iPhone 数字系列', deviceCount: 2, startYear: 2024, endYear: 2025 },
           { id: 2, brandId: 2, brandName: '华为', name: 'Mate 系列', deviceCount: 1, startYear: 2024, endYear: 2024 },
+          { id: 3, brandId: 1, brandName: 'Apple', name: 'iPhone Pro 系列', deviceCount: 1, startYear: 2025, endYear: 2025 },
         ].filter((series) => !brandId || series.brandId === brandId),
       )
     }
@@ -191,54 +195,136 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         .split(',')
         .map(Number)
         .filter(Boolean)
-      // 只有这四个参数有数值，其余按「无数据参数」返回，用于覆盖非数值参数的展示分支
+      const seriesMeta: Record<number, { name: string; brandId: number; brandName: string; devices: { id: number; name: string; releaseDate: string; thumbnail: string; launchPrice: number }[] }> = {
+        1: {
+          name: 'iPhone 数字系列', brandId: 1, brandName: 'Apple',
+          devices: [
+            { id: 4, name: 'iPhone 16', releaseDate: '2024-09-20', thumbnail: '/devices/placeholder.svg', launchPrice: 5999 },
+            { id: 7, name: 'iPhone 17', releaseDate: '2025-09-19', thumbnail: '/devices/placeholder.svg', launchPrice: 5999 },
+          ],
+        },
+        2: {
+          name: 'Mate 系列', brandId: 2, brandName: '华为',
+          devices: [{ id: 9, name: 'Mate 70', releaseDate: '2024-11-26', thumbnail: '/devices/placeholder.svg', launchPrice: 5499 }],
+        },
+        3: {
+          name: 'iPhone Pro 系列', brandId: 1, brandName: 'Apple',
+          devices: [{ id: 11, name: 'iPhone 17 Pro', releaseDate: '2025-09-19', thumbnail: '/devices/placeholder.svg', launchPrice: 8999 }],
+        },
+      }
+      const meta = seriesMeta[seriesId] ?? seriesMeta[1]
+      const devices = meta.devices
+      // 数值参数与文本参数分开造：数值覆盖折线，文本覆盖值序列展示分支，其余按「无数据参数」返回
       const numericMeta: Record<number, { paramKey: string; paramName: string; unit: string; values: number[] }> = {
         3: { paramKey: 'screen_size', paramName: '屏幕尺寸', unit: '英寸', values: [6.1, 6.3] },
         11: { paramKey: 'battery_capacity', paramName: '电池容量', unit: 'mAh', values: [3561, 3600] },
         18: { paramKey: 'weight', paramName: '机身重量', unit: 'g', values: [170, 172] },
         2: { paramKey: 'launch_price', paramName: '首发价格', unit: '元', values: [5999, 5999] },
       }
-      const isApple = seriesId === 1
-      const devices = isApple
-        ? [
-            { id: 4, name: 'iPhone 16', releaseDate: '2024-09-20', thumbnail: '/devices/placeholder.svg', launchPrice: 5999 },
-            { id: 7, name: 'iPhone 17', releaseDate: '2025-09-19', thumbnail: '/devices/placeholder.svg', launchPrice: 5999 },
-          ]
-        : [{ id: 9, name: 'Mate 70', releaseDate: '2024-11-26', thumbnail: '/devices/placeholder.svg', launchPrice: 5499 }]
+      const textMeta: Record<number, { paramKey: string; paramName: string; values: string[] }> = {
+        7: { paramKey: 'chipset', paramName: '芯片', values: ['A18', 'A19 Pro'] },
+      }
       const params = defIds.map((defId) => {
-        const meta = numericMeta[defId]
-        if (!meta) {
+        const numeric = numericMeta[defId]
+        const text = textMeta[defId]
+        if (numeric) {
           return {
             paramDefId: defId,
-            paramName: '未收录参数',
+            paramKey: numeric.paramKey,
+            paramName: numeric.paramName,
+            unit: numeric.unit,
+            numeric: true,
+            missingCount: 0,
+            points: devices.map((device, index) => ({
+              deviceId: device.id,
+              raw: String(numeric.values[index]),
+              value: numeric.values[index],
+              conflict: false,
+            })),
+          }
+        }
+        if (text) {
+          return {
+            paramDefId: defId,
+            paramKey: text.paramKey,
+            paramName: text.paramName,
             numeric: false,
-            missingCount: devices.length,
-            points: devices.map((device) => ({ deviceId: device.id, raw: null, value: null, conflict: false })),
+            missingCount: 0,
+            points: devices.map((device, index) => ({
+              deviceId: device.id,
+              raw: text.values[index],
+              value: null,
+              conflict: false,
+            })),
           }
         }
         return {
           paramDefId: defId,
-          paramKey: meta.paramKey,
-          paramName: meta.paramName,
-          unit: meta.unit,
-          numeric: true,
-          missingCount: 0,
-          points: devices.map((device, index) => ({
-            deviceId: device.id,
-            raw: String(meta.values[index]),
-            value: meta.values[index],
-            conflict: false,
-          })),
+          paramName: '未收录参数',
+          numeric: false,
+          missingCount: devices.length,
+          points: devices.map((device) => ({ deviceId: device.id, raw: null, value: null, conflict: false })),
         }
       })
       return ok({
         seriesId,
-        seriesName: isApple ? 'iPhone 数字系列' : 'Mate 系列',
-        brandId: isApple ? 1 : 2,
-        brandName: isApple ? 'Apple' : '华为',
+        seriesName: meta.name,
+        brandId: meta.brandId,
+        brandName: meta.brandName,
         devices,
         params,
       })
+    }
+    if (path === '/public/series/generation') {
+      const brandId = Number(url.searchParams.get('brandId') || 0)
+      const year = Number(url.searchParams.get('year') || 0)
+      // 与真实后端同口径：按系列占位，当年无新机的系列 device=null 仍返回空列
+      const deviceOf = (id: number, name: string, date: string, launchPrice: number) => ({
+        id, name, releaseDate: date, thumbnail: '/devices/placeholder.svg', launchPrice,
+      })
+      const param = (paramDefId: number, paramName: string, unit: string, value: number | null) => ({
+        paramDefId,
+        paramName,
+        unit,
+        numeric: value !== null,
+        value,
+        raw: value === null ? null : String(value),
+        conflict: false,
+      })
+      const items =
+        brandId === 1
+          ? [
+              {
+                seriesId: 1,
+                seriesName: 'iPhone 数字系列',
+                device: year === 2025 ? deviceOf(7, 'iPhone 17', '2025-09-19', 5999) : deviceOf(4, 'iPhone 16', '2024-09-20', 5999),
+                params:
+                  year === 2025
+                    ? [param(3, '屏幕尺寸', '英寸', 6.3), param(11, '电池容量', 'mAh', 3600), param(18, '机身重量', 'g', 172), param(2, '首发价格', '元', 5999)]
+                    : [param(3, '屏幕尺寸', '英寸', 6.1), param(11, '电池容量', 'mAh', 3561), param(18, '机身重量', 'g', 170), param(2, '首发价格', '元', 5999)],
+              },
+              {
+                seriesId: 3,
+                seriesName: 'iPhone Pro 系列',
+                device: year === 2025 ? deviceOf(11, 'iPhone 17 Pro', '2025-09-19', 8999) : null,
+                params:
+                  year === 2025
+                    ? [param(3, '屏幕尺寸', '英寸', 6.3), param(11, '电池容量', 'mAh', 3900), param(18, '机身重量', 'g', 199), param(2, '首发价格', '元', 8999)]
+                    : [param(3, '屏幕尺寸', '英寸', null), param(11, '电池容量', 'mAh', null), param(18, '机身重量', 'g', null), param(2, '首发价格', '元', null)],
+              },
+            ]
+          : [
+              {
+                seriesId: 2,
+                seriesName: 'Mate 系列',
+                device: year === 2024 ? deviceOf(9, 'Mate 70', '2024-11-26', 5499) : null,
+                params:
+                  year === 2024
+                    ? [param(3, '屏幕尺寸', '英寸', 6.7), param(11, '电池容量', 'mAh', 5000), param(18, '机身重量', 'g', 209), param(2, '首发价格', '元', 5499)]
+                    : [param(3, '屏幕尺寸', '英寸', null), param(11, '电池容量', 'mAh', null), param(18, '机身重量', 'g', null), param(2, '首发价格', '元', null)],
+              },
+            ]
+      return ok({ brandId, brandName: brandId === 1 ? 'Apple' : '华为', year, items })
     }
     if (/^\/public\/series\/\d+\/social-copy$/.test(path)) {
       return ok({
@@ -345,24 +431,6 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
       })
     }
     if (path === '/public/years') return ok([2025, 2024])
-    if (path === '/public/history') {
-      return ok({
-        paramDefId: 3,
-        paramName: '屏幕尺寸',
-        unit: '英寸',
-        numeric: true,
-        series: [
-          {
-            brandId: 1,
-            brandName: 'Apple',
-            points: [
-              { deviceId: 4, deviceName: 'iPhone 16', releaseDate: '2024-09-20', value: '6.1' },
-              { deviceId: 7, deviceName: 'iPhone 17', releaseDate: '2025-09-19', value: '6.3' },
-            ],
-          },
-        ],
-      })
-    }
     if (path === '/public/feedback' && method === 'POST') return ok(1)
 
     // ---------- 后台 ----------

@@ -16,7 +16,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SecurityConfigTest {
 
     private static final List<String> VISITOR_ROUTES = List.of(
-            "/", "/index.html", "/devices", "/devices/1", "/compare", "/history", "/evolution");
+            "/", "/index.html", "/devices", "/devices/1", "/compare", "/trends",
+            // 旧路由保留放行：分享链接直访时由 SPA 壳完成到 /trends 的重定向
+            "/history", "/evolution");
 
     @Test
     @DisplayName("PUBLIC_PATHS 覆盖全部访客前端路由")

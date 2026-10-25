@@ -25,9 +25,9 @@ test('访客：机型库系列总览视图', async ({ page }) => {
   await expect(iphoneCard).toContainText('最新：iPhone 17')
   await expect(iphoneCard.locator('svg[viewBox="0 0 100 28"]')).toHaveCount(2)
 
-  // 点卡片直达该系列的世代回顾
+  // 点卡片直达该系列的跨代趋势（挂载后 URL 会补全 brandId/paramDefIds 等）
   await iphoneCard.click()
-  await expect(page).toHaveURL(/\/evolution\?seriesId=1/)
+  await expect(page).toHaveURL(/\/trends\?.*seriesId=1/)
 
   // 未归类卡：切回列表视图并去掉 view 参数
   await page.goto('/devices?view=series')

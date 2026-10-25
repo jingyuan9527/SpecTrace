@@ -8,6 +8,7 @@ import com.spectrace.dto.CompareInsightVO;
 import com.spectrace.dto.CompareResultVO;
 import com.spectrace.dto.DeviceSuggestVO;
 import com.spectrace.dto.EvolutionVO;
+import com.spectrace.dto.GenerationMatrixVO;
 import com.spectrace.dto.HistorySeriesVO;
 import com.spectrace.dto.SeriesInsightRequest;
 import com.spectrace.dto.SeriesInsightVO;
@@ -160,6 +161,14 @@ public class PublicController {
     @GetMapping("/series/overview")
     public R<SeriesOverviewResult> seriesOverview(@RequestParam(required = false) Long brandId) {
         return R.ok(evolutionService.overview(brandId));
+    }
+
+    @Operation(summary = "同代横比矩阵：某品牌某年各系列代表机型与参数单点值")
+    @GetMapping("/series/generation")
+    public R<GenerationMatrixVO> generation(@RequestParam Long brandId,
+                                            @RequestParam Integer year,
+                                            @RequestParam(required = false) String paramDefIds) {
+        return R.ok(evolutionService.generationMatrix(brandId, year, parseIds(paramDefIds)));
     }
 
     @Operation(summary = "世代回顾：系列机型序列与参数趋势")

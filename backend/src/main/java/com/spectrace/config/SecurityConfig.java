@@ -34,8 +34,9 @@ public class SecurityConfig {
             "/device-images/**",
             // history 路由下的前端页面直接访问时返回 SPA 壳，登录态由前端路由守卫控制
             "/compare",
+            // 系列趋势访客前端路由；/history /evolution 是被前端重定向的旧链接，保留放行让 SPA 壳完成跳转
+            "/trends",
             "/history",
-            // 世代回顾同为访客前端路由：T31 上线时漏配，生产直链会 401
             "/evolution",
             "/admin/**",
             "/v3/api-docs/**",

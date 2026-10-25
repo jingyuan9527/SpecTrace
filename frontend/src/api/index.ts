@@ -24,7 +24,7 @@ import type {
   EvolutionResult,
   Feedback,
   FeedbackSubmitRequest,
-  HistoryResult,
+  GenerationMatrix,
   InsightResult,
   SocialCopyResult,
   LoginRequest,
@@ -73,10 +73,6 @@ export const publicApi = {
     request.get<unknown, InsightResult>('/public/compare/insight', { params: { ids: ids.join(',') } }),
   generateCompareInsight: (ids: number[]) =>
     request.post<unknown, InsightResult>('/public/compare/insight', { ids }),
-  history: (brandIds: number[], paramDefId: number) =>
-    request.get<unknown, HistoryResult>('/public/history', {
-      params: { brandIds: brandIds.join(','), paramDefId },
-    }),
   years: (brandId?: number) => request.get<unknown, number[]>('/public/years', { params: { brandId } }),
   series: (brandId?: number) => request.get<unknown, SeriesItem[]>('/public/series', { params: { brandId } }),
   seriesOverview: (brandId?: number) =>
@@ -84,6 +80,10 @@ export const publicApi = {
   evolution: (seriesId: number, paramDefIds: number[]) =>
     request.get<unknown, EvolutionResult>(`/public/series/${seriesId}/evolution`, {
       params: { paramDefIds: paramDefIds.join(',') },
+    }),
+  generation: (brandId: number, year: number, paramDefIds: number[]) =>
+    request.get<unknown, GenerationMatrix>('/public/series/generation', {
+      params: { brandId, year, paramDefIds: paramDefIds.join(',') },
     }),
   seriesInsight: (seriesId: number, deviceIds: number[], paramDefIds: number[]) =>
     request.get<unknown, InsightResult>(`/public/series/${seriesId}/insight`, {

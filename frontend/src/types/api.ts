@@ -312,28 +312,6 @@ export interface CompareResult {
   groups: CompareGroup[]
 }
 
-export interface HistoryPoint {
-  deviceId: number
-  deviceName: string
-  releaseDate?: string | null
-  value: string
-}
-
-export interface HistorySeriesItem {
-  brandId: number
-  brandName: string
-  points: HistoryPoint[]
-}
-
-export interface HistoryResult {
-  paramDefId: number
-  paramName: string
-  unit?: string | null
-  numeric: boolean
-  unitConflicts?: string[]
-  series: HistorySeriesItem[]
-}
-
 export interface SeriesItem extends DeviceSeries {
   brandName: string
   deviceCount: number
@@ -373,6 +351,32 @@ export interface EvolutionResult {
   brandName: string
   devices: EvolutionDevice[]
   params: EvolutionParam[]
+}
+
+/** 同代横比：参数在某年代表机型上的单点取值，口径同 EvolutionPoint */
+export interface GenerationParam {
+  paramDefId: number
+  paramName: string
+  unit?: string | null
+  numeric: boolean
+  value?: number | null
+  raw?: string | null
+  conflict: boolean
+}
+
+/** 同代横比中的一列：某系列在指定年份的代表机型，当年无新机时 device 为 null */
+export interface GenerationSeries {
+  seriesId: number
+  seriesName: string
+  device: EvolutionDevice | null
+  params: GenerationParam[]
+}
+
+export interface GenerationMatrix {
+  brandId: number
+  brandName: string
+  year: number
+  items: GenerationSeries[]
 }
 
 /** 系列总览迷你趋势的单点：x 轴按发布年份 */

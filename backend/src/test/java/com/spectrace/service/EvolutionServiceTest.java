@@ -6,6 +6,9 @@ import com.spectrace.common.BizException;
 import com.spectrace.dto.EvolutionDeviceVO;
 import com.spectrace.dto.EvolutionParamVO;
 import com.spectrace.dto.EvolutionVO;
+import com.spectrace.dto.GenerationMatrixVO;
+import com.spectrace.dto.GenerationParamVO;
+import com.spectrace.dto.GenerationSeriesVO;
 import com.spectrace.dto.SeriesOverviewResult;
 import com.spectrace.dto.SeriesOverviewVO;
 import com.spectrace.dto.SeriesTrendPointVO;
@@ -204,6 +207,61 @@ class EvolutionServiceTest {
 
         assertThat(overview.getItems()).isEmpty();
         assertThat(overview.getUnassignedCount()).isEqualTo(5L);
+    }
+
+    @Test
+    @DisplayName("同代矩阵：同年多款取发布最晚，未归类忽略，无新机系列占位")
+    void buildsGenerationMatrix() {
+        DeviceSeries digital = new DeviceSeries();
+        digital.setId(1L);
+        digital.setBrandId(1L);
+        digital.setName("iPhone 数字系列");
+        digital.setStatus(1);
+        DeviceSeries pro = new DeviceSeries();
+        pro.setId(3L);
+        pro.setBrandId(1L);
+        pro.setName("iPhone Pro 系列");
+        pro.setStatus(1);
+        DeviceSeries air = new DeviceSeries();
+        air.setId(4L);
+        air.setBrandId(1L);
+        air.setName("iPhone Air 系列");
+        air.setStatus(1);
+        when(seriesService.list(1L, 1)).thenReturn(List.of(digital, pro, air));
+
+        Device unassigned = device(12L, "无系列机", LocalDate.of(2025, 6, 1));
+        unassigned.setSeriesId(null);
+        Device proDevice = device(11L, "iPhone 17 Pro", LocalDate.of(2025, 9, 19));
+        proDevice.setSeriesId(3L);
+        when(deviceMapper.selectList(any())).thenReturn(List.of(
+                device(8L, "iPhone 17e", LocalDate.of(2025, 2, 19)),
+                device(7L, "iPhone 17", LocalDate.of(2025, 9, 19)),
+                proDevice,
+                unassigned));
+        when(variantMapper.selectList(any())).thenReturn(List.of(
+                variant(7L, "6999"), variant(7L, "5999"), variant(11L, "8999")));
+        when(valueMapper.selectList(any())).thenReturn(List.of(
+                value(7L, 3L, "6.3英寸"), value(11L, 3L, "6.3英寸")));
+
+        GenerationMatrixVO matrix = service.generationMatrix(1L, 2025, List.of(3L, 2L));
+
+        assertThat(matrix.getYear()).isEqualTo(2025);
+        assertThat(matrix.getItems()).extracting(GenerationSeriesVO::getSeriesName)
+                .containsExactly("iPhone 数字系列", "iPhone Pro 系列", "iPhone Air 系列");
+        // 同年两款取发布更晚的 iPhone 17，17e 被淘汰；未归类机型不参与
+        assertThat(matrix.getItems().get(0).getDevice().getName()).isEqualTo("iPhone 17");
+        assertThat(matrix.getItems().get(1).getDevice().getName()).isEqualTo("iPhone 17 Pro");
+        // 当年无新机的系列仍占位，前端呈现「该年无新机」而不是悄悄少一列
+        assertThat(matrix.getItems().get(2).getDevice()).isNull();
+
+        List<GenerationParamVO> digitalParams = matrix.getItems().get(0).getParams();
+        assertThat(digitalParams).hasSize(2);
+        assertThat(digitalParams.get(0).getParamName()).isEqualTo("屏幕尺寸");
+        assertThat(digitalParams.get(0).getValue()).isEqualByComparingTo("6.3");
+        // launch_price 特判：取变体最低价而非参数值表
+        assertThat(digitalParams.get(1).getParamName()).isEqualTo("首发价格");
+        assertThat(digitalParams.get(1).getValue()).isEqualByComparingTo("5999");
+        assertThat(matrix.getItems().get(1).getParams().get(1).getValue()).isEqualByComparingTo("8999");
     }
 
     private Device device(Long id, String name, LocalDate releaseDate) {

@@ -2,51 +2,51 @@ import { expect, test } from '@playwright/test'
 import { mockApi } from './mock-api'
 
 /**
- * P11 机型库 × 参数历史/世代回顾 的连接链路：
+ * P11 机型库 × 系列趋势 的连接链路：
  * 详情页系列条与两个入口、稀疏系列的空态叙事与补抓 CTA、后台完善度看板。
  */
 
-/** 访客：详情页系列条、世代回顾入口与参数历史跳转。 */
-test('访客：详情页系列条与参数历史入口', async ({ page }) => {
+/** 访客：详情页系列条、系列趋势入口与参数走势跳转。 */
+test('访客：详情页系列条与参数走势入口', async ({ page }) => {
   await mockApi(page)
 
-  // iPhone 17 属于 2 代的 iPhone 数字系列：系列条 + 世代回顾入口都要出现
+  // iPhone 17 属于 2 代的 iPhone 数字系列：系列条 + 系列趋势入口都要出现
   await page.goto('/devices/7')
   await expect(page.getByRole('heading', { name: '所属系列 · iPhone 数字系列' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '世代回顾' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '系列趋势' })).toBeVisible()
   // 当前机型在系列条中禁用高亮，同系列其它机型可点互跳
   await expect(page.getByRole('button', { name: 'iPhone 17 iPhone 17 2025' })).toBeDisabled()
   await page.getByRole('button', { name: 'iPhone 16 iPhone 16 2024' }).click()
   await expect(page).toHaveURL(/\/devices\/4/)
 
-  // 世代回顾入口直达该系列
+  // 系列趋势入口直达该系列的跨代视图（挂载后 URL 会补全 brandId/paramDefIds 等）
   await page.goto('/devices/7')
-  await page.getByRole('button', { name: '世代回顾' }).click()
-  await expect(page).toHaveURL(/\/evolution\?seriesId=1/)
+  await page.getByRole('button', { name: '系列趋势' }).click()
+  await expect(page).toHaveURL(/\/trends\?.*seriesId=1/)
 
-  // 数值参数行带历史入口，点击后历史页自动选中品牌与参数
+  // 数值参数行带走势入口，点击后趋势页聚焦到该参数
   await page.goto('/devices/7')
   const screenRow = page.getByRole('row', { name: /屏幕尺寸/ })
-  await screenRow.getByRole('button', { name: '查看参数历史' }).click()
-  await expect(page).toHaveURL(/\/history\?brandId=1&paramDefId=3/)
-  await expect(page.getByText('共 2 个机型数据点')).toBeVisible()
+  await screenRow.getByRole('button', { name: '查看参数走势' }).click()
+  await expect(page).toHaveURL(/\/trends\?.*seriesId=1&paramDefIds=3,11,18,2&paramDefId=3/)
+  await expect(page.getByText('Apple · iPhone 数字系列')).toBeVisible()
 
-  // 文本参数（芯片）没有历史入口
+  // 文本参数（芯片）没有走势入口
   const chipRow = page.getByRole('row', { name: /芯片/ })
-  await expect(chipRow.getByRole('button', { name: '查看参数历史' })).toHaveCount(0)
+  await expect(chipRow.getByRole('button', { name: '查看参数走势' })).toHaveCount(0)
 
   // 单机系列（Mate 70）：只有系列条与收录中文案，不放入口
   await page.goto('/devices/9')
   await expect(page.getByRole('heading', { name: '所属系列 · Mate 系列' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '世代回顾' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '系列趋势' })).toHaveCount(0)
   await expect(page.getByText('已收录 1 代 · 数据持续收录中')).toBeVisible()
 })
 
-/** 访客：稀疏系列回顾页的空态叙事与管理员补抓 CTA 两态。 */
+/** 访客：稀疏系列趋势页的空态叙事与管理员补抓 CTA 两态。 */
 test('访客：稀疏系列空态与管理员 CTA', async ({ page }) => {
   await mockApi(page)
 
-  // Mate 系列只有 1 代：显示收录进度文案，未登录无补抓按钮
+  // Mate 系列只有 1 代：显示收录进度文案，未登录无补抓按钮（旧 /evolution 链接经重定向进入）
   await page.goto('/evolution?seriesId=2')
   await expect(page.getByText('该系列已收录 1 代，数据持续收录中')).toBeVisible()
   await expect(page.getByRole('button', { name: '去后台补抓' })).toHaveCount(0)

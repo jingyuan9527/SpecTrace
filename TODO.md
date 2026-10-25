@@ -1091,6 +1091,21 @@
 
 ---
 
+## P13 · 系列趋势页重构（2026-10-25 完成）
+
+> 背景：参数历史（选品牌看单参数走势）与世代回顾（选系列看多参数）是同一件事的两个半成品视角，控件区重（4 下拉 + checkbox 云 + 起止世代裁剪），导航里难分彼此。已定决策：主语从「品牌」改为「系列」，两页合并为 `/trends` 单页双模式，形态采用「参数卡网格 + 聚焦主图」；「选品牌看趋势」概念与世代区间裁剪废弃。
+
+| 任务 | 状态 | 说明 |
+| --- | --- | --- |
+| T78 同代横比矩阵接口 | ✅ | `GET /api/public/series/generation?brandId=&year=&paramDefIds=`：某品牌某年各兄弟系列的代表机型（同年多款取发布最晚，无新机系列 device=null 占位，未归类机型不参与）+ 参数单点值；复用 `EvolutionService` 的价格/参数值提取，`launch_price` 特判取变体最低价；新增 `GenerationMatrixVO/GenerationSeriesVO/GenerationParamVO`，单测覆盖同年取晚、占位与价格口径 |
+| T79 系列趋势页（跨代 + 同代） | ✅ | 新增 `/trends`：品牌 + 页内 Tab；跨代 = 系列 chips → 世代缩略图条 + 参数卡网格（`ValueSparkline` 内联 SVG 迷你趋势 + 涨跌徽标，chips 增换上限 8）+ 点卡聚焦 ECharts 大图 + AI 回顾 + 社媒/截图导出；同代 = 年份 chips → 兄弟系列并排卡（中性「最高/最低」标注）+ 一键全部加入对比页。URL 同步 mode/brandId/seriesId/year/paramDefIds/paramDefId |
+| T80 旧页面与入口收编 | ✅ | 删除 History.vue / Evolution.vue；`/history` `/evolution` 路由重定向（evolution 保留 seriesId 映射）；导航两项合一；首页/机型库系列卡/详情页系列条与参数行入口全部改指 `/trends`（参数行入口带 paramDefId 直达聚焦）；后端 `/public/history` 接口保留不动（API 兼容），sitemap 输出改 `/trends`，Security 白名单加 `/trends` 并保留旧路径放行 |
+| T81 e2e 与文档同步 | ✅ | `series-evolution.spec.ts` 重写为 `series-trends.spec.ts`（跨代聚焦/参数上限/同代横比/社媒导出/移动端双列），连接与总览用例改断言新 URL；mock 新增 generation、补 Apple 兄弟系列与文本参数；README 路由/功能段/SEO/e2e 描述同步 |
+
+**验证**：`mvn test` 42 例全绿（新增同代矩阵与安全白名单断言）；`npm run typecheck` / `build` 通过；`npm run test:e2e` 19 例全绿。
+
+---
+
 ## 依赖与并行建议
 
 - T1 独立，最先做，当天可完成

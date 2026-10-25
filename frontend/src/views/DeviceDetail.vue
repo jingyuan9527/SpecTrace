@@ -108,19 +108,20 @@ const evolutionAvailable = computed(() => seriesDevices.value.length >= 2)
 
 function openEvolution() {
   if (!series.value) return
-  router.push({ name: 'evolution', query: { seriesId: String(series.value.id) } })
+  router.push({ name: 'trends', query: { mode: 'cross', seriesId: String(series.value.id) } })
 }
 
-/** 参数历史入口：仅数值型参数（值以数字开头）做跨代比较才有意义，纯文本参数不展示 */
+/** 参数走势入口：仅数值型参数（值以数字开头）做跨代比较才有意义，纯文本参数不展示 */
 function isNumericValue(value: string) {
   return /^\d/.test(value.trim())
 }
 
 function openParamHistory(paramDefId?: number | null) {
-  if (!device.value || !paramDefId) return
+  // 走本机所属系列的跨代趋势并聚焦到该参数；未归类机型没有世代上下文，入口不展示
+  if (!device.value || !paramDefId || !series.value) return
   router.push({
-    name: 'history',
-    query: { brandId: String(device.value.brandId), paramDefId: String(paramDefId) },
+    name: 'trends',
+    query: { mode: 'cross', seriesId: String(series.value.id), paramDefId: String(paramDefId) },
   })
 }
 
@@ -239,7 +240,7 @@ async function submitFeedback() {
           </h2>
           <Button v-if="evolutionAvailable" variant="outline" size="sm" @click="openEvolution">
             <TrendingUp />
-            世代回顾
+            系列趋势
           </Button>
           <span v-else class="text-xs text-muted-foreground">已收录 {{ seriesDevices.length }} 代 · 数据持续收录中</span>
         </div>
@@ -356,12 +357,12 @@ async function submitFeedback() {
                   <TableCell class="text-right align-top">
                     <div class="flex items-center justify-end gap-0.5">
                       <Button
-                        v-if="item.meta?.paramDefId && isNumericValue(item.value)"
+                        v-if="series && item.meta?.paramDefId && isNumericValue(item.value)"
                         variant="ghost"
                         size="icon-sm"
                         class="text-muted-foreground hover:text-foreground"
-                        aria-label="查看参数历史"
-                        title="查看该参数的历史演变"
+                        aria-label="查看参数走势"
+                        title="查看该参数在本系列的跨代走势"
                         @click="openParamHistory(item.meta?.paramDefId)"
                       >
                         <LineChart />

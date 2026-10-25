@@ -7,6 +7,9 @@ import com.spectrace.dto.EvolutionDeviceVO;
 import com.spectrace.dto.EvolutionParamVO;
 import com.spectrace.dto.EvolutionPointVO;
 import com.spectrace.dto.EvolutionVO;
+import com.spectrace.dto.GenerationMatrixVO;
+import com.spectrace.dto.GenerationParamVO;
+import com.spectrace.dto.GenerationSeriesVO;
 import com.spectrace.dto.SeriesOverviewResult;
 import com.spectrace.dto.SeriesOverviewVO;
 import com.spectrace.dto.SeriesTrendPointVO;
@@ -236,6 +239,114 @@ public class EvolutionService {
         result.setParams(params);
         log.debug("世代回顾: seriesId={} 机型 {} 台，参数 {} 个", seriesId, devices.size(), params.size());
         return result;
+    }
+
+    /**
+     * 同代横比矩阵：某品牌指定年份各兄弟系列的代表机型 + 所选参数单点值。
+     *
+     * <p>系列视角对齐：未归类机型不参与；同系列同年多款机型取发布最晚一款作代表；
+     * 系列当年无新机时仍占位（device=null）。items 按系列 sortOrder 排序。</p>
+     */
+    public GenerationMatrixVO generationMatrix(Long brandId, Integer year, List<Long> paramDefIds) {
+        if (brandId == null || year == null) {
+            throw new BizException("brandId 与 year 不能为空");
+        }
+        Brand brand = brandMapper.selectById(brandId);
+        if (brand == null) {
+            throw new BizException("品牌不存在：" + brandId);
+        }
+        List<Long> defIds = paramDefIds == null ? List.of() : paramDefIds.stream().distinct().toList();
+        if (defIds.size() > MAX_PARAMS) {
+            throw new BizException("最多同时查看 " + MAX_PARAMS + " 个参数");
+        }
+
+        // 年份口径与 DeviceService 分页一致：落在 [year-01-01, year+1-01-01)
+        LocalDate start = LocalDate.of(year, 1, 1);
+        LocalDate end = start.plusYears(1);
+        Map<Long, Device> representative = deviceMapper.selectList(Wrappers.<Device>lambdaQuery()
+                        .eq(Device::getBrandId, brandId)
+                        .eq(Device::getStatus, 1)
+                        .isNotNull(Device::getSeriesId)
+                        .ge(Device::getReleaseDate, start)
+                        .lt(Device::getReleaseDate, end)).stream()
+                .collect(Collectors.toMap(Device::getSeriesId, Function.identity(), this::laterOf));
+
+        List<Long> deviceIds = representative.values().stream().map(Device::getId).toList();
+        Map<Long, BigDecimal> prices = lowestPrices(deviceIds);
+        Map<Long, Map<Long, String>> values =
+                deviceIds.isEmpty() || defIds.isEmpty() ? Map.of() : paramValuesOf(deviceIds, defIds);
+        Map<Long, ParamDef> defMap = paramService.listDefs(null, 1).stream()
+                .collect(Collectors.toMap(ParamDef::getId, Function.identity(), (a, b) -> a));
+
+        List<GenerationSeriesVO> items = new ArrayList<>();
+        for (DeviceSeries series : seriesService.list(brandId, 1)) {
+            GenerationSeriesVO item = new GenerationSeriesVO();
+            item.setSeriesId(series.getId());
+            item.setSeriesName(series.getName());
+            Device device = representative.get(series.getId());
+            item.setDevice(device == null ? null : toDeviceVO(device, prices));
+            List<GenerationParamVO> params = new ArrayList<>();
+            for (Long defId : defIds) {
+                ParamDef def = defMap.get(defId);
+                if (def == null) {
+                    log.debug("同代横比跳过不存在或已停用的参数: brandId={} paramDefId={}", brandId, defId);
+                    continue;
+                }
+                params.add(singleParam(def, device, values, prices));
+            }
+            item.setParams(params);
+            items.add(item);
+        }
+
+        GenerationMatrixVO result = new GenerationMatrixVO();
+        result.setBrandId(brandId);
+        result.setBrandName(brand.getName());
+        result.setYear(year);
+        result.setItems(items);
+        log.debug("同代横比: brandId={} year={} 系列 {} 个，有代表机型 {} 个",
+                brandId, year, items.size(), representative.size());
+        return result;
+    }
+
+    /** 同系列同年多款机型时取发布更晚者（同日按 id 大者），作为该系列当年的代表。空日期理论上已被查询过滤，仍兜底排末尾。 */
+    private Device laterOf(Device a, Device b) {
+        int byDate = Comparator.comparing(Device::getReleaseDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Device::getId)
+                .compare(a, b);
+        return byDate >= 0 ? a : b;
+    }
+
+    /** 参数在单台机型上的取值，口径对齐 paramTrend / priceParam，只是点列退化为单点。 */
+    private GenerationParamVO singleParam(ParamDef def, Device device,
+                                          Map<Long, Map<Long, String>> values, Map<Long, BigDecimal> prices) {
+        GenerationParamVO vo = new GenerationParamVO();
+        vo.setParamDefId(def.getId());
+        vo.setParamName(def.getParamName());
+        vo.setUnit(def.getUnit());
+        if (device == null) {
+            return vo;
+        }
+        if (LAUNCH_PRICE_KEY.equals(def.getParamKey())) {
+            BigDecimal price = prices.get(device.getId());
+            vo.setNumeric(price != null);
+            if (price != null) {
+                vo.setRaw(price.stripTrailingZeros().toPlainString());
+                vo.setValue(price);
+            }
+            return vo;
+        }
+        String raw = values.getOrDefault(device.getId(), Map.of()).get(def.getId());
+        if (!StringUtils.hasText(raw)) {
+            return vo;
+        }
+        vo.setRaw(raw.trim());
+        ParamValueParser.Parsed parsed = ParamValueParser.parse(vo.getRaw(), def.getUnit());
+        vo.setNumeric(parsed.numeric());
+        if (parsed.numeric()) {
+            vo.setValue(parsed.number());
+        }
+        vo.setConflict(parsed.conflict());
+        return vo;
     }
 
     private List<Device> devicesOf(Long seriesId) {

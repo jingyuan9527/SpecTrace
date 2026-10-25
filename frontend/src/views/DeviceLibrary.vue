@@ -246,7 +246,7 @@ function toggleCompare(device: Device) {
             :transition="{ duration: 0.25, delay: Math.min(index, 6) * 0.04 }"
           >
             <Card class="group h-full overflow-hidden transition-shadow hover:shadow-md">
-              <router-link :to="{ name: 'evolution', query: { seriesId: item.id } }" class="block h-full">
+              <router-link :to="{ name: 'trends', query: { mode: 'cross', seriesId: item.id } }" class="block h-full">
                 <CardContent class="flex h-full flex-col gap-3 p-5">
                   <div class="flex items-center gap-3">
                     <div class="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-muted/50">
@@ -296,7 +296,7 @@ function toggleCompare(device: Device) {
                       <p v-else class="py-1 text-xs text-muted-foreground/70">暂无趋势数据</p>
                     </div>
                     <p class="flex items-center gap-1 text-xs font-medium text-primary">
-                      查看世代回顾
+                      查看系列趋势
                       <ArrowRight class="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
                     </p>
                   </div>

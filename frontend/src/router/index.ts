@@ -12,8 +12,16 @@ const routes: RouteRecordRaw[] = [
       { path: 'devices', name: 'devices', component: () => import('@/views/DeviceLibrary.vue') },
       { path: 'devices/:id', name: 'device-detail', component: () => import('@/views/DeviceDetail.vue') },
       { path: 'compare', name: 'compare', component: () => import('@/views/Compare.vue') },
-      { path: 'history', name: 'history', component: () => import('@/views/History.vue') },
-      { path: 'evolution', name: 'evolution', component: () => import('@/views/Evolution.vue') },
+      { path: 'trends', name: 'trends', component: () => import('@/views/Trends.vue') },
+      // 旧链接重定向：/evolution 的系列上下文可以映射，/history 的品牌维度已废弃，落到默认视图
+      {
+        path: 'evolution',
+        redirect: (to) => ({
+          name: 'trends',
+          query: to.query.seriesId ? { mode: 'cross', seriesId: String(to.query.seriesId) } : { mode: 'cross' },
+        }),
+      },
+      { path: 'history', redirect: { name: 'trends', query: { mode: 'cross' } } },
       // 兜底 404：保留访客导航，未知路径不再渲染空白页
       { path: ':pathMatch(.*)*', name: 'not-found', component: () => import('@/views/NotFound.vue') },
     ],

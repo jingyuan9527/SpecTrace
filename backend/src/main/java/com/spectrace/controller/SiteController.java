@@ -47,7 +47,7 @@ public class SiteController {
                 .append("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n");
         appendUrl(xml, base + "/", null, "1.0", "daily");
         appendUrl(xml, base + "/devices", null, "0.9", "daily");
-        appendUrl(xml, base + "/history", null, "0.7", "weekly");
+        appendUrl(xml, base + "/trends", null, "0.7", "weekly");
         for (Device device : devices) {
             String lastmod = device.getUpdatedAt() == null ? null : device.getUpdatedAt().toLocalDate().toString();
             appendUrl(xml, base + "/devices/" + device.getId(), lastmod, "0.8", "weekly");

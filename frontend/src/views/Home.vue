@@ -101,9 +101,9 @@ function addCompare(device: Device) {
               <GitCompareArrows />
               机型对比
             </Button>
-            <Button variant="outline" size="sm" @click="router.push({ name: 'history' })">
+            <Button variant="outline" size="sm" @click="router.push({ name: 'trends' })">
               <TrendingUp />
-              参数历史演变
+              系列趋势
             </Button>
             <Button variant="ghost" size="sm" @click="router.push({ name: 'devices' })">
               浏览全部机型

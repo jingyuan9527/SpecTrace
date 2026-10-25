@@ -3,7 +3,6 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   GitCompareArrows,
-  History,
   House,
   Laptop,
   Menu,
@@ -26,8 +25,7 @@ const tabs = [
   { name: 'home', label: '首页', icon: House },
   { name: 'devices', label: '机型库', icon: Smartphone },
   { name: 'compare', label: '机型对比', icon: GitCompareArrows },
-  { name: 'history', label: '参数历史', icon: History },
-  { name: 'evolution', label: '世代回顾', icon: TrendingUp },
+  { name: 'trends', label: '系列趋势', icon: TrendingUp },
 ]
 
 /** 详情页属于机型库分支，导航高亮要保持在同一父级。 */
