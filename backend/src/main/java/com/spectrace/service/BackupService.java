@@ -37,6 +37,7 @@ public class BackupService {
     private static final String PREFIX = "spectrace-";
     private static final String SUFFIX = ".db";
 
+    private final AlertSender alertSender;
     private final JdbcTemplate jdbcTemplate;
 
     @Value("${spectrace.backup.enabled:true}")
@@ -63,6 +64,8 @@ public class BackupService {
             log.info("SQLite 备份完成: {} ({} bytes)", file.toAbsolutePath(), Files.size(file));
         } catch (Exception e) {
             log.error("SQLite 备份失败，请检查备份目录权限与磁盘空间", e);
+            // T104：备份连续失败直接威胁数据安全，必须第一时间告警（同规则 24h 一次）
+            alertSender.sendOncePerDay("backup_failed", "SQLite 备份失败：" + e.getMessage() + "，请检查备份目录权限与磁盘空间");
         }
     }
 

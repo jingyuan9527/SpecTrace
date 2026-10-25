@@ -98,6 +98,12 @@ spectrace:
     view-daily-days: ${SPECTRACE_RETENTION_VIEW_DAILY_DAYS:90}
     # 访客搜索词聚合的保留天数
     search-log-days: ${SPECTRACE_RETENTION_SEARCH_LOG_DAYS:90}
+  # 运行告警（T104）：待审核积压 / 备份失败 / 磁盘水位；webhook 复用 AGENT_ALERT_WEBHOOK，阈值 0 关闭对应规则
+  alert:
+    cron: ${SPECTRACE_ALERT_CRON:0 0 * * * *}
+    pending-count: ${SPECTRACE_ALERT_PENDING_COUNT:20}
+    pending-oldest-hours: ${SPECTRACE_ALERT_PENDING_OLDEST_HOURS:48}
+    disk-free-mb: ${SPECTRACE_ALERT_DISK_FREE_MB:1024}
   # 系列订阅抓取调度（T88）：每天检查到期订阅并自动创建「系列发现」任务
   subscription:
     cron: ${SPECTRACE_SUBSCRIPTION_CRON:0 0 5 * * *}
