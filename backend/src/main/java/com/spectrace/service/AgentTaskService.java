@@ -34,6 +34,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -501,7 +502,80 @@ public class AgentTaskService {
             String kw = keyword.trim();
             query.and(q -> q.like(AgentPendingData::getModelName, kw).or().like(AgentPendingData::getBrandName, kw));
         }
+        // 待审核队列走「风险优先」排序（T86）：可疑项置顶，审核员的注意力按风险分配而非提交顺序。
+        // 队列规模有限（只筛 PENDING_REVIEW），整体载入内存打标后分页；其他状态保持创建时间倒序。
+        if (PendingStatus.PENDING_REVIEW.name().equals(status)) {
+            List<AgentPendingData> rows = pendingMapper.selectList(query);
+            rows.forEach(row -> row.setRiskLevel(riskLevelOf(row)));
+            Comparator<AgentPendingData> byRisk = Comparator
+                    .comparingInt((AgentPendingData row) -> riskOrder(row.getRiskLevel()))
+                    .thenComparing(AgentPendingData::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder()));
+            rows.sort(byRisk);
+            long total = rows.size();
+            int from = (int) Math.min((current - 1) * size, total);
+            int to = (int) Math.min(from + size, total);
+            Page<AgentPendingData> page = new Page<>(current, size, total);
+            page.setRecords(rows.subList(from, to));
+            return page;
+        }
         return pendingMapper.selectPage(new Page<>(current, size), query);
+    }
+
+    private static final double CONFIDENCE_VERIFY_THRESHOLD = 0.6;
+    private static final double CONFIDENCE_PASS_THRESHOLD = 0.9;
+
+    private int riskOrder(String riskLevel) {
+        return switch (riskLevel == null ? "NORMAL" : riskLevel) {
+            case "HIGH" -> 0;
+            case "MEDIUM" -> 1;
+            case "PASS" -> 3;
+            default -> 2;
+        };
+    }
+
+    /**
+     * AI 预审打标（T86）：不发外部请求，只依据抓取结果自身数据评估——
+     * 低置信度（&lt;0.6）或单位冲突判 HIGH；与库中现有值有差异判 MEDIUM；
+     * 全部参数置信度 ≥0.9 且无任何冲突判 PASS（可信项，可放心批量处理）；其余 NORMAL。
+     */
+    private String riskLevelOf(AgentPendingData data) {
+        Map<String, Object> params;
+        Map<String, Double> confidence;
+        try {
+            Map<String, Object> stored = data.getParamsJson() == null
+                    ? new LinkedHashMap<>()
+                    : objectMapper.readValue(data.getParamsJson(), new TypeReference<>() {
+                    });
+            params = new LinkedHashMap<>(stored);
+            confidence = toConfidenceMap(params.remove("_confidence"));
+        } catch (Exception e) {
+            log.warn("预审打标解析失败，按 NORMAL 处理: pendingId={}", data.getId(), e);
+            return "NORMAL";
+        }
+        params.keySet().removeIf(key -> key.startsWith("_"));
+        boolean lowConfidence = confidence.values().stream().anyMatch(c -> c < CONFIDENCE_VERIFY_THRESHOLD);
+        boolean unitConflict = !unitWarnings(params).isEmpty();
+
+        boolean diffConflict = false;
+        Device existing = findExistingDevice(data.getBrandName(), data.getModelName());
+        if (existing != null && !params.isEmpty()) {
+            Map<String, String> existingParams = deviceService.paramValuesOf(existing.getId());
+            diffConflict = params.entrySet().stream().anyMatch(entry -> {
+                String oldValue = existingParams.get(entry.getKey());
+                return oldValue != null && entry.getValue() != null && !String.valueOf(entry.getValue()).equals(oldValue);
+            });
+        }
+
+        if (lowConfidence || unitConflict) {
+            return "HIGH";
+        }
+        if (diffConflict) {
+            return "MEDIUM";
+        }
+        if (!confidence.isEmpty() && confidence.values().stream().allMatch(c -> c >= CONFIDENCE_PASS_THRESHOLD)) {
+            return "PASS";
+        }
+        return "NORMAL";
     }
 
     /**
@@ -551,6 +625,7 @@ public class AgentTaskService {
         vo.setBrandName(data.getBrandName());
         vo.setSourceUrl(data.getSourceUrl());
         vo.setStatus(data.getStatus());
+        vo.setRiskLevel(data.getRiskLevel());
         vo.setCreatedAt(data.getCreatedAt());
         Map<String, Object> params = data.getParamsJson() == null
                 ? new LinkedHashMap<>()

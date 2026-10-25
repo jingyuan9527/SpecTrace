@@ -44,6 +44,7 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         status: 'PENDING_REVIEW',
         createdAt: '2026-10-22T10:00:00',
         params: { release_date: '2026-09-18', screen_size: '6.4' },
+        riskLevel: 'HIGH',
       },
     ] as (PendingData & { params: Record<string, string> })[],
     tasks: [] as any[],

@@ -244,6 +244,48 @@ async function confirmBatch() {
 const paramConfidence = ref<Record<string, number>>({})
 const paramWarnings = ref<Record<string, string>>({})
 
+// ---- T86 AI 预审打标：列表徽标 + 批量通过护栏 + 审核弹窗分组提示 ----
+const riskBadges: Record<string, { label: string; variant: 'warning' | 'info' | 'success' }> = {
+  HIGH: { label: '建议核实', variant: 'warning' },
+  MEDIUM: { label: '值有变更', variant: 'info' },
+  PASS: { label: '可信', variant: 'success' },
+}
+
+/** 已选中记录里「建议人工核实」的条数：批量通过时触发二次确认 */
+const riskySelected = computed(
+  () =>
+    list.value.filter(
+      (row) => selectedIds.value.includes(row.id) && (row.riskLevel === 'HIGH' || row.riskLevel === 'MEDIUM'),
+    ).length,
+)
+
+const batchGuardOpen = ref(false)
+
+function requestBatchApprove() {
+  if (riskySelected.value > 0) {
+    batchGuardOpen.value = true
+    return
+  }
+  batchAction.value = 'approve'
+}
+
+/** 审核弹窗分组：建议核实 = 低置信度或单位冲突；建议直接通过 = 高置信 + 无警告 + 与现值一致 */
+const verifyCount = computed(
+  () =>
+    Object.keys(form.params).filter(
+      (key) => paramWarnings.value[key] || (typeof paramConfidence.value[key] === 'number' && paramConfidence.value[key] < 0.6),
+    ).length,
+)
+
+const passCount = computed(
+  () =>
+    Object.keys(form.params).filter((key) => {
+      const confidence = paramConfidence.value[key]
+      const changed = (existingParams.value[key] ?? '') !== (form.params[key] ?? '')
+      return !paramWarnings.value[key] && typeof confidence === 'number' && confidence >= 0.9 && !changed
+    }).length,
+)
+
 function confidenceOf(key: string): number | null {
   const value = paramConfidence.value[key]
   return typeof value === 'number' ? value : null
@@ -299,7 +341,7 @@ function removeVariant(index: number) {
       class="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm"
     >
       <span class="font-medium">已选 {{ selectedIds.length }} 条</span>
-      <Button size="sm" :disabled="batchProcessing" @click="batchAction = 'approve'">批量通过</Button>
+      <Button size="sm" :disabled="batchProcessing" @click="requestBatchApprove">批量通过</Button>
       <Button
         size="sm"
         variant="ghost"
@@ -336,6 +378,7 @@ function removeVariant(index: number) {
               <TableHead class="min-w-56">来源链接</TableHead>
               <TableHead class="w-44">抓取时间</TableHead>
               <TableHead class="w-24">状态</TableHead>
+              <TableHead class="w-24" title="T86 AI 预审：低置信度/单位冲突/与现有值差异/高置信可信">预审</TableHead>
               <TableHead class="w-32 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
@@ -370,6 +413,12 @@ function removeVariant(index: number) {
                 <Badge :variant="statusMeta[row.status]?.variant ?? 'secondary'">
                   {{ statusMeta[row.status]?.label ?? row.status }}
                 </Badge>
+              </TableCell>
+              <TableCell>
+                <Badge v-if="row.riskLevel && riskBadges[row.riskLevel]" :variant="riskBadges[row.riskLevel].variant">
+                  {{ riskBadges[row.riskLevel].label }}
+                </Badge>
+                <span v-else class="text-xs text-muted-foreground">—</span>
               </TableCell>
               <TableCell class="text-right">
                 <div class="flex justify-end gap-1">
@@ -440,6 +489,10 @@ function removeVariant(index: number) {
             <Badge variant="warning">{{ changedRows.length }} 项参数有变化</Badge>
             <span class="text-muted-foreground">审核通过后将覆盖更新已有记录 #{{ current?.existingDeviceId }}</span>
           </template>
+          <template v-if="verifyCount > 0">
+            <Badge variant="warning">建议核实 {{ verifyCount }} 项</Badge>
+          </template>
+          <Badge v-if="passCount > 0" variant="success">建议直接通过 {{ passCount }} 项</Badge>
         </div>
 
         <Separator />
@@ -541,6 +594,16 @@ function removeVariant(index: number) {
         </Button>
       </template>
     </Dialog>
+
+    <ConfirmDialog
+      :open="batchGuardOpen"
+      title="选中有建议人工核实的记录"
+      :description="`已选 ${selectedIds.length} 条中有 ${riskySelected} 条为低置信度、单位冲突或与现有值有差异（AI 预审标黄）。直接通过会把未核实值写入机型库，建议先逐条核对。`"
+      confirm-text="仍要批量通过"
+      destructive
+      @update:open="batchGuardOpen = false"
+      @confirm="batchAction = 'approve'"
+    />
 
     <ConfirmDialog
       :open="!!batchAction"

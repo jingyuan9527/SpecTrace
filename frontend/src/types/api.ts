@@ -502,6 +502,8 @@ export interface PendingData {
   sourceUrl?: string | null
   status: string
   createdAt?: string
+  /** AI 预审风险等级（T86，仅待审核状态计算）：HIGH / MEDIUM / NORMAL / PASS */
+  riskLevel?: string | null
 }
 
 export interface PendingDataDetail extends PendingData {

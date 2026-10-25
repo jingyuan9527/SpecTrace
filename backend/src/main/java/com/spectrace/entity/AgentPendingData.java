@@ -42,4 +42,11 @@ public class AgentPendingData {
 
     @TableLogic
     private Integer deleted;
+
+    /**
+     * AI 预审风险等级（非表字段，T86）：HIGH=含低置信度或单位冲突，MEDIUM=与库中现有值有差异，
+     * PASS=全部参数高置信且无冲突，NORMAL=其余。仅待审核列表按需计算。
+     */
+    @TableField(exist = false)
+    private String riskLevel;
 }

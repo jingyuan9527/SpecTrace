@@ -83,6 +83,24 @@ test('后台：数据健康度看板与缺参补抓', async ({ page }) => {
   await expect(page.getByText('已提交 1 个抓取任务，结果将进入待审核')).toBeVisible()
 })
 
+test('后台：AI 预审打标与批量通过护栏', async ({ page }) => {
+  await mockApi(page)
+  await login(page)
+
+  await page.goto('/admin/pending')
+  await expect(page.getByRole('cell', { name: 'iPhone 18', exact: true })).toBeVisible()
+  // 列表显示预审徽标（mock 行为 HIGH = 建议核实）
+  await expect(page.getByText('建议核实', { exact: true }).first()).toBeVisible()
+
+  // 勾选可疑记录后点批量通过：先出现护栏确认，放行后进入既有批量确认，再次确认才执行
+  await page.getByLabel('选择 iPhone 18').check()
+  await page.getByRole('button', { name: '批量通过' }).click()
+  await expect(page.getByText('选中有建议人工核实的记录')).toBeVisible()
+  await page.getByRole('button', { name: '仍要批量通过' }).click()
+  await page.getByRole('dialog', { name: '批量通过待审核数据' }).getByRole('button', { name: '批量通过' }).click()
+  await expect(page.getByText('已通过 1 条')).toBeVisible()
+})
+
 test('后台：初始密码必须先改密才能进入', async ({ page }) => {
   await mockApi(page, { mustChangePassword: true })
 
