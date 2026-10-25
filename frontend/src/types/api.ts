@@ -206,6 +206,31 @@ export interface ModelStat {
   nearTimeout: number
 }
 
+/** 单日全站浏览量（T103） */
+export interface DailyPv {
+  date: string
+  pv: number
+}
+
+/** 窗口期 PV TOP 机型（T103） */
+export interface TopDevicePv {
+  deviceId: number
+  deviceName: string
+  pv: number
+}
+
+/** 访客流量监控（T103） */
+export interface TrafficMetrics {
+  windowDays: number
+  daily: DailyPv[]
+  weekPv: number
+  lastWeekPv: number
+  /** 周环比（正负小数），上周为 0 为 null */
+  weekOverWeek?: number | null
+  topDevices: TopDevicePv[]
+  compareInitiated: number
+}
+
 /** 搜索词统计行（T102） */
 export interface SearchKeywordStat {
   keyword: string

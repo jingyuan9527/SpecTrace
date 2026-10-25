@@ -162,6 +162,9 @@ test('后台：运行监控页采集漏斗', async ({ page }) => {
   // T101：模型排行表
   await expect(page.getByRole('cell', { name: 'OpenRouter / random' })).toBeVisible()
   await expect(page.getByRole('cell', { name: '80%', exact: true })).toBeVisible()
+  // T103：流量卡
+  await expect(page.getByText('访客流量')).toBeVisible()
+  await expect(page.getByText('周环比 +17%')).toBeVisible()
   // T102：搜索需求信号卡
   await expect(page.getByText('搜索需求信号')).toBeVisible()
   await expect(page.getByText('iPhone 18', { exact: true })).toBeVisible()

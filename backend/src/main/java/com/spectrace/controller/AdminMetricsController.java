@@ -3,8 +3,10 @@ package com.spectrace.controller;
 import com.spectrace.common.R;
 import com.spectrace.dto.CollectMetricsVO;
 import com.spectrace.dto.SearchMetricsVO;
+import com.spectrace.dto.TrafficMetricsVO;
 import com.spectrace.service.CollectMetricsService;
 import com.spectrace.service.SearchLogService;
+import com.spectrace.service.TrafficMetricsService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -26,12 +28,19 @@ public class AdminMetricsController {
 
     private final CollectMetricsService collectMetricsService;
     private final SearchLogService searchLogService;
+    private final TrafficMetricsService trafficMetricsService;
 
     @Operation(summary = "采集链路监控（漏斗 / 成功率 / 耗时 / 图片队列）")
     @GetMapping("/collect")
     public R<CollectMetricsVO> collect(@RequestParam(defaultValue = "30") int windowDays) {
         // 窗口收敛到 1~90，防止一次拉全表
         return R.ok(collectMetricsService.overview(Math.max(1, Math.min(windowDays, 90))));
+    }
+
+    @Operation(summary = "访客流量（日 PV / 周环比 / 对比使用）")
+    @GetMapping("/traffic")
+    public R<TrafficMetricsVO> traffic(@RequestParam(defaultValue = "30") int windowDays) {
+        return R.ok(trafficMetricsService.overview(Math.max(1, Math.min(windowDays, 90))));
     }
 
     @Operation(summary = "搜索需求信号（TOP 词 / 空结果率）")

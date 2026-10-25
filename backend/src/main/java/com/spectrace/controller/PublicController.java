@@ -27,6 +27,7 @@ import com.spectrace.service.DeviceViewService;
 import com.spectrace.service.EvolutionService;
 import com.spectrace.service.ParamService;
 import com.spectrace.service.SearchLogService;
+import com.spectrace.service.TrafficMetricsService;
 import com.spectrace.service.SeriesInsightService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -52,6 +53,7 @@ public class PublicController {
     private final DeviceService deviceService;
     private final DeviceViewService deviceViewService;
     private final SearchLogService searchLogService;
+    private final TrafficMetricsService trafficMetricsService;
     private final EvolutionService evolutionService;
     private final CompareInsightService compareInsightService;
     private final SeriesInsightService seriesInsightService;
@@ -120,6 +122,7 @@ public class PublicController {
                 .toList();
         CompareResultVO result = deviceService.compare(deviceIds);
         deviceViewService.recordViews(deviceIds);
+        trafficMetricsService.recordCompare();
         return R.ok(result);
     }
 

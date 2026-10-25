@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { Activity, Loader2, RefreshCw, SearchX } from '@lucide/vue'
+import { Activity, Loader2, RefreshCw, SearchX, TrendingUp } from '@lucide/vue'
 import { adminApi } from '@/api'
-import type { CollectMetrics, SearchMetrics } from '@/types/api'
+import type { CollectMetrics, SearchMetrics, TrafficMetrics } from '@/types/api'
 import PageHeader from '@/components/PageHeader.vue'
 import { useECharts } from '@/composables/useECharts'
 import { cssVar } from '@/lib/utils'
@@ -26,12 +26,17 @@ const { bind, render } = useECharts()
 
 const collect = ref<CollectMetrics | null>(null)
 const search = ref<SearchMetrics | null>(null)
+const traffic = ref<TrafficMetrics | null>(null)
 const loading = ref(true)
 
 async function load() {
   loading.value = true
   try {
-    ;[collect.value, search.value] = await Promise.all([adminApi.collectMetrics(30), adminApi.searchMetrics(30)])
+    ;[collect.value, search.value, traffic.value] = await Promise.all([
+      adminApi.collectMetrics(30),
+      adminApi.searchMetrics(30),
+      adminApi.trafficMetrics(30),
+    ])
   } finally {
     loading.value = false
   }
@@ -82,11 +87,42 @@ function renderDailyChart() {
   })
 }
 
+/** PV 日趋势单折线 */
+function renderPvChart() {
+  const daily = traffic.value?.daily ?? []
+  render('pv', {
+    grid: { left: 40, right: 16, top: 20, bottom: 28 },
+    tooltip: { trigger: 'axis' },
+    xAxis: {
+      type: 'category',
+      data: daily.map((point) => point.date.slice(5)),
+      axisLabel: { color: cssVar('--muted-foreground', '#888') },
+    },
+    yAxis: { type: 'value', minInterval: 1, axisLabel: { color: cssVar('--muted-foreground', '#888') } },
+    series: [
+      {
+        name: 'PV',
+        type: 'line',
+        smooth: true,
+        symbol: 'none',
+        areaStyle: { opacity: 0.08 },
+        data: daily.map((point) => point.pv),
+        lineStyle: { width: 2, color: cssVar('--primary', '#0a0a0a') },
+      },
+    ],
+  })
+}
+
+const wowText = computed(() => {
+  const wow = traffic.value?.weekOverWeek
+  if (wow == null) return '—'
+  return `${wow >= 0 ? '+' : ''}${Math.round(wow * 100)}%`
+})
+
 // 数据就绪（图表容器随 v-else-if 挂载）与主题切换后重绘；token 颜色是实时计算的
-watch([collect, () => theme.dark], () => {
-  if (collect.value) {
-    nextTick(renderDailyChart)
-  }
+watch([collect, traffic, () => theme.dark], () => {
+  if (collect.value) nextTick(renderDailyChart)
+  if (traffic.value) nextTick(renderPvChart)
 })
 </script>
 
@@ -202,6 +238,32 @@ watch([collect, () => theme.dark], () => {
           </Table>
         </CardContent>
 
+      </Card>
+
+      <!-- T103 访客流量：PV 趋势 / 周环比 / 对比使用 / TOP 机型 -->
+      <Card v-if="traffic">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-5 py-3">
+          <h2 class="flex items-center gap-2 text-sm font-semibold">
+            <TrendingUp class="h-4 w-4" />
+            访客流量
+          </h2>
+          <span class="text-xs text-muted-foreground">
+            本周 PV {{ traffic.weekPv }} · 周环比 {{ wowText }} · 对比发起 {{ traffic.compareInitiated }} 次
+          </span>
+        </div>
+        <CardContent class="grid gap-4 p-4 lg:grid-cols-[1fr_240px]">
+          <div :ref="bind('pv')" class="h-48 w-full" />
+          <div>
+            <p class="mb-2 text-xs font-medium text-muted-foreground">近 {{ traffic.windowDays }} 天浏览量 TOP</p>
+            <div class="space-y-1">
+              <div v-for="item in traffic.topDevices" :key="item.deviceId" class="flex items-center justify-between gap-2 text-sm">
+                <span class="min-w-0 truncate" :title="item.deviceName">{{ item.deviceName }}</span>
+                <span class="shrink-0 text-xs text-muted-foreground">{{ item.pv }}</span>
+              </div>
+              <p v-if="!traffic.topDevices.length" class="text-sm text-muted-foreground">暂无浏览记录。</p>
+            </div>
+          </div>
+        </CardContent>
       </Card>
 
       <!-- T102 搜索需求信号：空结果词就是补录方向 -->

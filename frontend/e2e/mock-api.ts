@@ -763,6 +763,25 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         ],
       })
     }
+    if (path === '/admin/metrics/traffic') {
+      const today = new Date('2026-10-25')
+      const daily = Array.from({ length: 30 }, (_, index) => ({
+        date: new Date(today.getTime() - (29 - index) * 86400_000).toISOString().slice(0, 10),
+        pv: 10 + (index % 7),
+      }))
+      return ok({
+        windowDays: 30,
+        daily,
+        weekPv: 70,
+        lastWeekPv: 60,
+        weekOverWeek: 0.17,
+        topDevices: [
+          { deviceId: 7, deviceName: 'iPhone 17', pv: 32 },
+          { deviceId: 9, deviceName: 'Mate 70', pv: 21 },
+        ],
+        compareInitiated: 8,
+      })
+    }
     if (path === '/admin/metrics/search') {
       return ok({
         windowDays: 30,

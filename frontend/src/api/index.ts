@@ -43,6 +43,7 @@ import type {
   SearchMetrics,
   SeriesSuggestion,
   SearchConfig,
+  TrafficMetrics,
   SearchConfigSaveRequest,
   SearchTestResult,
   SeriesCreateResult,
@@ -126,6 +127,8 @@ export const adminApi = {
     request.get<unknown, CollectMetrics>('/admin/metrics/collect', { params: { windowDays } }),
   searchMetrics: (windowDays = 30) =>
     request.get<unknown, SearchMetrics>('/admin/metrics/search', { params: { windowDays } }),
+  trafficMetrics: (windowDays = 30) =>
+    request.get<unknown, TrafficMetrics>('/admin/metrics/traffic', { params: { windowDays } }),
 
   brands: () => request.get<unknown, Brand[]>('/admin/brands'),
   saveBrand: (data: BrandSaveRequest) =>

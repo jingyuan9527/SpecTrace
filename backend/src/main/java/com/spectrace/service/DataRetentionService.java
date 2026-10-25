@@ -12,6 +12,7 @@ import com.spectrace.mapper.AgentPendingDataMapper;
 import com.spectrace.mapper.AgentTaskLogMapper;
 import com.spectrace.mapper.AgentTaskMapper;
 import com.spectrace.mapper.DeviceViewDailyMapper;
+import com.spectrace.mapper.MetricDailyMapper;
 import com.spectrace.mapper.SearchLogMapper;
 import com.spectrace.mapper.OperationLogMapper;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +45,7 @@ public class DataRetentionService {
     private final OperationLogMapper operationLogMapper;
     private final DeviceViewDailyMapper viewMapper;
     private final SearchLogMapper searchLogMapper;
+    private final MetricDailyMapper metricDailyMapper;
 
     @Value("${spectrace.retention.enabled:true}")
     private boolean enabled;
@@ -112,6 +114,9 @@ public class DataRetentionService {
 
         // 搜索词聚合同样按窗口滚动清理
         removed.put("search_log", (long) searchLogMapper.deleteBefore(now.toLocalDate().minusDays(searchLogDays).toString()));
+
+        // 通用日计数与浏览量同窗口滚动清理
+        removed.put("metric_daily", (long) metricDailyMapper.deleteBefore(now.toLocalDate().minusDays(viewDailyDays).toString()));
 
         log.info("保留策略清理完成: taskDays={} pendingDays={} operationLogDays={} viewDailyDays={} searchLogDays={} removed={}",
                 taskDays, pendingDays, operationLogDays, viewDailyDays, searchLogDays, removed);

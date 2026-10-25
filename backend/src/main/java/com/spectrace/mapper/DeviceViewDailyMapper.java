@@ -1,7 +1,9 @@
 package com.spectrace.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.spectrace.dto.DailyPv;
 import com.spectrace.dto.DevicePv;
+import com.spectrace.dto.TopDevicePv;
 import com.spectrace.entity.DeviceViewDaily;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
@@ -44,6 +46,35 @@ public interface DeviceViewDailyMapper extends BaseMapper<DeviceViewDaily> {
             </script>
             """)
     List<DevicePv> selectPvSince(@Param("sinceDate") String sinceDate, @Param("deviceIds") Collection<Long> deviceIds);
+
+    /** 全站日 PV 序列（T103 流量趋势）。 */
+    @Select("""
+            SELECT view_date AS date, SUM(pv) AS pv
+            FROM device_view_daily
+            WHERE view_date >= #{sinceDate}
+            GROUP BY view_date
+            ORDER BY view_date ASC
+            """)
+    List<DailyPv> selectDailyPv(@Param("sinceDate") String sinceDate);
+
+    /** 窗口期 PV TOP 机型（联 device 取名，软删机型自然被过滤出排行）。 */
+    @Select("""
+            SELECT v.device_id AS deviceId, d.name AS deviceName, SUM(v.pv) AS pv
+            FROM device_view_daily v
+            JOIN device d ON d.id = v.device_id AND d.deleted = 0
+            WHERE v.view_date >= #{sinceDate}
+            GROUP BY v.device_id
+            ORDER BY pv DESC, v.device_id ASC
+            LIMIT #{limit}
+            """)
+    List<TopDevicePv> selectTopDevices(@Param("sinceDate") String sinceDate, @Param("limit") int limit);
+
+    /** 指定日期区间的 PV 合计（周环比用）。 */
+    @Select("""
+            SELECT COALESCE(SUM(pv), 0) FROM device_view_daily
+            WHERE view_date >= #{fromDate} AND view_date < #{toDate}
+            """)
+    long sumPvBetween(@Param("fromDate") String fromDate, @Param("toDate") String toDate);
 
     /** 保留策略：按天聚合表只留最近 N 天。 */
     @Delete("DELETE FROM device_view_daily WHERE view_date < #{beforeDate}")

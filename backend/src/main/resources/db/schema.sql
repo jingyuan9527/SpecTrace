@@ -217,6 +217,15 @@ CREATE TABLE IF NOT EXISTS search_log (
     UNIQUE (keyword, search_date)
 );
 
+-- 通用日计数（T103）：对比发起次数等单值指标，key+date 唯一累加
+CREATE TABLE IF NOT EXISTS metric_daily (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    metric_key VARCHAR(64) NOT NULL,
+    metric_date DATE      NOT NULL,
+    value      INTEGER    NOT NULL DEFAULT 0,
+    UNIQUE (metric_key, metric_date)
+);
+
 -- 系列订阅抓取（T88）：按周期自动创建「系列发现」任务，发布季自动跟进；series 唯一
 CREATE TABLE IF NOT EXISTS agent_subscription (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
