@@ -2,14 +2,14 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { motion } from 'motion-v'
-import { ArrowRight, GitCompareArrows, Smartphone, SlidersHorizontal } from '@lucide/vue'
+import { ArrowRight, GitCompareArrows, SlidersHorizontal } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
 import type { Brand, Device, SeriesOverviewResult } from '@/types/api'
 import { useCompareStore } from '@/stores/compare'
 import { Badge, Button, Card, CardContent, Empty, Pagination, Select, Skeleton, Tabs, type TabItem } from '@/components/ui'
 import DeviceSearch from '@/components/DeviceSearch.vue'
-import ImageWithFallback from '@/components/ImageWithFallback.vue'
+import DeviceAvatar from '@/components/DeviceAvatar.vue'
 import TrendSparkline from '@/components/TrendSparkline.vue'
 
 const route = useRoute()
@@ -121,6 +121,10 @@ function goDetail(device: { id: number }) {
   router.push({ name: 'device-detail', params: { id: device.id } })
 }
 
+function brandNameOf(brandId?: number) {
+  return brands.value.find((brand) => brand.id === brandId)?.name ?? null
+}
+
 function toggleCompare(device: Device) {
   if (compare.has(device.id)) {
     compare.remove(device.id)
@@ -190,16 +194,15 @@ function toggleCompare(device: Device) {
           <Card class="group h-full overflow-hidden transition-shadow hover:shadow-md">
             <button
               type="button"
-              class="flex h-40 w-full items-center justify-center bg-muted/50 p-4"
+              class="h-40 w-full overflow-hidden bg-muted/50"
               @click="router.push({ name: 'device-detail', params: { id: device.id } })"
             >
-              <ImageWithFallback
-                :src="device.thumbnail"
-                :alt="device.name"
+              <DeviceAvatar
+                :name="device.name"
+                :thumbnail="device.thumbnail"
+                :brand="brandNameOf(device.brandId)"
                 img-class="max-h-32 object-contain transition-transform duration-300 group-hover:scale-105"
-              >
-                <template #fallback><Smartphone class="h-10 w-10 text-muted-foreground/40" /></template>
-              </ImageWithFallback>
+              />
             </button>
             <CardContent class="space-y-1 p-4">
               <router-link
@@ -246,14 +249,14 @@ function toggleCompare(device: Device) {
               <router-link :to="{ name: 'evolution', query: { seriesId: item.id } }" class="block h-full">
                 <CardContent class="flex h-full flex-col gap-3 p-5">
                   <div class="flex items-center gap-3">
-                    <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-muted/50 p-1.5">
-                      <ImageWithFallback
-                        :src="item.latest?.thumbnail"
-                        :alt="item.latest?.name ?? item.name"
+                    <div class="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-muted/50">
+                      <DeviceAvatar
+                        :name="item.latest?.name ?? item.name"
+                        :thumbnail="item.latest?.thumbnail"
+                        :brand="item.brandName"
+                        size="sm"
                         img-class="max-h-11 object-contain"
-                      >
-                        <template #fallback><Smartphone class="h-6 w-6 text-muted-foreground/40" /></template>
-                      </ImageWithFallback>
+                      />
                     </div>
                     <div class="min-w-0">
                       <p class="truncate text-sm font-semibold group-hover:text-primary">{{ item.name }}</p>

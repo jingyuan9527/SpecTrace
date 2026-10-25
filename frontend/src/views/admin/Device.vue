@@ -14,7 +14,6 @@ import {
   Pencil,
   Plus,
   Search,
-  Smartphone,
   Trash2,
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
@@ -46,7 +45,7 @@ import {
 } from '@/components/ui'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
-import ImageWithFallback from '@/components/ImageWithFallback.vue'
+import DeviceAvatar from '@/components/DeviceAvatar.vue'
 import { compressImage, formatBytes } from '@/lib/image'
 
 interface Brand {
@@ -658,9 +657,14 @@ function rowMessages(row: any) {
               </TableCell>
               <TableCell class="text-muted-foreground">{{ row.id }}</TableCell>
               <TableCell>
-                <ImageWithFallback :src="row.thumbnail" :alt="row.name" img-class="h-9 max-w-16 object-contain">
-                  <template #fallback><Smartphone class="h-6 w-6 text-muted-foreground/40" /></template>
-                </ImageWithFallback>
+                <DeviceAvatar
+                  :name="row.name"
+                  :thumbnail="row.thumbnail"
+                  :brand="brandName(row.brandId)"
+                  size="sm"
+                  class="h-9 w-16 rounded bg-muted/50"
+                  img-class="h-9 max-w-16 object-contain"
+                />
               </TableCell>
               <TableCell class="font-medium">{{ row.name }}</TableCell>
               <TableCell class="text-muted-foreground">{{ brandName(row.brandId) }}</TableCell>

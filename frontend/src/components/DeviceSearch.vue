@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type * as PinyinPro from 'pinyin-pro'
-import { Search, Smartphone } from '@lucide/vue'
+import { Search } from '@lucide/vue'
 import { publicApi } from '@/api'
 import { Input } from '@/components/ui'
-import ImageWithFallback from '@/components/ImageWithFallback.vue'
+import DeviceAvatar from '@/components/DeviceAvatar.vue'
 
 /**
  * 机型搜索框：输入即联想。
@@ -206,9 +206,14 @@ watch(
         @mouseenter="activeIndex = index"
         @click="choose(device)"
       >
-        <ImageWithFallback :src="device.thumbnail" :alt="device.name" img-class="h-8 max-w-10 object-contain">
-          <template #fallback><Smartphone class="h-4 w-4 text-muted-foreground/40" /></template>
-        </ImageWithFallback>
+        <DeviceAvatar
+          :name="device.name"
+          :thumbnail="device.thumbnail"
+          :brand="device.brandName"
+          size="sm"
+          class="h-8 w-10 shrink-0 rounded bg-muted/50"
+          img-class="h-8 max-w-10 object-contain"
+        />
         <span class="min-w-0 flex-1 truncate">{{ device.name }}</span>
         <span class="shrink-0 text-xs text-muted-foreground">{{ device.brandName }}</span>
       </button>

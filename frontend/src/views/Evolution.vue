@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { motion } from 'motion-v'
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Camera, Share2, Smartphone, TrendingUp } from '@lucide/vue'
+import { ArrowDownRight, ArrowRight, ArrowUpRight, Camera, Share2, TrendingUp } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
 import { useECharts } from '@/composables/useECharts'
@@ -13,7 +13,7 @@ import { cssVar } from '@/lib/utils'
 import type { Brand, EvolutionParam, EvolutionPoint, EvolutionResult, InsightResult, ParamDef, SeriesItem } from '@/types/api'
 import { useThemeStore } from '@/stores/theme'
 import { Alert, Badge, Button, Card, CardContent, Checkbox, Empty, Select, Skeleton } from '@/components/ui'
-import ImageWithFallback from '@/components/ImageWithFallback.vue'
+import DeviceAvatar from '@/components/DeviceAvatar.vue'
 
 /** 图表使用的参数视图：points 已按世代区间裁剪，涨跌幅与缺失数按可见区间重算 */
 interface ParamView extends EvolutionParam {
@@ -485,13 +485,14 @@ watch([seriesId, defKey], syncQuery)
             @keydown.enter.prevent="router.push({ name: 'device-detail', params: { id: device.id } })"
             @keydown.space.prevent="router.push({ name: 'device-detail', params: { id: device.id } })"
           >
-            <ImageWithFallback
-              :src="device.thumbnail"
-              :alt="device.name"
+            <DeviceAvatar
+              :name="device.name"
+              :thumbnail="device.thumbnail"
+              :brand="data.brandName"
+              size="sm"
+              class="h-14 w-full rounded-lg bg-muted/50"
               img-class="h-14 w-auto object-contain"
-            >
-              <template #fallback><Smartphone class="h-9 w-9 text-muted-foreground/40" /></template>
-            </ImageWithFallback>
+            />
             <span class="w-full truncate text-xs font-medium">{{ device.name }}</span>
             <span class="text-[11px] text-muted-foreground">{{ yearOf(device.releaseDate) }}</span>
             <span class="text-xs font-semibold">{{ priceOf(device.launchPrice) }}</span>

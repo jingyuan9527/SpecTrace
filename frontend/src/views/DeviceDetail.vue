@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { motion } from 'motion-v'
-import { ArrowLeft, CalendarDays, Clock3, Flag, GitCompareArrows, LineChart, Link2, Loader2, Smartphone, TrendingUp } from '@lucide/vue'
+import { ArrowLeft, CalendarDays, Clock3, Flag, GitCompareArrows, LineChart, Link2, Loader2, TrendingUp } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
 import type { DeviceVariant, EvolutionDevice, ParamDef, ParamGroup, ParamMeta, SeriesBrief } from '@/types/api'
@@ -27,7 +27,7 @@ import {
   TableRow,
   Textarea,
 } from '@/components/ui'
-import ImageWithFallback from '@/components/ImageWithFallback.vue'
+import DeviceAvatar from '@/components/DeviceAvatar.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -193,10 +193,8 @@ async function submitFeedback() {
       <motion.div :initial="{ opacity: 0, y: 8 }" :animate="{ opacity: 1, y: 0 }" :transition="{ duration: 0.3 }">
         <Card class="overflow-hidden">
           <div class="grid gap-6 p-6 md:grid-cols-[240px_1fr]">
-            <div class="flex h-56 items-center justify-center rounded-xl bg-muted/50 p-6">
-              <ImageWithFallback :src="device.thumbnail" :alt="device.name" img-class="max-h-44 object-contain">
-                <template #fallback><Smartphone class="h-12 w-12 text-muted-foreground/40" /></template>
-              </ImageWithFallback>
+            <div class="h-56 overflow-hidden rounded-xl bg-muted/50">
+              <DeviceAvatar :name="device.name" :thumbnail="device.thumbnail" :brand="brand?.name" size="lg" img-class="max-h-44 object-contain" />
             </div>
 
             <div class="flex flex-col">
@@ -258,10 +256,14 @@ async function submitFeedback() {
               :disabled="item.id === device.id"
               @click="router.push({ name: 'device-detail', params: { id: item.id } })"
             >
-              <div class="flex h-14 items-center justify-center">
-                <ImageWithFallback :src="item.thumbnail" :alt="item.name" img-class="max-h-12 object-contain">
-                  <template #fallback><Smartphone class="h-6 w-6 text-muted-foreground/40" /></template>
-                </ImageWithFallback>
+              <div class="h-14 overflow-hidden rounded-lg bg-muted/50">
+                <DeviceAvatar
+                  :name="item.name"
+                  :thumbnail="item.thumbnail"
+                  :brand="brand?.name"
+                  size="sm"
+                  img-class="max-h-12 object-contain"
+                />
               </div>
               <div class="truncate text-xs font-medium">{{ item.name }}</div>
               <div class="text-xs text-muted-foreground">{{ item.releaseDate?.slice(0, 4) || '年份待补充' }}</div>

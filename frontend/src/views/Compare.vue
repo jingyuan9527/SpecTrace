@@ -11,7 +11,6 @@ import {
   Image,
   Plus,
   Share2,
-  Smartphone,
   Trash2,
   X,
 } from '@lucide/vue'
@@ -38,7 +37,7 @@ import {
   TableRow,
 } from '@/components/ui'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import ImageWithFallback from '@/components/ImageWithFallback.vue'
+import DeviceAvatar from '@/components/DeviceAvatar.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -349,9 +348,14 @@ async function copyToClipboard() {
                 <TableHead class="sticky left-0 z-10 w-40 bg-muted/60">参数</TableHead>
                 <TableHead v-for="device in result.devices" :key="device.id" class="bg-muted/60 text-center">
                   <div class="flex flex-col items-center gap-1 py-1">
-                    <ImageWithFallback :src="device.thumbnail" :alt="device.name" img-class="h-14 object-contain">
-                      <template #fallback><Smartphone class="h-8 w-8 text-muted-foreground/40" /></template>
-                    </ImageWithFallback>
+                    <DeviceAvatar
+                      :name="device.name"
+                      :thumbnail="device.thumbnail"
+                      :brand="device.brandName"
+                      size="sm"
+                      class="h-16 w-full rounded-lg bg-muted/50"
+                      img-class="h-14 object-contain"
+                    />
                     <span class="text-sm font-semibold normal-case tracking-normal">{{ device.name }}</span>
                     <Button
                       v-if="!capturing"

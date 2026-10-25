@@ -9,12 +9,16 @@ import type { Brand, Device } from '@/types/api'
 import { useCompareStore } from '@/stores/compare'
 import { Badge, Button, Card, CardContent, Empty, Skeleton } from '@/components/ui'
 import DeviceSearch from '@/components/DeviceSearch.vue'
-import ImageWithFallback from '@/components/ImageWithFallback.vue'
+import DeviceAvatar from '@/components/DeviceAvatar.vue'
 
 const router = useRouter()
 const compare = useCompareStore()
 
 const brands = ref<Brand[]>([])
+
+function brandNameOf(brandId?: number) {
+  return brands.value.find((brand) => brand.id === brandId)?.name ?? null
+}
 const hot = ref<Device[]>([])
 const keyword = ref('')
 const loading = ref(true)
@@ -204,16 +208,15 @@ function addCompare(device: Device) {
           <Card class="group h-full overflow-hidden transition-shadow hover:shadow-md">
             <button
               type="button"
-              class="flex h-40 w-full items-center justify-center bg-muted/50 p-4"
+              class="h-40 w-full overflow-hidden bg-muted/50"
               @click="router.push({ name: 'device-detail', params: { id: device.id } })"
             >
-              <ImageWithFallback
-                :src="device.thumbnail"
-                :alt="device.name"
+              <DeviceAvatar
+                :name="device.name"
+                :thumbnail="device.thumbnail"
+                :brand="brandNameOf(device.brandId)"
                 img-class="max-h-32 object-contain transition-transform duration-300 group-hover:scale-105"
-              >
-                <template #fallback><Smartphone class="h-10 w-10 text-muted-foreground/40" /></template>
-              </ImageWithFallback>
+              />
             </button>
             <CardContent class="space-y-1 p-4">
               <router-link
