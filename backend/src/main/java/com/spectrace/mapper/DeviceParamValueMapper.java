@@ -48,6 +48,17 @@ public interface DeviceParamValueMapper extends BaseMapper<DeviceParamValue> {
             """)
     List<DeviceParamCount> selectParamCountByDevice();
 
+    /** 有参数但整体超过 N 天未更新的机型数（T87 阈值 180 天，T86/T106 质量观测） */
+    @Select("""
+            SELECT COUNT(*) FROM (
+                SELECT device_id, MAX(updated_at) AS lastUpdated
+                FROM device_param_value
+                GROUP BY device_id
+            )
+            WHERE lastUpdated < #{cutoff}
+            """)
+    long countStaleDevices(@Param("cutoff") String cutoff);
+
     /** 各机型参数最近一次更新时间（系列陈旧度重抓圈定目标用，T87） */
     @Select("""
             <script>

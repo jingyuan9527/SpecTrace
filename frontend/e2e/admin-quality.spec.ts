@@ -162,6 +162,9 @@ test('后台：运行监控页采集漏斗', async ({ page }) => {
   // T101：模型排行表
   await expect(page.getByRole('cell', { name: 'OpenRouter / random' })).toBeVisible()
   await expect(page.getByRole('cell', { name: '80%', exact: true })).toBeVisible()
+  // T106：数据质量卡
+  await expect(page.getByRole('heading', { name: '数据质量' })).toBeVisible()
+  await expect(page.getByText(/未更新\s*3\s*台/)).toBeVisible()
   // T103：流量卡
   await expect(page.getByText('访客流量')).toBeVisible()
   await expect(page.getByText('周环比 +17%')).toBeVisible()

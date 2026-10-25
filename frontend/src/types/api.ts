@@ -230,6 +230,24 @@ export interface CacheStat {
   evictionCount: number
 }
 
+/** 被报错最多的参数统计行（T106） */
+export interface FeedbackParamStat {
+  paramName: string
+  paramKey: string
+  count: number
+}
+
+/** 数据质量观测（T106） */
+export interface QualityMetrics {
+  staleDevices: number
+  staleThresholdDays: number
+  feedbackOpen: number
+  /** 待处理反馈平均滞留小时数，无待处理为 null */
+  feedbackAvgAgeHours?: number | null
+  feedbackResolved7d: number
+  topErrorParams: FeedbackParamStat[]
+}
+
 /** 技术运行时指标（T105 起） */
 export interface RuntimeMetrics {
   caches: CacheStat[]

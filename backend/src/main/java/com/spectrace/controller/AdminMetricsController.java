@@ -3,10 +3,12 @@ package com.spectrace.controller;
 import com.spectrace.common.R;
 import com.spectrace.dto.CollectMetricsVO;
 import com.spectrace.dto.SearchMetricsVO;
+import com.spectrace.dto.QualityMetricsVO;
 import com.spectrace.dto.RuntimeMetricsVO;
 import com.spectrace.dto.TrafficMetricsVO;
 import com.spectrace.service.CollectMetricsService;
 import com.spectrace.service.SearchLogService;
+import com.spectrace.service.QualityMetricsService;
 import com.spectrace.service.RuntimeMetricsService;
 import com.spectrace.service.TrafficMetricsService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -32,6 +34,7 @@ public class AdminMetricsController {
     private final SearchLogService searchLogService;
     private final TrafficMetricsService trafficMetricsService;
     private final RuntimeMetricsService runtimeMetricsService;
+    private final QualityMetricsService qualityMetricsService;
 
     @Operation(summary = "采集链路监控（漏斗 / 成功率 / 耗时 / 图片队列）")
     @GetMapping("/collect")
@@ -50,6 +53,12 @@ public class AdminMetricsController {
     @GetMapping("/runtime")
     public R<RuntimeMetricsVO> runtime() {
         return R.ok(runtimeMetricsService.snapshot());
+    }
+
+    @Operation(summary = "数据质量（陈旧度 / 反馈时效 / 报错参数排行）")
+    @GetMapping("/quality")
+    public R<QualityMetricsVO> quality() {
+        return R.ok(qualityMetricsService.overview());
     }
 
     @Operation(summary = "搜索需求信号（TOP 词 / 空结果率）")

@@ -779,6 +779,19 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         counts: {},
       })
     }
+    if (path === '/admin/metrics/quality') {
+      return ok({
+        staleDevices: 3,
+        staleThresholdDays: 180,
+        feedbackOpen: state.feedback.filter((item) => item.status === 'OPEN').length,
+        feedbackAvgAgeHours: 6,
+        feedbackResolved7d: 2,
+        topErrorParams: [
+          { paramName: '电池容量', paramKey: 'battery_capacity', count: 2 },
+          { paramName: '屏幕尺寸', paramKey: 'screen_size', count: 1 },
+        ],
+      })
+    }
     if (path === '/admin/metrics/runtime') {
       return ok({
         caches: [

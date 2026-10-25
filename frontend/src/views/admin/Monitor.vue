@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { Activity, Loader2, RefreshCw, SearchX, TrendingUp } from '@lucide/vue'
+import { Activity, ClipboardCheck, Loader2, RefreshCw, SearchX, TrendingUp } from '@lucide/vue'
 import { adminApi } from '@/api'
-import type { CollectMetrics, SearchMetrics, TrafficMetrics } from '@/types/api'
+import type { CollectMetrics, QualityMetrics, SearchMetrics, TrafficMetrics } from '@/types/api'
 import PageHeader from '@/components/PageHeader.vue'
 import { useECharts } from '@/composables/useECharts'
 import { cssVar } from '@/lib/utils'
@@ -27,15 +27,17 @@ const { bind, render } = useECharts()
 const collect = ref<CollectMetrics | null>(null)
 const search = ref<SearchMetrics | null>(null)
 const traffic = ref<TrafficMetrics | null>(null)
+const quality = ref<QualityMetrics | null>(null)
 const loading = ref(true)
 
 async function load() {
   loading.value = true
   try {
-    ;[collect.value, search.value, traffic.value] = await Promise.all([
+    ;[collect.value, search.value, traffic.value, quality.value] = await Promise.all([
       adminApi.collectMetrics(30),
       adminApi.searchMetrics(30),
       adminApi.trafficMetrics(30),
+      adminApi.qualityMetrics(),
     ])
   } finally {
     loading.value = false
@@ -238,6 +240,32 @@ watch([collect, traffic, () => theme.dark], () => {
           </Table>
         </CardContent>
 
+      </Card>
+
+      <!-- T106 数据质量：陈旧度、反馈时效与报错参数薄弱点 -->
+      <Card v-if="quality">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-5 py-3">
+          <h2 class="flex items-center gap-2 text-sm font-semibold">
+            <ClipboardCheck class="h-4 w-4" />
+            数据质量
+          </h2>
+          <span class="text-xs text-muted-foreground">
+            参数超 {{ quality.staleThresholdDays }} 天未更新 {{ quality.staleDevices }} 台 · 反馈待处理
+            {{ quality.feedbackOpen }} 条（平均滞留
+            {{ quality.feedbackAvgAgeHours == null ? '—' : Math.round(quality.feedbackAvgAgeHours) + ' 小时' }}）· 近 7 天处理
+            {{ quality.feedbackResolved7d }} 条
+          </span>
+        </div>
+        <CardContent class="p-4">
+          <p class="mb-2 text-xs font-medium text-muted-foreground">被报错最多的参数（数据薄弱点）</p>
+          <div class="grid gap-x-6 gap-y-1 md:grid-cols-2">
+            <div v-for="item in quality.topErrorParams" :key="item.paramKey" class="flex items-center justify-between gap-2 text-sm">
+              <span class="min-w-0 truncate" :title="item.paramName">{{ item.paramName }}</span>
+              <span class="shrink-0 text-xs text-muted-foreground">{{ item.count }} 次</span>
+            </div>
+            <p v-if="!quality.topErrorParams.length" class="text-sm text-muted-foreground">暂无纠错反馈。</p>
+          </div>
+        </CardContent>
       </Card>
 
       <!-- T103 访客流量：PV 趋势 / 周环比 / 对比使用 / TOP 机型 -->

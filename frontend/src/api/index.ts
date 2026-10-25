@@ -39,6 +39,7 @@ import type {
   ParamGroup,
   PendingData,
   PendingDataDetail,
+  QualityMetrics,
   RetentionOverview,
   SearchMetrics,
   SeriesSuggestion,
@@ -131,6 +132,7 @@ export const adminApi = {
   trafficMetrics: (windowDays = 30) =>
     request.get<unknown, TrafficMetrics>('/admin/metrics/traffic', { params: { windowDays } }),
   runtimeMetrics: () => request.get<unknown, RuntimeMetrics>('/admin/metrics/runtime'),
+  qualityMetrics: () => request.get<unknown, QualityMetrics>('/admin/metrics/quality'),
 
   brands: () => request.get<unknown, Brand[]>('/admin/brands'),
   saveBrand: (data: BrandSaveRequest) =>
