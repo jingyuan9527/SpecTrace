@@ -10,6 +10,7 @@ import { useCompareStore } from '@/stores/compare'
 import { Badge, Button, Card, CardContent, Empty, Skeleton } from '@/components/ui'
 import DeviceSearch from '@/components/DeviceSearch.vue'
 import DeviceAvatar from '@/components/DeviceAvatar.vue'
+import ImageWithFallback from '@/components/ImageWithFallback.vue'
 
 const router = useRouter()
 const compare = useCompareStore()
