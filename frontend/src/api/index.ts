@@ -3,6 +3,7 @@ import type {
   AgentTask,
   AgentTaskCreateRequest,
   AgentTaskLog,
+  AdminBadges,
   AiConfig,
   AiModel,
   ApproveRequest,
@@ -23,6 +24,7 @@ import type {
   DeviceVariant,
   EvolutionResult,
   Feedback,
+  FeedbackStatus,
   FeedbackSubmitRequest,
   GenerationMatrix,
   InsightResult,
@@ -96,6 +98,7 @@ export const publicApi = {
     body: { deviceIds?: number[]; paramDefIds?: number[]; style?: string },
   ) => request.post<unknown, SocialCopyResult>(`/public/series/${seriesId}/social-copy`, body),
   submitFeedback: (data: FeedbackSubmitRequest) => request.post<unknown, number>('/public/feedback', data),
+  feedbackStatus: (id: number) => request.get<unknown, FeedbackStatus>(`/public/feedback/${id}`),
 }
 
 // ---------- 鉴权 ----------
@@ -108,6 +111,9 @@ export const authApi = {
 
 // ---------- 后台 ----------
 export const adminApi = {
+  // 侧栏徽标计数（当前仅纠错反馈待处理数）
+  badges: () => request.get<unknown, AdminBadges>('/admin/badges'),
+
   brands: () => request.get<unknown, Brand[]>('/admin/brands'),
   saveBrand: (data: BrandSaveRequest) =>
     data.id ? request.put<unknown, Brand>(`/admin/brands/${data.id}`, data) : request.post<unknown, Brand>('/admin/brands', data),

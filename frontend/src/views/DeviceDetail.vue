@@ -2,14 +2,15 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { motion } from 'motion-v'
-import { ArrowLeft, CalendarDays, Clock3, Flag, GitCompareArrows, LineChart, Link2, Loader2, TrendingUp } from '@lucide/vue'
+import { ArrowLeft, CalendarDays, Check, Clock3, Flag, GitCompareArrows, LineChart, Link2, Loader2, TrendingUp } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
-import type { DeviceVariant, EvolutionDevice, ParamDef, ParamGroup, ParamMeta, SeriesBrief } from '@/types/api'
+import type { DeviceVariant, EvolutionDevice, FeedbackStatus, ParamDef, ParamGroup, ParamMeta, SeriesBrief } from '@/types/api'
 import { absoluteUrl, setPageMeta } from '@/lib/meta'
 import { formatTime } from '@/lib/utils'
 import { useCompareStore } from '@/stores/compare'
 import {
+  Badge,
   Button,
   Card,
   CardContent,
@@ -139,14 +140,27 @@ function addCompare() {
 }
 
 // ---------- 参数纠错 ----------
+// form 提交表单 / success 编号回执 / query 凭编号查进度，三态共用一个弹窗
+type FeedbackView = 'form' | 'success' | 'query'
 const feedbackOpen = ref(false)
+const feedbackView = ref<FeedbackView>('form')
 const feedbackSaving = ref(false)
 const feedbackTarget = ref<{ paramKey: string; paramName: string; value: string } | null>(null)
 const feedbackForm = reactive({ suggestedValue: '', description: '', contact: '' })
+const feedbackSubmittedId = ref<number | null>(null)
+const queryIdInput = ref('')
+const queryResult = ref<FeedbackStatus | null>(null)
+const queryLoading = ref(false)
+const queryError = ref('')
 
 function openFeedback(item: { paramKey: string; paramName: string; value: string }) {
   feedbackTarget.value = item
   Object.assign(feedbackForm, { suggestedValue: '', description: '', contact: '' })
+  feedbackView.value = 'form'
+  feedbackSubmittedId.value = null
+  queryIdInput.value = ''
+  queryResult.value = null
+  queryError.value = ''
   feedbackOpen.value = true
 }
 
@@ -158,7 +172,7 @@ async function submitFeedback() {
   }
   feedbackSaving.value = true
   try {
-    await publicApi.submitFeedback({
+    const id = await publicApi.submitFeedback({
       deviceId: device.value.id,
       paramKey: feedbackTarget.value.paramKey,
       currentValue: feedbackTarget.value.value,
@@ -166,11 +180,41 @@ async function submitFeedback() {
       description: feedbackForm.description.trim() || undefined,
       contact: feedbackForm.contact.trim() || undefined,
     })
-    toast.success('反馈已提交，感谢你的帮助')
-    feedbackOpen.value = false
+    feedbackSubmittedId.value = id
+    feedbackView.value = 'success'
   } finally {
     feedbackSaving.value = false
   }
+}
+
+async function queryFeedback() {
+  const id = Number(queryIdInput.value.trim().replace(/^#/, ''))
+  if (!Number.isInteger(id) || id <= 0) {
+    queryError.value = '请输入提交成功时返回的数字编号'
+    queryResult.value = null
+    return
+  }
+  queryError.value = ''
+  queryLoading.value = true
+  try {
+    queryResult.value = await publicApi.feedbackStatus(id)
+  } catch {
+    // 接口错误（编号不存在等）由全局拦截器统一 toast
+    queryResult.value = null
+  } finally {
+    queryLoading.value = false
+  }
+}
+
+function feedbackStatusLabel(status: string) {
+  return status === 'OPEN' ? '待处理' : status === 'RESOLVED' ? '已处理' : status === 'IGNORED' ? '已忽略' : status
+}
+
+/** 编号回执页直达进度查询：回填刚拿到的编号 */
+function queryFromReceipt() {
+  if (!feedbackSubmittedId.value) return
+  queryIdInput.value = String(feedbackSubmittedId.value)
+  feedbackView.value = 'query'
 }
 </script>
 
@@ -391,11 +435,61 @@ async function submitFeedback() {
 
     <Dialog
       v-model:open="feedbackOpen"
-      title="报告参数错误"
-      description="提交后会进入后台人工核对；重复提交会受频率限制。"
+      :title="feedbackView === 'query' ? '查询反馈进度' : '报告参数错误'"
+      :description="
+        feedbackView === 'query'
+          ? '输入提交成功时返回的编号，查看当前处理状态。'
+          : '提交后会进入后台人工核对；重复提交会受频率限制。'
+      "
       class="max-w-lg"
     >
-      <div class="space-y-4">
+      <!-- 编号回执：告知访客查询凭据，闭环「提交后石沉大海」 -->
+      <div v-if="feedbackView === 'success' && feedbackSubmittedId" class="space-y-4 py-2 text-center">
+        <div class="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+          <Check class="h-5 w-5" />
+        </div>
+        <div>
+          <p class="text-sm font-medium">反馈已提交，感谢你的帮助</p>
+          <p class="mt-1 text-3xl font-semibold tracking-tight">#{{ feedbackSubmittedId }}</p>
+          <p class="mt-1 text-xs text-muted-foreground">记下这个编号，可随时回来查询处理进度。</p>
+        </div>
+      </div>
+
+      <!-- 凭编号查进度 -->
+      <div v-else-if="feedbackView === 'query'" class="space-y-4">
+        <div class="space-y-1.5">
+          <Label for="feedback-query-id">反馈编号</Label>
+          <div class="flex gap-2">
+            <Input
+              id="feedback-query-id"
+              v-model="queryIdInput"
+              placeholder="如 12"
+              inputmode="numeric"
+              @keyup.enter="queryFeedback"
+            />
+            <Button variant="outline" :disabled="queryLoading" @click="queryFeedback">
+              <Loader2 v-if="queryLoading" class="animate-spin" />
+              查询
+            </Button>
+          </div>
+          <p v-if="queryError" class="text-xs text-destructive">{{ queryError }}</p>
+        </div>
+        <div v-if="queryResult" class="rounded-md bg-muted/50 px-3 py-2.5 text-sm">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-medium">反馈 #{{ queryResult.id }}</span>
+            <Badge :variant="queryResult.status === 'OPEN' ? 'warning' : 'success'">
+              {{ feedbackStatusLabel(queryResult.status) }}
+            </Badge>
+          </div>
+          <p class="mt-1 text-xs text-muted-foreground">
+            提交于 {{ formatTime(queryResult.createdAt) }}
+            <template v-if="queryResult.status !== 'OPEN'"> · 处理于 {{ formatTime(queryResult.updatedAt) }}</template>
+          </p>
+        </div>
+      </div>
+
+      <!-- 提交表单 -->
+      <div v-else class="space-y-4">
         <div class="rounded-md bg-muted/50 px-3 py-2 text-sm">
           <div class="text-xs text-muted-foreground">{{ feedbackTarget?.paramName }}</div>
           <div class="font-medium">{{ feedbackTarget?.value || '—' }}</div>
@@ -412,13 +506,32 @@ async function submitFeedback() {
           <Label for="feedback-contact">联系方式（选填）</Label>
           <Input id="feedback-contact" v-model="feedbackForm.contact" placeholder="邮箱 / 手机号，便于回访" />
         </div>
+        <button type="button" class="text-xs text-primary hover:underline" @click="feedbackView = 'query'">
+          已有编号？查询处理进度
+        </button>
       </div>
+
       <template #footer>
-        <Button variant="outline" :disabled="feedbackSaving" @click="feedbackOpen = false">取消</Button>
-        <Button :disabled="feedbackSaving" @click="submitFeedback">
-          <Loader2 v-if="feedbackSaving" class="animate-spin" />
-          {{ feedbackSaving ? '提交中…' : '提交反馈' }}
-        </Button>
+        <template v-if="feedbackView === 'success'">
+          <Button
+            variant="outline"
+            :disabled="!feedbackSubmittedId"
+            @click="queryFromReceipt"
+          >
+            查询进度
+          </Button>
+          <Button @click="feedbackOpen = false">完成</Button>
+        </template>
+        <template v-else-if="feedbackView === 'query'">
+          <Button variant="outline" @click="feedbackView = 'form'">返回填写</Button>
+        </template>
+        <template v-else>
+          <Button variant="outline" :disabled="feedbackSaving" @click="feedbackOpen = false">取消</Button>
+          <Button :disabled="feedbackSaving" @click="submitFeedback">
+            <Loader2 v-if="feedbackSaving" class="animate-spin" />
+            {{ feedbackSaving ? '提交中…' : '提交反馈' }}
+          </Button>
+        </template>
       </template>
     </Dialog>
   </div>

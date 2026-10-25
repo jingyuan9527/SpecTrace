@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Bot,
@@ -23,7 +23,9 @@ import {
   Users,
 } from '@lucide/vue'
 import { useThemeStore } from '@/stores/theme'
-import { Button, DropdownMenu, Sheet, type MenuItem } from '@/components/ui'
+import { adminApi } from '@/api'
+import type { AdminBadges } from '@/types/api'
+import { Badge, Button, DropdownMenu, Sheet, type MenuItem } from '@/components/ui'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
 const route = useRoute()
@@ -32,6 +34,21 @@ const theme = useThemeStore()
 
 const mobileOpen = ref(false)
 const logoutOpen = ref(false)
+
+// 待处理反馈数：进入后台与路由切换时刷新，处理完成后离开页面即归零
+const badges = ref<AdminBadges | null>(null)
+
+async function loadBadges() {
+  try {
+    badges.value = await adminApi.badges()
+  } catch {
+    // 徽标是辅助信息，拉取失败不打扰后台使用
+    badges.value = null
+  }
+}
+
+onMounted(loadBadges)
+watch(() => route.path, loadBadges)
 
 // 按使用频率排序：核心工作流（机型 → 抓取 → 审核 → 数据口径）在前，配置居中，管理/运维垫底
 const menus = [
@@ -118,6 +135,13 @@ function doLogout() {
         >
           <component :is="item.icon" class="h-4 w-4" />
           {{ item.label }}
+          <Badge
+            v-if="item.path === '/admin/feedback' && badges && badges.openFeedback > 0"
+            variant="destructive"
+            class="ml-auto px-1.5"
+          >
+            {{ badges.openFeedback }}
+          </Badge>
         </router-link>
       </nav>
 
@@ -173,6 +197,13 @@ function doLogout() {
         >
           <component :is="item.icon" class="h-4 w-4" />
           {{ item.label }}
+          <Badge
+            v-if="item.path === '/admin/feedback' && badges && badges.openFeedback > 0"
+            variant="destructive"
+            class="ml-auto px-1.5"
+          >
+            {{ badges.openFeedback }}
+          </Badge>
         </router-link>
       </nav>
     </Sheet>

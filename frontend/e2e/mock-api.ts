@@ -431,7 +431,30 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
       })
     }
     if (path === '/public/years') return ok([2025, 2024])
-    if (path === '/public/feedback' && method === 'POST') return ok(1)
+    if (path === '/public/feedback' && method === 'POST') {
+      const body = request.postDataJSON() as Record<string, unknown>
+      const id = Math.max(0, ...state.feedback.map((item) => item.id)) + 1
+      const device = state.devices.find((item) => item.id === body.deviceId)
+      state.feedback.push({
+        id,
+        deviceId: (body.deviceId as number) ?? device?.id ?? 0,
+        deviceName: device?.name ?? null,
+        paramKey: (body.paramKey as string) ?? null,
+        currentValue: (body.currentValue as string) ?? null,
+        suggestedValue: (body.suggestedValue as string) ?? null,
+        description: (body.description as string) ?? null,
+        status: 'OPEN',
+        createdAt: '2026-10-25T10:00:00',
+        updatedAt: '2026-10-25T10:00:00',
+      } as Feedback)
+      return ok(id)
+    }
+    if (/^\/public\/feedback\/\d+$/.test(path)) {
+      const target = state.feedback.find((item) => item.id === numberId)
+      if (!target) return route.fulfill({ status: 404, json: { code: 404, message: '反馈不存在，请核对编号' } })
+      // 对外只暴露状态与时间，与真实后端的 FeedbackStatusVO 同口径
+      return ok({ id: target.id, status: target.status, createdAt: target.createdAt, updatedAt: target.updatedAt })
+    }
 
     // ---------- 后台 ----------
     if (path === '/admin/brands') {
@@ -665,6 +688,9 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
       if (method === 'DELETE') state.users = state.users.filter((user) => user.id !== numberId)
       return ok(true)
     }
+    if (path === '/admin/badges') {
+      return ok({ openFeedback: state.feedback.filter((item) => item.status === 'OPEN').length })
+    }
     if (path === '/admin/feedback') return ok(pageResult(state.feedback))
     if (/^\/admin\/feedback\/\d+\/status$/.test(path)) {
       const id = Number(path.split('/')[3])
@@ -672,6 +698,7 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
       if (target) {
         target.status = url.searchParams.get('status') ?? target.status
         target.handlerNote = url.searchParams.get('note') ?? undefined
+        target.updatedAt = '2026-10-25T12:00:00'
       }
       return ok(target ?? true)
     }

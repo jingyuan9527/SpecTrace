@@ -101,6 +101,19 @@ public class FeedbackService {
         return feedbackMapper.selectPage(new Page<>(current, size), query);
     }
 
+    public long countOpen() {
+        return feedbackMapper.selectCount(Wrappers.<Feedback>lambdaQuery().eq(Feedback::getStatus, "OPEN"));
+    }
+
+    /** 访客凭编号查询进度用；逻辑删除的记录视为不存在。 */
+    public Feedback requireById(Long id) {
+        Feedback feedback = feedbackMapper.selectById(id);
+        if (feedback == null) {
+            throw new BizException("反馈不存在，请核对编号");
+        }
+        return feedback;
+    }
+
     @Transactional
     public void updateStatus(Long id, String status, String note, Long adminId, String adminName) {
         if (!ALLOWED_STATUS.contains(status)) {

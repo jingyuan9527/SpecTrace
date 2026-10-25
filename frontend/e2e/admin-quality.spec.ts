@@ -100,3 +100,41 @@ test('后台：纠错反馈状态流转', async ({ page }) => {
   // 处理完成后该行不再提供操作按钮
   await expect(page.getByRole('button', { name: '忽略' })).toHaveCount(0)
 })
+
+test('纠错反馈闭环：编号回执、进度查询与侧栏徽标', async ({ page }) => {
+  await mockApi(page)
+
+  // 访客提交纠错，拿到编号回执
+  await page.goto('/devices/7')
+  await page.getByRole('button', { name: '报告参数错误' }).first().click()
+  await page.getByLabel('正确的值').fill('4000')
+  await page.getByRole('dialog').getByRole('button', { name: '提交反馈' }).click()
+  await expect(page.getByRole('dialog')).toContainText('#2')
+
+  // 直接凭回执查进度：待处理
+  await page.getByRole('dialog').getByRole('button', { name: '查询进度' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '查询' }).click()
+  await expect(page.getByRole('dialog').getByText('待处理')).toBeVisible()
+
+  // 后台侧栏出现未读徽标（种子 1 条 + 新提交 1 条）
+  await login(page)
+  const feedbackLink = page.locator('aside').getByRole('link', { name: /纠错反馈/ })
+  await expect(feedbackLink).toContainText('2')
+
+  // 逐条处理（新提交 + 种子）后徽标归零
+  await page.goto('/admin/feedback')
+  await page.getByRole('row', { name: /4000/ }).getByRole('button', { name: '已处理' }).click()
+  await expect(page.getByText('已标记为已处理')).toBeVisible()
+  await page.getByRole('button', { name: '已处理' }).click()
+  await page.goto('/admin/devices')
+  await expect(feedbackLink).toHaveAccessibleName('纠错反馈')
+
+  // 访客再查同一编号：已处理并带处理时间
+  await page.goto('/devices/7')
+  await page.getByRole('button', { name: '报告参数错误' }).first().click()
+  await page.getByRole('button', { name: '已有编号？查询处理进度' }).click()
+  await page.getByLabel('反馈编号').fill('2')
+  await page.getByRole('dialog').getByRole('button', { name: '查询' }).click()
+  await expect(page.getByRole('dialog').getByText('已处理')).toBeVisible()
+  await expect(page.getByRole('dialog')).toContainText('处理于')
+})

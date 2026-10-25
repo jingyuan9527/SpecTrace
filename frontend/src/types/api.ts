@@ -139,6 +139,20 @@ export interface Feedback {
   updatedAt?: string
 }
 
+/** 访客凭编号查询反馈进度的对外视图，不含提交内容 */
+export interface FeedbackStatus {
+  id: number
+  /** OPEN / RESOLVED / IGNORED */
+  status: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+/** 后台侧栏徽标计数汇总 */
+export interface AdminBadges {
+  openFeedback: number
+}
+
 export interface OperationLog {
   id: number
   adminId?: number | null
