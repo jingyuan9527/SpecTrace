@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { motion } from 'motion-v'
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Camera, GitCompareArrows, Share2, TrendingUp } from '@lucide/vue'
+import { ArrowDownRight, ArrowRight, ArrowUpRight, GitCompareArrows, Share2, TrendingUp } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
 import { useECharts } from '@/composables/useECharts'
@@ -63,7 +63,6 @@ const focusDefId = ref<number | undefined>()
 const crossData = ref<EvolutionResult | null>(null)
 const matrix = ref<GenerationMatrix | null>(null)
 const loading = ref(false)
-const capturing = ref(false)
 const socialOpen = ref(false)
 /** 首屏装载完成前不回写 URL，避免把默认值当成用户选择 */
 const ready = ref(false)
@@ -364,31 +363,6 @@ function renderChart() {
   })
 }
 
-const captureRef = ref<HTMLElement>()
-
-async function exportImage() {
-  if (!captureRef.value) return
-  capturing.value = true
-  await nextTick()
-  try {
-    // 动态加载：html2canvas 约 200KB，只有真正导出时才需要
-    const html2canvas = (await import('html2canvas')).default
-    const canvas = await html2canvas(captureRef.value, {
-      backgroundColor: theme.dark ? '#18181b' : '#ffffff',
-      scale: 2,
-    })
-    const link = document.createElement('a')
-    link.download = `spectrace-trends-${seriesId.value ?? 'series'}-${Date.now()}.png`
-    link.href = canvas.toDataURL('image/png')
-    link.click()
-    toast.success('截图已下载')
-  } catch {
-    toast.error('导出失败，请重试')
-  } finally {
-    capturing.value = false
-  }
-}
-
 // ---------- 初始化与联动 ----------
 
 onMounted(async () => {
@@ -506,10 +480,6 @@ watch([mode, () => brandId.value, seriesId, year, defKey, focusDefId], syncQuery
         <Button variant="outline" :disabled="!crossData?.devices.length" @click="socialOpen = true">
           <Share2 />
           社媒导出
-        </Button>
-        <Button variant="outline" :disabled="!crossData?.devices.length || capturing" @click="exportImage">
-          <Camera />
-          截图导出
         </Button>
       </div>
       <Button v-else variant="outline" :disabled="!sameDevices.length" @click="addAllToCompare">
@@ -630,8 +600,8 @@ watch([mode, () => brandId.value, seriesId, year, defKey, focusDefId], syncQuery
             </div>
           </div>
 
-          <!-- 截图只含标题与聚焦图，世代用文本摘要表达 -->
-          <div ref="captureRef" class="capture-area space-y-3">
+          <!-- 海报产物在社媒导出弹窗内按固定画布重排，这里保留标题与聚焦图供页内阅读 -->
+          <div class="capture-area space-y-3">
             <div class="text-center">
               <div class="flex flex-wrap items-center justify-center gap-2 font-semibold">
                 <TrendingUp class="h-4 w-4 text-primary" />
@@ -822,6 +792,7 @@ watch([mode, () => brandId.value, seriesId, year, defKey, focusDefId], syncQuery
       :data="crossData"
       :devices="devices"
       :params="params"
+      :focus-param-def-id="focusDefId"
     />
   </div>
 </template>

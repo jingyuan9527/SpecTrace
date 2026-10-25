@@ -29,6 +29,8 @@ const props = defineProps<{
   data: EvolutionResult | null
   devices: { name: string; releaseDate?: string | null }[]
   params: SocialParamView[]
+  /** 聚焦版海报默认展示的参数（趋势页当前聚焦参数），不传则取首个数值参数 */
+  focusParamDefId?: number | null
 }>()
 
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
@@ -48,6 +50,7 @@ const tab = ref<'image' | 'copy'>('image')
 const CANVAS = {
   portrait: { width: 750, height: 1000, maxParams: 6, chartHeight: 132 },
   landscape: { width: 960, height: 540, maxParams: 4, chartHeight: 108 },
+  focus: { width: 1080, height: 1440 },
 } as const
 type CanvasStyle = keyof typeof CANVAS
 
@@ -58,9 +61,18 @@ const cardRef = ref<HTMLElement>()
 const charts = useECharts()
 
 const size = computed(() => CANVAS[canvasStyle.value])
-/** 导出卡只放数值参数，超出画布容量的截断并提示 */
-const cardParams = computed(() => props.params.filter((param) => param.numeric).slice(0, size.value.maxParams))
+/** 导出卡只放数值参数，超出画布容量的截断并提示；聚焦版不使用多卡布局 */
+const cardParams = computed(() => {
+  if (canvasStyle.value === 'focus') return []
+  return props.params.filter((param) => param.numeric).slice(0, CANVAS[canvasStyle.value].maxParams)
+})
 const truncated = computed(() => props.params.filter((param) => param.numeric).length - cardParams.value.length)
+
+// ---------- 聚焦版（单参数海报） ----------
+const numericParams = computed(() => props.params.filter((param) => param.numeric))
+const focusOptions = computed(() => numericParams.value.map((param) => ({ label: param.paramName, value: param.paramDefId })))
+const focusDefId = ref<number | undefined>()
+const focusParam = computed(() => numericParams.value.find((param) => param.paramDefId === focusDefId.value))
 
 const years = computed(() => {
   const list = props.devices
@@ -71,13 +83,17 @@ const years = computed(() => {
 
 const watermark = `SpecTrace 参数库 · ${location.host}`
 
-watch([open, canvasStyle, () => props.params], async ([isOpen]) => {
+watch([open, canvasStyle, () => props.params, focusDefId], async ([isOpen]) => {
   if (!isOpen) {
     charts.disposeAll()
     return
   }
   if (!cardTitle.value) {
     cardTitle.value = props.data ? `${props.data.seriesName} 历代参数进化` : ''
+  }
+  // 聚焦版默认参数跟随趋势页当前聚焦，切换后仍可在弹窗里改选
+  if (!focusDefId.value || !focusParam.value) {
+    focusDefId.value = props.focusParamDefId ?? numericParams.value[0]?.paramDefId
   }
   // 等弹窗布局完成再画，容器尺寸为 0 时 ECharts 会渲染成空白
   await nextTick()
@@ -127,7 +143,59 @@ function cardChartOption(points: EvolutionPoint[]) {
   }
 }
 
+/** 聚焦版大图：海报是静态产出物，字号与线宽按 1080 宽画布放大，不设 tooltip */
+function focusChartOption(param: SocialParamView) {
+  const names = props.devices.map((device) => device.name)
+  const color = '#4f46e5'
+  return {
+    grid: { left: 24, right: 32, top: 48, bottom: 56, containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: names,
+      axisLabel: { color: '#71717a', fontSize: 24, rotate: names.length > 6 ? 35 : 0 },
+      axisLine: { lineStyle: { color: '#e4e4e7' } },
+    },
+    yAxis: {
+      type: 'value',
+      scale: true,
+      name: param.unit || '',
+      nameTextStyle: { color: '#a1a1aa', fontSize: 20 },
+      axisLabel: { color: '#a1a1aa', fontSize: 20 },
+      splitLine: { lineStyle: { color: '#f4f4f5' } },
+    },
+    series: [
+      {
+        name: param.paramName,
+        type: 'line',
+        smooth: true,
+        symbolSize: 12,
+        connectNulls: true,
+        data: param.visiblePoints.map((point) => point.value ?? null),
+        itemStyle: { color },
+        lineStyle: { width: 4, color },
+        areaStyle: { color, opacity: 0.12 },
+        markPoint: {
+          symbolSize: 56,
+          label: { fontSize: 20, color: '#fff' },
+          itemStyle: { color },
+          data: [
+            { type: 'max', name: '最高' },
+            { type: 'min', name: '最低' },
+          ],
+        },
+      },
+    ],
+  }
+}
+
 function renderCharts() {
+  // 版式切换后旧容器已卸载，先把不再需要的实例清掉
+  if (canvasStyle.value === 'focus') {
+    charts.prune(new Set(['focus-chart']))
+    if (focusParam.value) charts.render('focus-chart', focusChartOption(focusParam.value))
+    return
+  }
+  charts.prune(new Set(cardParams.value.map((param) => `card-${param.paramDefId}`)))
   for (const param of cardParams.value) {
     charts.render(`card-${param.paramDefId}`, cardChartOption(param.visiblePoints))
   }
@@ -151,6 +219,11 @@ async function exportImage() {
     exporting.value = false
   }
 }
+
+/** 下载可用：多卡版需要有可画参数，聚焦版需要选中的聚焦参数 */
+const exportDisabled = computed(() =>
+  canvasStyle.value === 'focus' ? !focusParam.value : !cardParams.value.length,
+)
 
 // ---------- 社媒文案 ----------
 const copyStyles = [
@@ -207,7 +280,7 @@ async function copyToClipboard() {
 
     <!-- 图片模板：固定画布重排图表，导出物不跟随站点主题 -->
     <div v-if="tab === 'image'" class="space-y-3">
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div class="space-y-1.5">
           <Label for="social-canvas">画布比例</Label>
           <Select
@@ -215,8 +288,13 @@ async function copyToClipboard() {
             :options="[
               { label: '竖版 3:4（小红书）', value: 'portrait' },
               { label: '横版 16:9（公众号）', value: 'landscape' },
+              { label: '聚焦版 3:4（单参数大图）', value: 'focus' },
             ]"
           />
+        </div>
+        <div v-if="canvasStyle === 'focus'" class="space-y-1.5">
+          <Label for="social-focus-param">聚焦参数</Label>
+          <Select v-model="focusDefId" :options="focusOptions" />
         </div>
         <div class="space-y-1.5">
           <Label for="social-title">卡片标题</Label>
@@ -238,8 +316,26 @@ async function copyToClipboard() {
             <h1 class="mt-2 text-[30px] font-bold leading-tight">{{ cardTitle || '历代参数进化' }}</h1>
           </div>
 
-          <!-- 图表区 -->
-          <div class="grid flex-1 grid-cols-2 content-center gap-x-6 gap-y-2 px-10">
+          <!-- 聚焦版主体：参数名 + 涨跌结论 + 单参数大图 + 首末值摘要 -->
+          <template v-if="canvasStyle === 'focus'">
+            <div class="flex items-baseline justify-between px-10 pt-4">
+              <div class="flex items-baseline gap-3">
+                <span class="text-[34px] font-bold leading-none">{{ focusParam?.paramName }}</span>
+                <span v-if="focusParam?.unit" class="text-lg text-zinc-400">{{ focusParam.unit }}</span>
+              </div>
+              <span class="text-2xl font-bold" :class="focusParam && rateClass(focusParam.viewTrend)">
+                {{ focusParam ? rateText(focusParam.rate, focusParam.viewTrend) : '' }}
+              </span>
+            </div>
+            <div :ref="charts.bind('focus-chart')" class="w-full flex-1" />
+            <p v-if="focusParam" class="px-10 pb-2 text-center text-sm text-zinc-400">
+              {{ devices[0]?.name }} {{ focusParam.visiblePoints[0]?.raw || '—' }}
+              → {{ devices[devices.length - 1]?.name }} {{ focusParam.visiblePoints[focusParam.visiblePoints.length - 1]?.raw || '—' }}
+            </p>
+          </template>
+
+          <!-- 多卡版图表区 -->
+          <div v-else class="grid flex-1 grid-cols-2 content-center gap-x-6 gap-y-2 px-10">
             <div v-for="param in cardParams" :key="param.paramDefId" class="flex flex-col justify-center">
               <div class="flex items-baseline justify-between gap-2">
                 <span class="text-sm font-semibold">{{ param.paramName }}</span>
@@ -250,7 +346,7 @@ async function copyToClipboard() {
               <div
                 :ref="charts.bind(`card-${param.paramDefId}`)"
                 class="w-full"
-                :style="{ height: `${size.chartHeight}px` }"
+                :style="{ height: `${CANVAS[canvasStyle].chartHeight}px` }"
               />
             </div>
             <p v-if="!cardParams.length" class="col-span-2 py-10 text-center text-sm text-zinc-400">
@@ -269,9 +365,10 @@ async function copyToClipboard() {
       <div class="flex items-center justify-between">
         <p class="text-xs text-muted-foreground">
           <template v-if="truncated > 0">数值参数较多，卡片仅展示前 {{ cardParams.length }} 个；</template>
+          <template v-else-if="canvasStyle === 'focus'">聚焦版为单参数海报，1080×1440 固定尺寸；</template>
           下载后可直接发小红书 / 公众号
         </p>
-        <Button :disabled="exporting || !cardParams.length" @click="exportImage">
+        <Button :disabled="exporting || exportDisabled" @click="exportImage">
           <Loader2 v-if="exporting" class="animate-spin" />
           <Download v-else />
           {{ exporting ? '生成中…' : '下载图片' }}

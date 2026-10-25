@@ -1101,6 +1101,7 @@
 | T79 系列趋势页（跨代 + 同代） | ✅ | 新增 `/trends`：品牌 + 页内 Tab；跨代 = 系列 chips → 世代缩略图条 + 参数卡网格（`ValueSparkline` 内联 SVG 迷你趋势 + 涨跌徽标，chips 增换上限 8）+ 点卡聚焦 ECharts 大图 + AI 回顾 + 社媒/截图导出；同代 = 年份 chips → 兄弟系列并排卡（中性「最高/最低」标注）+ 一键全部加入对比页。URL 同步 mode/brandId/seriesId/year/paramDefIds/paramDefId |
 | T80 旧页面与入口收编 | ✅ | 删除 History.vue / Evolution.vue；`/history` `/evolution` 路由重定向（evolution 保留 seriesId 映射）；导航两项合一；首页/机型库系列卡/详情页系列条与参数行入口全部改指 `/trends`（参数行入口带 paramDefId 直达聚焦）；后端 `/public/history` 接口保留不动（API 兼容），sitemap 输出改 `/trends`，Security 白名单加 `/trends` 并保留旧路径放行 |
 | T81 e2e 与文档同步 | ✅ | `series-evolution.spec.ts` 重写为 `series-trends.spec.ts`（跨代聚焦/参数上限/同代横比/社媒导出/移动端双列），连接与总览用例改断言新 URL；mock 新增 generation、补 Apple 兄弟系列与文本参数；README 路由/功能段/SEO/e2e 描述同步 |
+| T82 导出改为模板卡海报 | ✅ | 「截图导出」（html2canvas 截网页 DOM，产物随窗口尺寸与主题变化）下线；社媒导出弹窗新增**聚焦版**版式：1080×1440 固定画布、亮色、单参数 ECharts 大图（字号线宽按海报比例放大、极值标注）+ 首末值摘要 + 涨跌结论，自动带入趋势页当前聚焦参数并可在弹窗内改选；页面导出入口收敛为「社媒导出」一个 |
 
 **验证**：`mvn test` 42 例全绿（新增同代矩阵与安全白名单断言）；`npm run typecheck` / `build` 通过；`npm run test:e2e` 19 例全绿。
 

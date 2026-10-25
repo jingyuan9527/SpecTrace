@@ -145,18 +145,27 @@ test('访客：同代横比与全部加入对比', async ({ page }) => {
   await expect(page.getByRole('button', { name: /对比池 2/ })).toBeVisible()
 })
 
-/** 社媒导出：模板卡图片 Tab 与平台风格文案生成。 */
+/** 社媒导出：模板卡图片 Tab（多卡版 + 聚焦版）与平台风格文案生成。 */
 test('访客：社媒导出弹窗与文案生成', async ({ page }) => {
   await mockApi(page)
 
   await page.goto('/trends')
   await expect(page.getByText('Apple · iPhone 数字系列')).toBeVisible()
+  // 页面聚焦电池容量时打开弹窗，聚焦版应默认带到该参数
+  await page.getByRole('button', { name: '聚焦 电池容量' }).click()
   await page.getByRole('button', { name: '社媒导出' }).click()
 
   const dialog = page.getByRole('dialog', { name: '社媒导出' })
   await expect(dialog).toBeVisible()
   // 图片 Tab：默认标题 + 模板卡 + 下载按钮
   await expect(dialog.getByText('iPhone 数字系列 历代参数进化')).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '下载图片' })).toBeEnabled()
+
+  // 聚焦版：单参数海报画布 1080×1440，当前聚焦参数自动带入
+  await dialog.getByRole('combobox').first().click()
+  await page.getByRole('option', { name: '聚焦版 3:4（单参数大图）' }).click()
+  await expect(dialog.locator('.mx-auto.bg-white')).toHaveAttribute('style', expect.stringContaining('width: 1080px'))
+  await expect(dialog.getByText('mAh')).toBeVisible()
   await expect(dialog.getByRole('button', { name: '下载图片' })).toBeEnabled()
 
   // 文案 Tab：生成后渲染标题/正文/话题
