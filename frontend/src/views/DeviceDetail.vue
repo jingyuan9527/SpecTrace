@@ -6,7 +6,7 @@ import { ArrowLeft, CalendarDays, Check, Clock3, Flag, GitCompareArrows, LineCha
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
 import type { DeviceVariant, EvolutionDevice, FeedbackStatus, ParamDef, ParamGroup, ParamMeta, SeriesBrief } from '@/types/api'
-import { absoluteUrl, setPageMeta } from '@/lib/meta'
+import { absoluteUrl, setPageMeta, setJsonLd } from '@/lib/meta'
 import { formatTime } from '@/lib/utils'
 import { useCompareStore } from '@/stores/compare'
 import {
@@ -83,12 +83,37 @@ onMounted(async () => {
       url: location.href,
     })
     ;[groups.value, defs.value] = await Promise.all([publicApi.paramGroups(), publicApi.paramDefs()])
+    setJsonLd(buildProductJsonLd(detail))
   } catch {
     notFound.value = true
   } finally {
     loading.value = false
   }
 })
+
+/** T89 结构化数据：Product schema，参数摘要取前 12 项控制体积 */
+function buildProductJsonLd(detail: any) {
+  const brandName = detail.brand?.name || ''
+  const specs = Object.entries(detail.params || {}).slice(0, 12).map(([key, value]) => ({
+    '@type': 'PropertyValue',
+    name: detail.paramMeta?.[key]?.paramName || key,
+    value: String(value),
+  }))
+  const data: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: brandName ? `${brandName} ${detail.device.name}` : detail.device.name,
+    url: location.href.split('?')[0],
+  }
+  if (brandName) data.brand = { '@type': 'Brand', name: brandName }
+  if (detail.device.releaseDate) data.releaseDate = detail.device.releaseDate
+  if (detail.device.thumbnail) data.image = absoluteUrl(detail.device.thumbnail)
+  if (minPrice.value !== null) {
+    data.offers = { '@type': 'Offer', price: minPrice.value, priceCurrency: 'CNY', availability: 'https://schema.org/InStock' }
+  }
+  if (specs.length) data.additionalProperty = specs
+  return data
+}
 
 function formatPrice(price?: number | null, currency?: string | null) {
   if (price === null || price === undefined) return '—'

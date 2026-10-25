@@ -1122,7 +1122,7 @@
 | T86 | AI 预审打标与审核排序 | P1 | ✅ | 可疑置顶、批量通过加护栏，人力花在刀刃 |
 | T87 | 参数陈旧度与系列重抓 | P2 | ✅ | updated_at 消费起来，时效性可见 |
 | T88 | 系列订阅抓取 | P2 | ✅ | 指定系列周期自动发现，发布季不掉队 |
-| T89 | SEO 与分发中级补强 | P2 | ⬜ | JSON-LD / 缓存头 / RSS / PWA |
+| T89 | SEO 与分发中级补强 | P2 | ✅ | JSON-LD / 缓存头 / RSS / PWA |
 | T90 | 机型图片采集落库 | P3 | ⬜ | Agent 产出图片 URL，异步下载落库；与主流程完全解耦，失败只降级 |
 
 ---
@@ -1259,6 +1259,9 @@
 ---
 
 ### T89 SEO 与分发中级补强（P2 · 可拆散零做）
+
+**已完成（2026-10-25）**：①详情页注入 JSON-LD Product schema（品牌/型号/发布日期/起售价 Offer/参数摘要 12 项，`setJsonLd` 随路由复位清除）；②`PublicCacheHeaderFilter` 给公开 GET 加 `Cache-Control: public, max-age=300`（feedback 查询与 POST 豁免，SPA/sitemap 不波及）；③`ShallowEtagHeaderFilter` 注册到 `/api/public/*`，二次请求命中 304；④新 `GET /rss.xml` 近 30 天新收录机型（RFC-822 pubDate、1h 缓存，进安全白名单）；⑤PWA——`manifest.webmanifest` + SVG 图标 + 保守 `sw.js`（静态资产 cache-first、导航 network-first 回落 index.html、**/api 一律不缓存**），仅生产构建注册。
+**验证**：编译 + 42 单测、typecheck / build / e2e 24 例全绿；接口冒烟——RSS 输出合法 XML 条目、公开接口 300 + ETag 命中 304、feedback/POST/首页不误伤缓存头（顺带修掉过滤器初版误罩 SPA 的 bug）。
 
 **问题**：详情页动态 OG/meta 已有（`meta.ts`），但无 JSON-LD 结构化数据；公开 GET 无 `Cache-Control` / `ETag`（仅 sitemap / robots 有）；无 RSS；无 PWA。
 

@@ -48,6 +48,7 @@ public class SecurityConfig {
             "/actuator/info",
             // 搜索引擎入口
             "/sitemap.xml",
+            "/rss.xml",
             "/robots.txt",
             "/error"
     };

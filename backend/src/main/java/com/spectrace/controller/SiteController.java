@@ -1,7 +1,9 @@
 package com.spectrace.controller;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
+import com.spectrace.mapper.BrandMapper;
 import com.spectrace.mapper.DeviceMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -15,8 +17,14 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * 站点级 SEO 入口：sitemap.xml 与 robots.txt。
@@ -29,7 +37,10 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class SiteController {
 
+    private static final DateTimeFormatter RFC_1123 = DateTimeFormatter.RFC_1123_DATE_TIME;
+
     private final DeviceMapper deviceMapper;
+    private final BrandMapper brandMapper;
 
     @Value("${spectrace.public-base-url:}")
     private String publicBaseUrl;
@@ -57,6 +68,53 @@ public class SiteController {
         log.debug("生成 sitemap: base={} 机型数={}", base, devices.size());
         return ResponseEntity.ok()
                 .contentType(MediaType.valueOf("application/xml;charset=UTF-8"))
+                .cacheControl(CacheControl.maxAge(1, TimeUnit.HOURS).cachePublic())
+                .body(xml.toString());
+    }
+
+    /** RSS 订阅流（T89）：近 30 天新收录机型，给「持续收录」一个免费回访入口。 */
+    @GetMapping(value = "/rss.xml", produces = "application/rss+xml;charset=UTF-8")
+    public ResponseEntity<String> rss(HttpServletRequest request) {
+        String base = baseUrl(request);
+        List<Device> devices = deviceMapper.selectList(Wrappers.<Device>lambdaQuery()
+                .eq(Device::getStatus, 1)
+                .ge(Device::getCreatedAt, LocalDateTime.now().minusDays(30))
+                .select(Device::getId, Device::getName, Device::getBrandId, Device::getReleaseDate, Device::getCreatedAt)
+                .orderByDesc(Device::getCreatedAt)
+                .last("LIMIT 50"));
+        Map<Long, String> brandNames = devices.isEmpty() ? Map.of()
+                : brandMapper.selectBatchIds(devices.stream().map(Device::getBrandId).filter(Objects::nonNull).distinct().toList())
+                        .stream().collect(Collectors.toMap(Brand::getId, Brand::getName));
+
+        String buildDate = RFC_1123.format(LocalDateTime.now().atZone(ZoneId.systemDefault()));
+        StringBuilder xml = new StringBuilder(256 + devices.size() * 220);
+        xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+                .append("<rss version=\"2.0\"><channel>\n")
+                .append("  <title>SpecTrace · 新收录机型</title>\n")
+                .append("  <link>").append(escape(base)).append("</link>\n")
+                .append("  <description>SpecTrace 手机参数库最近 30 天收录的机型</description>\n")
+                .append("  <lastBuildDate>").append(buildDate).append("</lastBuildDate>\n");
+        for (Device device : devices) {
+            String brandName = device.getBrandId() == null ? "" : brandNames.getOrDefault(device.getBrandId(), "");
+            String title = (brandName.isEmpty() ? "" : brandName + " ") + device.getName();
+            String pubDate = device.getCreatedAt() == null
+                    ? buildDate
+                    : RFC_1123.format(device.getCreatedAt().atZone(ZoneId.systemDefault()));
+            xml.append("  <item>\n")
+                    .append("    <title>").append(escape(title)).append("</title>\n")
+                    .append("    <link>").append(escape(base + "/devices/" + device.getId())).append("</link>\n")
+                    .append("    <guid>").append(escape(base + "/devices/" + device.getId())).append("</guid>\n")
+                    .append("    <pubDate>").append(pubDate).append("</pubDate>\n")
+                    .append("    <description>")
+                    .append(escape(device.getReleaseDate() == null ? "参数已收录" : "发布于 " + device.getReleaseDate() + "，参数已收录"))
+                    .append("</description>\n")
+                    .append("  </item>\n");
+        }
+        xml.append("</channel></rss>\n");
+
+        log.debug("生成 RSS: base={} 条目数={}", base, devices.size());
+        return ResponseEntity.ok()
+                .contentType(MediaType.valueOf("application/rss+xml;charset=UTF-8"))
                 .cacheControl(CacheControl.maxAge(1, TimeUnit.HOURS).cachePublic())
                 .body(xml.toString());
     }

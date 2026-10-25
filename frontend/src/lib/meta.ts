@@ -38,6 +38,23 @@ export function setPageMeta(options: {
 
 export function resetPageMeta() {
   setPageMeta({ title: DEFAULT_TITLE, description: DEFAULT_DESCRIPTION, image: null })
+  setJsonLd(null)
+}
+
+const JSON_LD_ID = 'spectrace-json-ld'
+
+/**
+ * 结构化数据（T89）：详情页注入 Product schema，供搜索引擎富结果使用。
+ * 传 null 清除标签，路由切换时随 resetPageMeta 一起复位。
+ */
+export function setJsonLd(data: Record<string, unknown> | null) {
+  document.getElementById(JSON_LD_ID)?.remove()
+  if (!data) return
+  const script = document.createElement('script')
+  script.id = JSON_LD_ID
+  script.type = 'application/ld+json'
+  script.textContent = JSON.stringify(data)
+  document.head.appendChild(script)
 }
 
 /** 相对图片地址转绝对 URL，社交平台抓取时要求绝对路径。 */

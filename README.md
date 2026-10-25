@@ -248,7 +248,8 @@ docker run -d --name spectrace-app -p 80:8080 \
 - **机型库系列总览**：机型库页「机型列表 / 系列总览」双视图（URL `?view=series` 可分享），品牌筛选联动。系列卡片按产品线汇总：收录代数与年份范围、最新一代代表机型、屏幕尺寸与起售价两条 SVG 迷你趋势（悬停可看各年份数值），点击直达系列趋势；未归类机型在总览底部汇总展示，点击切回列表视图。趋势刻意用内联 SVG 而非图表库，避免首屏页面引入重依赖。
 - **图片上传**：前端 canvas 压缩到最长边 1600px 并转 WebP，超过 500KB 时逐级降质 / 降尺寸重压（最多 3×2 次），仍超限则提示裁剪而非静默失败；后端按文件头校验真实类型（JPG/PNG/WebP/GIF）并限制大小（可配置），返回访问地址与像素尺寸。
 - **AI 对比差异摘要**：对比页按需生成（不自动调用），只把「有实际取值且不同」的参数行交给默认模型，最多 30 行；输出解析为 `summary + points` 并做长度裁剪。同一组机型按机型归档后的参数值指纹缓存（默认 24 小时，换机型顺序也命中），参数变更自然失效；同来源每分钟最多 5 次生成（命中缓存也计入，超限返回 HTTP 429）。未配置可用模型时接口返回 `available=false`，前端整块入口隐藏；调用失败降级为 `failed=true` 且 HTTP 200，不阻塞对比表。开关与缓存时长见 `SPECTRACE_AI_INSIGHT_ENABLED` / `SPECTRACE_AI_INSIGHT_CACHE_HOURS`。
-- **SEO**：history 路由 + 详情页动态 title/description/OG；`/sitemap.xml` 输出首页、机型库、系列趋势与全部在售机型（带 `lastmod`），`/robots.txt` 屏蔽后台、接口与上传目录；对外域名取 `SPECTRACE_PUBLIC_BASE_URL`，未配置时回退请求域名。
+- **SEO**：history 路由 + 详情页动态 title/description/OG 与 **JSON-LD Product 结构化数据**（品牌/型号/起售价/参数摘要，T89）；`/sitemap.xml` 输出首页、机型库、系列趋势与全部在售机型（带 `lastmod`），`/rss.xml` 输出近 30 天新收录机型（T89），`/robots.txt` 屏蔽后台、接口与上传目录；对外域名取 `SPECTRACE_PUBLIC_BASE_URL`，未配置时回退请求域名。
+- **PWA 与 HTTP 缓存**（T89）：`manifest.webmanifest` + 保守 `sw.js`（静态资产 cache-first、页面导航 network-first，**/api 一律不缓存**，仅生产构建注册）；公开 GET 接口带 `Cache-Control: max-age=300` 与 ETag（feedback 查询豁免，保证处理结果实时可见），二次请求命中 304。
 - **AI 世代回顾**：与对比摘要共用 `AiInsightSupport` 的护栏（同来源每分钟 5 次、结果缓存默认 24 小时、失败降级、非法 JSON 退化为纯文本）；按当前所选参数与可见世代生成一段带趋势判断的回顾，缓存 key 含可见机型与取值，换区间或改参数自然失效。只允许引用给定数值支撑的「升级明显 / 提升有限 / 略有退步」，不写购买建议。
 - **后台会话校验**：进入后台路由前调用 `/api/auth/me` 确认 token 仍有效（每次整页加载校验一次，SPA 内跳转不重复请求），失效即清本地凭证回到登录页；该校验失败时静默处理，不弹全局错误。
 - **账号安全**：`admin_user.must_change_password` 标记「初始密码」与「被管理员重置的密码」，登录响应与 `/auth/me` 都返回该标记，路由守卫据此把用户锁在改密页；自助改密 `PUT /api/auth/password` 必须校验原密码（JWT 只证明持有 token，不能证明是本人），改完清除标记。老库升级由 `SqliteSchemaMigration` 补列，并只对仍能匹配初始口令的账号打标记，已改密的账号不受打扰。启动日志不再打印明文口令。
