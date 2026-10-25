@@ -15,6 +15,7 @@ import type {
   BrandSaveRequest,
   CompareResult,
   ConnectivityTest,
+  DataHealth,
   Device,
   DeviceDetail,
   DeviceImportResult,
@@ -113,6 +114,9 @@ export const authApi = {
 export const adminApi = {
   // 侧栏徽标计数（当前仅纠错反馈待处理数）
   badges: () => request.get<unknown, AdminBadges>('/admin/badges'),
+  // 数据健康度看板（brandId/seriesId 只作用于缺参机型排行）
+  dataHealth: (params?: Record<string, unknown>) =>
+    request.get<unknown, DataHealth>('/admin/data-health', { params }),
 
   brands: () => request.get<unknown, Brand[]>('/admin/brands'),
   saveBrand: (data: BrandSaveRequest) =>

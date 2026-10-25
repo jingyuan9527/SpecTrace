@@ -254,6 +254,7 @@ docker run -d --name spectrace-app -p 80:8080 \
 - **公开接口护栏**：`PublicRateLimitFilter` 对 `/api/public/**` 做单 IP 每分钟基础限流（`SPECTRACE_PUBLIC_QPM`，默认 120，feedback / insight 各自更严格的限流叠加生效）；`/devices` 分页 size 收敛上限 100，防止匿名一次拉全库。
 - **公开读缓存**：品牌、参数元信息、系列列表、机型详情走 Caffeine 进程内缓存（TTL 5 分钟兜底 + 管理端写路径 `@CacheEvict` 主动失效），机型发布年份改为 SQL 聚合，SQLite 读压力与机型库规模解耦。
 - **数据保留策略**：终态抓取任务（含过程日志）、已处理待审核、操作日志、机型浏览量按天聚合按保留天数定时清理（默认每天 04:00，排在 03:30 备份之后），防止 SQLite 无界膨胀拖慢查询与备份；「系统运维」页展示各表行数、保留配置并支持手动清理（仅超级管理员）。
+- **数据健康度看板**：`GET /api/admin/data-health` 汇总全库带参率（含草稿口径）、各启用参数的覆盖机型数排行（升序，覆盖最少的排最前）、缺参机型排行（缺参 = 有值参数数 < 启用参数数；按近 30 天 PV 倒序、无 PV 按发布时间，品牌/系列可筛）与近 30 天审核通过数、待处理反馈数；后台「数据健康度」页对缺参机型支持行级与批量补抓（复用选模型弹窗）。
 - **访客行为统计与热门口径**：机型详情访问与对比发起按天聚合写入 `device_view_daily`（SQLite 原子 upsert 累加；写入与查询都是尽力而为，失败只记日志并回落，绝不阻塞访客主流程）；`/devices/hot` 改为**近 30 天 PV 倒序**，窗口内无统计数据（新库）回落发布时间倒序、不足 limit 用最新机型补齐；机型管理列表附「30天PV」列，为数据健康度的补录优先级提供依据。
 
 ## 接口文档
@@ -263,7 +264,7 @@ docker run -d --name spectrace-app -p 80:8080 \
 ## 开发规约
 
 - 后端：Java 21 / Spring Boot 3.3 / MyBatis-Plus / AgentScope Java 2.0（Harness，内嵌），统一响应体 `R<T>`，全局异常处理 `GlobalExceptionHandler`；`mvn test` 跑单测（参数值解析、CSV 导入预览、世代回顾聚合、AI 摘要解析与限流）
-- 前端：`npm run build` 验证构建；`npm run typecheck` 做类型检查；`npm run test:e2e` 跑 Playwright 主链路（访客对比分享、后台审核入库、键盘登录与弹窗、键盘完成新增品牌/机型/提交抓取/审核、后台系列增改并删与拖拽排序、系列趋势跨代聚焦/参数上限/同代横比/社媒导出/移动端、后台账号与参数维护、纠错反馈处理、初始密码强制改密）
+- 前端：`npm run build` 验证构建；`npm run typecheck` 做类型检查；`npm run test:e2e` 跑 Playwright 主链路（访客对比分享、后台审核入库、键盘登录与弹窗、键盘完成新增品牌/机型/提交抓取/审核、后台系列增改并删与拖拽排序、系列趋势跨代聚焦/参数上限/同代横比/社媒导出/移动端、后台账号与参数维护、纠错反馈处理（含编号回执查询闭环与未读徽标）、数据健康度看板与缺参补抓、初始密码强制改密）
 - 列表页复用：后台分页列表统一走 `src/composables/usePagedList`（分页 / 筛选 / 加载态 / 竞态兜底），新增列表页不再手写 query 与双 watch；可搜索下拉需要远程联想时使用 `Combobox` 的 `remote` 模式 + `@search` 事件
 - 类型契约：前后端共享类型集中在 `frontend/src/types/api.ts`（以后端 VO 字段为准），`api/index.ts` 与各视图必须引用而非另写本地 interface；e2e 的 `mock-api.ts` 同样引用该文件，且未 mock 的接口会显式 404（不再静默返回 null），后端改字段名时 `typecheck`（含 `tsconfig.e2e.json`）会同时拦住前端与 mock
 - 图表与 AI 文案复用：ECharts 生命周期统一走 `src/composables/useECharts`（按 key 注册、容器重建自动重挂、resize/卸载自动处理），AI 摘要/回顾统一 `useInsight` + `InsightCard.vue`（available/failed/429 护栏语义收口一处），新页面不得再手写图表生命周期或复制文案卡片

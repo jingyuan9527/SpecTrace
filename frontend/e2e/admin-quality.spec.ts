@@ -65,6 +65,24 @@ test('后台：参数分组与参数定义维护', async ({ page }) => {
   await expect(page.getByRole('cell', { name: '摄像头数量' })).toBeVisible()
 })
 
+test('后台：数据健康度看板与缺参补抓', async ({ page }) => {
+  await mockApi(page)
+  await login(page)
+
+  await page.goto('/admin/health')
+  await expect(page.getByRole('heading', { name: '数据健康度' })).toBeVisible()
+  await expect(page.getByText('全库带参率', { exact: true })).toBeVisible()
+  // 缺参排行有数据，Mate 70 带 PV 回显
+  await expect(page.getByRole('cell', { name: 'Mate 70' })).toBeVisible()
+  await expect(page.getByRole('row', { name: /Mate 70/ }).getByText('5')).toBeVisible()
+
+  // 行级补抓：弹窗选默认模型后提交
+  await page.getByRole('row', { name: /Mate 70/ }).getByRole('button', { name: '补抓该机型' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: '提交抓取' }).click()
+  await expect(page.getByText('已提交 1 个抓取任务，结果将进入待审核')).toBeVisible()
+})
+
 test('后台：初始密码必须先改密才能进入', async ({ page }) => {
   await mockApi(page, { mustChangePassword: true })
 

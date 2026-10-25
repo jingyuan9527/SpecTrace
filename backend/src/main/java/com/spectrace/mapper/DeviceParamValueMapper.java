@@ -1,7 +1,9 @@
 package com.spectrace.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.spectrace.dto.DeviceParamCount;
 import com.spectrace.dto.HistoryPoint;
+import com.spectrace.dto.ParamCoverage;
 import com.spectrace.entity.DeviceParamValue;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -23,4 +25,24 @@ public interface DeviceParamValueMapper extends BaseMapper<DeviceParamValue> {
             ORDER BY d.release_date ASC
             """)
     List<HistoryPoint> selectHistory(@Param("brandId") Long brandId, @Param("paramDefId") Long paramDefId);
+
+    /** 有任意参数值的机型数（数据健康度带参率分母侧统计） */
+    @Select("SELECT COUNT(DISTINCT device_id) FROM device_param_value")
+    long countDevicesWithParams();
+
+    /** 各参数的有值机型数（参数覆盖排行，未出现在结果中的参数记 0） */
+    @Select("""
+            SELECT param_def_id AS paramDefId, COUNT(DISTINCT device_id) AS deviceCount
+            FROM device_param_value
+            GROUP BY param_def_id
+            """)
+    List<ParamCoverage> selectParamCoverage();
+
+    /** 各机型的有值参数个数（缺参机型排行，未出现在结果中的机型记 0） */
+    @Select("""
+            SELECT device_id AS deviceId, COUNT(DISTINCT param_def_id) AS paramCount
+            FROM device_param_value
+            GROUP BY device_id
+            """)
+    List<DeviceParamCount> selectParamCountByDevice();
 }

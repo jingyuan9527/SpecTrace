@@ -46,6 +46,7 @@ const routes: RouteRecordRaw[] = [
       { path: '', redirect: '/admin/devices' },
       { path: 'brands', name: 'admin-brands', component: () => import('@/views/admin/Brand.vue') },
       { path: 'series', name: 'admin-series', component: () => import('@/views/admin/Series.vue') },
+      { path: 'health', name: 'admin-health', component: () => import('@/views/admin/Health.vue') },
       { path: 'params', name: 'admin-params', component: () => import('@/views/admin/Param.vue') },
       { path: 'devices', name: 'admin-devices', component: () => import('@/views/admin/Device.vue') },
       { path: 'agent-tasks', name: 'admin-agent-tasks', component: () => import('@/views/admin/AgentTasks.vue') },

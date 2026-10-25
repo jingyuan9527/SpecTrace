@@ -691,6 +691,39 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
     if (path === '/admin/badges') {
       return ok({ openFeedback: state.feedback.filter((item) => item.status === 'OPEN').length })
     }
+    if (path === '/admin/data-health') {
+      // 机型 7 视为已有参数，其余进缺参排行；Mate 70 给 PV 以验证排序字段回显
+      const devices = state.devices
+      return ok({
+        totalDevices: devices.length,
+        publishedDevices: devices.filter((item) => item.status === 1).length,
+        devicesWithParams: 1,
+        coverageRate: Number((1 / Math.max(devices.length, 1)).toFixed(4)),
+        enabledParamDefs: 3,
+        approvedLast30d: 1,
+        openFeedback: state.feedback.filter((item) => item.status === 'OPEN').length,
+        paramCoverage: [
+          { paramDefId: 1, paramKey: 'release_date', paramName: '发布时间', groupName: '基础信息', deviceCount: 4 },
+          { paramDefId: 3, paramKey: 'screen_size', paramName: '屏幕尺寸', groupName: '基础信息', deviceCount: 3 },
+          { paramDefId: 11, paramKey: 'battery_capacity', paramName: '电池容量', groupName: '基础信息', deviceCount: 2 },
+        ],
+        missingDevices: devices
+          .filter((item) => item.id !== 7)
+          .map((item) => ({
+            id: item.id,
+            name: item.name,
+            brandId: item.brandId,
+            brandName: brandNameOf(item.brandId),
+            seriesId: item.seriesId ?? null,
+            seriesName: state.series.find((series) => series.id === item.seriesId)?.name ?? null,
+            status: item.status,
+            releaseDate: item.releaseDate,
+            pv30d: item.id === 9 ? 5 : null,
+            haveParams: 0,
+            totalParams: 3,
+          })),
+      })
+    }
     if (path === '/admin/feedback') return ok(pageResult(state.feedback))
     if (/^\/admin\/feedback\/\d+\/status$/.test(path)) {
       const id = Number(path.split('/')[3])

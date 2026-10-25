@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  Activity,
   Bot,
   ChevronDown,
   ClipboardCheck,
@@ -58,6 +59,7 @@ const menus = [
   { path: '/admin/ai-config', label: 'AI 配置', icon: Sparkles },
   { path: '/admin/brands', label: '品牌管理', icon: Tags },
   { path: '/admin/series', label: '系列管理', icon: Layers },
+  { path: '/admin/health', label: '数据健康度', icon: Activity },
   { path: '/admin/params', label: '参数元数据', icon: SlidersHorizontal },
   { path: '/admin/feedback', label: '纠错反馈', icon: Flag },
   { path: '/admin/users', label: '账号权限', icon: Users },

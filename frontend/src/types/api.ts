@@ -155,6 +155,46 @@ export interface AdminBadges {
   openFeedback: number
 }
 
+/** 单个参数的全库覆盖情况（数据健康度） */
+export interface DataHealthParamCoverage {
+  paramDefId: number
+  paramKey: string
+  paramName: string
+  groupName?: string | null
+  deviceCount: number
+}
+
+/** 缺参机型排行项：浏览量越高、缺参越多越优先补录 */
+export interface DataHealthMissingDevice {
+  id: number
+  name: string
+  brandId?: number | null
+  brandName?: string | null
+  seriesId?: number | null
+  seriesName?: string | null
+  status: number
+  releaseDate?: string | null
+  pv30d?: number | null
+  haveParams: number
+  totalParams: number
+}
+
+/** 数据健康度总览（T85） */
+export interface DataHealth {
+  totalDevices: number
+  publishedDevices: number
+  devicesWithParams: number
+  /** 带参率 0~1 */
+  coverageRate: number
+  enabledParamDefs: number
+  approvedLast30d: number
+  openFeedback: number
+  /** 参数覆盖排行：升序，覆盖最少的在前 */
+  paramCoverage: DataHealthParamCoverage[]
+  /** 缺参机型排行：近 30 天 PV 倒序 */
+  missingDevices: DataHealthMissingDevice[]
+}
+
 export interface OperationLog {
   id: number
   adminId?: number | null
