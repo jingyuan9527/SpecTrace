@@ -309,7 +309,9 @@ public class AgentTaskService {
         }
         if (!TaskStatus.PENDING_REVIEW.name().equals(task.getStatus())
                 && !TaskStatus.APPROVED.name().equals(task.getStatus())) {
-            throw new BizException("任务尚未完成发现，无法创建机型");
+            throw new BizException(TaskStatus.DISCARDED.name().equals(task.getStatus())
+                    ? "该发现结果已被拒绝，无法创建机型"
+                    : "任务尚未完成发现，无法创建机型");
         }
         Brand brand = null;
         if (StringUtils.hasText(task.getBrandName())) {
@@ -887,10 +889,30 @@ public class AgentTaskService {
         }
     }
 
+    /**
+     * 拒绝系列发现结果：任务置为已丢弃，清单不可再创建草稿机型。
+     * 仅作用于发现任务本身——之前已创建的草稿机型是独立档案，由管理员在机型管理中另行处理。
+     */
+    @Transactional
+    public void discardDiscovery(Long taskId, Long adminId, String adminName) {
+        AgentTask task = taskMapper.selectById(taskId);
+        if (task == null) {
+            throw new BizException("抓取任务不存在");
+        }
+        if (TaskType.parse(task.getTaskType()) != TaskType.SERIES_DISCOVERY) {
+            throw new BizException("只有系列发现任务可以拒绝发现结果");
+        }
+        if (!TaskStatus.PENDING_REVIEW.name().equals(task.getStatus())) {
+            throw new BizException("仅待审核状态的发现结果可以拒绝");
+        }
+        updateStatus(taskId, TaskStatus.DISCARDED, null);
+        logService.record(adminId, adminName, "DISCARD_DISCOVERY", "agent_task", taskId, task.getModelName());
+        log.info("拒绝系列发现结果: taskId={} 系列={} admin={}", taskId, task.getModelName(), adminName);
+    }
+
     /** 丢弃待审核数据。 */
     @Transactional
-    public void discard(Long pendingId, Long adminId, String adminName) {
-        AgentPendingData pending = pendingMapper.selectById(pendingId);
+    public void discard(Long pendingId, Long adminId, String adminName) {        AgentPendingData pending = pendingMapper.selectById(pendingId);
         if (pending == null) {
             throw new BizException("待审核数据不存在");
         }

@@ -169,6 +169,7 @@ export const adminApi = {
     request.get<unknown, AgentTaskLog[]>(`/admin/agent-tasks/${id}/logs`, { params: { afterId } }),
   agentTaskDiscovery: (id: number) =>
     request.get<unknown, SeriesDiscoveryDetail>(`/admin/agent-tasks/${id}/discovery`),
+  discardDiscovery: (id: number) => request.post<unknown, void>(`/admin/agent-tasks/${id}/discard-discovery`),
   createDiscoveryDevices: (id: number, names: string[]) =>
     request.post<unknown, SeriesCreateResult>(`/admin/agent-tasks/${id}/create-devices`, { names }),
 

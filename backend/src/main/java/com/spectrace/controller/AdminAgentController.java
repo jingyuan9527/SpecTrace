@@ -76,6 +76,15 @@ public class AdminAgentController {
         return R.ok(agentTaskService.createDevicesFromDiscovery(id, req.getNames(), adminId, adminName));
     }
 
+    @Operation(summary = "拒绝系列发现结果（任务置为已丢弃，清单不可再创建草稿）")
+    @PostMapping("/agent-tasks/{id}/discard-discovery")
+    public R<Void> discardDiscovery(@PathVariable Long id,
+                                    @RequestAttribute Long adminId,
+                                    @RequestAttribute String adminName) {
+        agentTaskService.discardDiscovery(id, adminId, adminName);
+        return R.ok();
+    }
+
     @Operation(summary = "待审核数据列表（keyword 按机型名 / 品牌名模糊筛选）")
     @GetMapping("/pending-data")
     public R<PageResult<PendingDataVO>> pending(@RequestParam(defaultValue = "1") long current,

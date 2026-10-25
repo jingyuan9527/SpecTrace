@@ -59,6 +59,49 @@ test('访客：稀疏系列空态与管理员 CTA', async ({ page }) => {
   await expect(page).toHaveURL(/\/admin\/agent-tasks/)
 })
 
+
+/** 后台：拒绝系列发现结果——任务置为已丢弃，清单不可再创建草稿。 */
+test('后台：拒绝系列发现结果', async ({ page }) => {
+  await mockApi(page)
+
+  await page.goto('/admin/login')
+  await page.getByLabel('用户名').fill('admin')
+  await page.getByLabel('密码').fill('admin123')
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page).toHaveURL(/\/admin\/devices/)
+
+  await page.goto('/admin/agent-tasks')
+  // 造一个已完成待审的系列发现任务
+  await page.evaluate(async () => {
+    await fetch('/api/admin/agent-tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        taskType: 'SERIES_DISCOVERY',
+        modelName: 'Mate 70 系列',
+        brandName: '华为',
+        status: 'PENDING_REVIEW',
+      }),
+    })
+  })
+  await page.reload()
+  await expect(page.getByRole('row', { name: /Mate 70 系列/ })).toBeVisible()
+
+  // 行级「拒绝」→ 确认弹窗 → 状态变为已丢弃，拒绝入口消失
+  await page.getByRole('row', { name: /Mate 70 系列/ }).getByRole('button', { name: '拒绝' }).click()
+  const confirmDialog = page.getByRole('dialog', { name: '拒绝发现结果' })
+  await expect(confirmDialog).toContainText('此前已创建的草稿机型不受影响')
+  await confirmDialog.getByRole('button', { name: '拒绝' }).click()
+  await expect(page.getByText('发现结果已拒绝')).toBeVisible()
+  await expect(page.getByRole('row', { name: /Mate 70 系列/ })).toContainText('已丢弃')
+  await expect(page.getByRole('row', { name: /Mate 70 系列/ }).getByRole('button', { name: '拒绝' })).toHaveCount(0)
+
+  // 详情抽屉：清单只读并提示已拒绝
+  await page.getByRole('row', { name: /Mate 70 系列/ }).getByRole('button', { name: '详情' }).click()
+  await expect(page.getByText('发现结果已被拒绝，无法再创建草稿')).toBeVisible()
+  await expect(page.getByRole('button', { name: /创建所选为草稿机型/ })).toBeDisabled()
+})
+
 /** 后台：完善度看板、补抓缺参弹窗与系列发现预填。 */
 test('后台：系列完善度与补抓缺参', async ({ page }) => {
   await mockApi(page)

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Bot, CheckCircle2, ExternalLink, Loader2, RefreshCw, RotateCcw, Send, Terminal } from '@lucide/vue'
+import { Ban, Bot, CheckCircle2, ExternalLink, Loader2, RefreshCw, RotateCcw, Send, Terminal } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
 import type { AiModel, SeriesDiscoveryDetail } from '@/types/api'
@@ -33,6 +33,7 @@ import {
   TableRow,
   Tabs,
 } from '@/components/ui'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
 
 
@@ -217,6 +218,36 @@ function toggleDiscoveryAll(checked: boolean) {
   selectedDiscovery.value = checked ? creatableModels.value.map((m) => m.name) : []
 }
 
+// ---- 拒绝发现结果：任务置为已丢弃，清单不可再创建草稿；已建草稿是独立档案不受影响 ----
+const discardTarget = ref<any>(null)
+const discardConfirm = ref(false)
+const discardSubmitting = ref(false)
+
+function openDiscard(task: any) {
+  discardTarget.value = task
+  discardConfirm.value = true
+}
+
+function closeDiscard() {
+  discardConfirm.value = false
+  discardTarget.value = null
+}
+
+async function confirmDiscard() {
+  const task = discardTarget.value
+  if (!task || discardSubmitting.value) return
+  discardSubmitting.value = true
+  try {
+    await adminApi.discardDiscovery(task.id)
+    toast.success('发现结果已拒绝，任务标记为已丢弃')
+    closeDiscard()
+    if (detailTarget.value?.id === task.id) await loadDiscovery(task.id)
+    await load(true)
+  } finally {
+    discardSubmitting.value = false
+  }
+}
+
 async function createSelectedDevices() {
   const task = detailTarget.value
   if (!task || !selectedDiscovery.value.length) return
@@ -301,7 +332,7 @@ watch(
     selectedDiscovery.value = []
     if (!id) return
     const task = detailTarget.value
-    if (isDiscoveryTask(task) && (task.status === 'PENDING_REVIEW' || task.status === 'APPROVED')) {
+    if (isDiscoveryTask(task) && ['PENDING_REVIEW', 'APPROVED', 'DISCARDED'].includes(task.status)) {
       loadDiscovery(id)
     }
     await loadDetailLogs()
@@ -464,6 +495,16 @@ function modelLabel(id: number | null | undefined) {
                     <RotateCcw />
                     重试
                   </Button>
+                  <Button
+                    v-if="isDiscoveryTask(row) && row.status === 'PENDING_REVIEW'"
+                    variant="ghost"
+                    size="sm"
+                    class="text-destructive hover:text-destructive"
+                    @click="openDiscard(row)"
+                  >
+                    <Ban />
+                    拒绝
+                  </Button>
                 </div>
               </TableCell>
             </TableRow>
@@ -510,7 +551,7 @@ function modelLabel(id: number | null | undefined) {
             <div class="flex items-center justify-between">
               <span class="text-xs font-medium text-muted-foreground">发现的机型</span>
               <label
-                v-if="!discoveryLoading && creatableModels.length"
+                v-if="!discoveryLoading && creatableModels.length && detailTarget.status !== 'DISCARDED'"
                 class="flex items-center gap-2 text-xs text-muted-foreground"
               >
                 <Checkbox :model-value="allCreatableSelected" @update:model-value="toggleDiscoveryAll" />
@@ -530,7 +571,7 @@ function modelLabel(id: number | null | undefined) {
                 >
                   <Checkbox
                     :model-value="selectedDiscovery.includes(model.name)"
-                    :disabled="model.existing"
+                    :disabled="model.existing || detailTarget.status === 'DISCARDED'"
                     @update:model-value="toggleDiscoveryModel(model.name, $event)"
                   />
                   <span class="min-w-0 flex-1 truncate text-sm" :title="model.name">{{ model.name }}</span>
@@ -543,15 +584,27 @@ function modelLabel(id: number | null | undefined) {
               <div class="flex flex-col gap-1.5 sm:flex-row sm:items-center">
                 <Button
                   size="sm"
-                  :disabled="!selectedDiscovery.length || creatingDevices"
+                  :disabled="!selectedDiscovery.length || creatingDevices || detailTarget.status === 'DISCARDED'"
                   @click="createSelectedDevices"
                 >
                   <Loader2 v-if="creatingDevices" class="animate-spin" />
                   <CheckCircle2 v-else />
                   创建所选为草稿机型（{{ selectedDiscovery.length }}）
                 </Button>
+                <Button
+                  v-if="detailTarget.status === 'PENDING_REVIEW'"
+                  variant="outline"
+                  size="sm"
+                  class="text-destructive hover:text-destructive"
+                  @click="openDiscard(detailTarget)"
+                >
+                  <Ban />
+                  拒绝发现结果
+                </Button>
                 <span class="text-xs text-muted-foreground">
-                  草稿机型前台不可见；在「机型管理」对其发起详情抓取，审核通过后自动上架
+                  {{ detailTarget.status === 'DISCARDED'
+                    ? '发现结果已被拒绝，无法再创建草稿；此前创建的草稿可在「机型管理」处理'
+                    : '草稿机型前台不可见；在「机型管理」对其发起详情抓取，审核通过后自动上架' }}
                 </span>
               </div>
             </template>
@@ -656,5 +709,16 @@ function modelLabel(id: number | null | undefined) {
         </Button>
       </template>
     </Dialog>
+
+    <ConfirmDialog
+      :open="discardConfirm"
+      title="拒绝发现结果"
+      :description="`确认拒绝「${discardTarget?.modelName ?? ''}」的整个发现清单？清单将不可再创建草稿机型；此前已创建的草稿机型不受影响，可在「机型管理」继续处理。`"
+      confirm-text="拒绝"
+      destructive
+      :loading="discardSubmitting"
+      @update:open="closeDiscard"
+      @confirm="confirmDiscard"
+    />
   </div>
 </template>

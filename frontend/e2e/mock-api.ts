@@ -534,13 +534,30 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
           id: state.tasks.length + 1,
           modelName: body.modelName,
           brandName: body.brandName ?? '',
-          status: 'QUEUED',
+          taskType: body.taskType ?? 'DEVICE_DETAIL',
+          status: body.status ?? 'QUEUED',
           createdAt: '2026-10-22T10:00:00',
         }
         state.tasks.unshift(task)
         return ok(task)
       }
       return ok(pageResult(state.tasks))
+    }
+    if (/^\/admin\/agent-tasks\/\d+\/discovery$/.test(path)) {
+      return ok({
+        taskId: numberId,
+        seriesName: 'iPhone 17 系列',
+        models: [
+          { name: '脏数据机型', releaseDate: '2025-01-01' },
+          { name: '库中已有机型', releaseDate: '2024-09-20', existing: true },
+        ],
+      })
+    }
+    if (/^\/admin\/agent-tasks\/\d+\/discard-discovery$/.test(path)) {
+      const taskId = Number(path.split('/')[3])
+      const task = state.tasks.find((item) => item.id === taskId)
+      if (task) task.status = 'DISCARDED'
+      return ok(true)
     }
     if (path === '/admin/pending-data') return ok(pageResult(state.pending))
     if (/^\/admin\/pending-data\/\d+$/.test(path)) {
