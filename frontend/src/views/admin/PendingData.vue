@@ -101,10 +101,17 @@ async function openReview(row: any) {
   current.value = detail
   paramConfidence.value = detail.paramConfidence || {}
   paramWarnings.value = detail.paramWarnings || {}
+  // Agent 抽取的发布日期可能只有年份（如 "2025"）：date 输入框显示为空但绑定值会原样提交，
+  // 导致后端反序列化 500。不合法时置空并提示，审核时手动补选。
+  const crawledDate = detail.params?.['release_date'] || ''
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(crawledDate)
+  if (crawledDate && !validDate) {
+    toast.warning(`抓取的发布日期「${crawledDate}」不完整，请手动选择完整日期`)
+  }
   Object.assign(form, {
     brandId: brands.value.find((b) => b.name === detail.brandName)?.id,
     name: detail.modelName,
-    releaseDate: detail.params?.['release_date'] || '',
+    releaseDate: validDate ? crawledDate : '',
     thumbnail: '',
     description: '',
     params: { ...(detail.params || {}) },
