@@ -179,6 +179,34 @@ export interface DataHealthMissingDevice {
   totalParams: number
 }
 
+/** 采集监控的单日数据点（只统计终态任务） */
+export interface CollectDayPoint {
+  date: string
+  total: number
+  approved: number
+  discarded: number
+  failed: number
+}
+
+/** 采集链路监控（T99） */
+export interface CollectMetrics {
+  windowDays: number
+  total: number
+  approved: number
+  discarded: number
+  failed: number
+  queued: number
+  running: number
+  pendingReview: number
+  /** 成功率 = approved/(approved+failed)，无终态任务为 null */
+  successRate?: number | null
+  p50Ms: number
+  p95Ms: number
+  nearTimeout: number
+  imagePending: number
+  daily: CollectDayPoint[]
+}
+
 /** 数据健康度总览（T85） */
 export interface DataHealth {
   totalDevices: number

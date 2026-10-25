@@ -731,6 +731,30 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
     if (path === '/admin/badges') {
       return ok({ openFeedback: state.feedback.filter((item) => item.status === 'OPEN').length })
     }
+    if (path === '/admin/metrics/collect') {
+      const today = new Date('2026-10-25')
+      const daily = Array.from({ length: 30 }, (_, index) => {
+        const day = new Date(today.getTime() - (29 - index) * 86400_000).toISOString().slice(0, 10)
+        const total = index === 20 ? 4 : 2
+        return { date: day, total, approved: total - 1, discarded: 0, failed: 1 }
+      })
+      return ok({
+        windowDays: 30,
+        total: 62,
+        approved: 32,
+        discarded: 0,
+        failed: 30,
+        queued: 1,
+        running: 0,
+        pendingReview: 1,
+        successRate: 0.52,
+        p50Ms: 61_000,
+        p95Ms: 240_000,
+        nearTimeout: 2,
+        imagePending: 1,
+        daily,
+      })
+    }
     if (path === '/admin/data-health') {
       // 机型 7 视为已有参数，其余进缺参排行；Mate 70 给 PV 以验证排序字段回显
       const devices = state.devices

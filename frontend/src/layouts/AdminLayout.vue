@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   Activity,
   Bot,
+  Gauge,
   ChevronDown,
   ClipboardCheck,
   Database,
@@ -56,6 +57,7 @@ const menus = [
   { path: '/admin/devices', label: '机型管理', icon: Smartphone },
   { path: '/admin/agent-tasks', label: '抓取任务', icon: Bot },
   { path: '/admin/pending', label: '抓取审核', icon: ClipboardCheck },
+  { path: '/admin/monitor', label: '运行监控', icon: Gauge },
   { path: '/admin/ai-config', label: 'AI 配置', icon: Sparkles },
   { path: '/admin/brands', label: '品牌管理', icon: Tags },
   { path: '/admin/series', label: '系列管理', icon: Layers },

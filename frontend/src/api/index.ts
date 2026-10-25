@@ -13,6 +13,7 @@ import type {
   BatchResult,
   Brand,
   BrandSaveRequest,
+  CollectMetrics,
   CompareResult,
   ConnectivityTest,
   DataHealth,
@@ -119,6 +120,9 @@ export const adminApi = {
   // 数据健康度看板（brandId/seriesId 只作用于缺参机型排行）
   dataHealth: (params?: Record<string, unknown>) =>
     request.get<unknown, DataHealth>('/admin/data-health', { params }),
+  // 运行监控（T99 起）：采集 / 流量 / 搜索 / 质量
+  collectMetrics: (windowDays = 30) =>
+    request.get<unknown, CollectMetrics>('/admin/metrics/collect', { params: { windowDays } }),
 
   brands: () => request.get<unknown, Brand[]>('/admin/brands'),
   saveBrand: (data: BrandSaveRequest) =>

@@ -52,6 +52,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'agent-tasks', name: 'admin-agent-tasks', component: () => import('@/views/admin/AgentTasks.vue') },
       { path: 'ai-config', name: 'admin-ai-config', component: () => import('@/views/admin/AiConfig.vue') },
       { path: 'pending', name: 'admin-pending', component: () => import('@/views/admin/PendingData.vue') },
+      { path: 'monitor', name: 'admin-monitor', component: () => import('@/views/admin/Monitor.vue') },
       { path: 'feedback', name: 'admin-feedback', component: () => import('@/views/admin/Feedback.vue') },
       { path: 'users', name: 'admin-users', component: () => import('@/views/admin/Users.vue') },
       { path: 'logs', name: 'admin-logs', component: () => import('@/views/admin/Logs.vue') },

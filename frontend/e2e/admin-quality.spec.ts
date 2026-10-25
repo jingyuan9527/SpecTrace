@@ -146,6 +146,19 @@ test('后台：采集产品图预览（T90）', async ({ page }) => {
   await expect(page.getByRole('dialog')).toContainText('通过后将自动下载到本站')
 })
 
+test('后台：运行监控页采集漏斗', async ({ page }) => {
+  await mockApi(page)
+  await login(page)
+
+  await page.goto('/admin/monitor')
+  await expect(page.getByRole('heading', { name: '运行监控' })).toBeVisible()
+  await expect(page.getByText('近 30 天任务')).toBeVisible()
+  await expect(page.getByText('62', { exact: true })).toBeVisible()
+  await expect(page.getByText('52%')).toBeVisible()
+  // 图表容器已渲染
+  await expect(page.getByText('每日任务量与失败趋势')).toBeVisible()
+})
+
 test('后台：初始密码必须先改密才能进入', async ({ page }) => {
   await mockApi(page, { mustChangePassword: true })
 
