@@ -29,6 +29,9 @@ public class Device {
 
     private String thumbnail;
 
+    /** 待下载的产品图 URL（T90）：审核通过只落 URL，下载由独立线程异步完成，失败静默清空 */
+    private String thumbnailPendingUrl;
+
     private String description;
 
     /** 1 上架 0 下架 */

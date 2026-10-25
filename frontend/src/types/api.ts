@@ -530,6 +530,8 @@ export interface PendingDataDetail extends PendingData {
   params: Record<string, string>
   paramConfidence?: Record<string, number>
   paramWarnings?: Record<string, string>
+  /** 官方产品图 URL（T90，可空）：审核页预览，通过后异步下载本地化 */
+  imageUrl?: string | null
   variants?: DeviceVariant[]
   paramNames?: Record<string, string>
   newDevice?: boolean

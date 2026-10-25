@@ -687,8 +687,14 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
     if (path === '/admin/pending-data') return ok(pageResult(state.pending))
     if (/^\/admin\/pending-data\/\d+$/.test(path)) {
       const pending = state.pending.find((item) => item.id === numberId) ?? state.pending[0]
-      // 新机型：库中没有同名记录，审核页按「新机型」展示
-      return ok({ ...pending, newDevice: true, paramNames: { screen_size: '屏幕尺寸' }, variants: [] })
+      // 新机型：库中没有同名记录，审核页按「新机型」展示；T90 附带采集产品图验证预览
+      return ok({
+        ...pending,
+        newDevice: true,
+        paramNames: { screen_size: '屏幕尺寸' },
+        variants: [],
+        imageUrl: '/devices/placeholder.svg',
+      })
     }
     if (/^\/admin\/pending-data\/\d+\/approve$/.test(path)) return ok(7)
     if (/^\/admin\/pending-data\/\d+\/discard$/.test(path)) return ok(null)

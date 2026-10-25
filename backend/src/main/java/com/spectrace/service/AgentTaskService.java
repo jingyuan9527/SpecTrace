@@ -27,6 +27,8 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
@@ -55,6 +57,7 @@ public class AgentTaskService {
     private final AgentTaskLogService taskLogService;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
+    private final DeviceImageFetchService deviceImageFetchService;
 
     /** 管理员提交抓取任务。 */
     public AgentTask createTask(TaskCreateRequest req, Long adminId, String adminName) {
@@ -213,6 +216,10 @@ public class AgentTaskService {
         // 参数级置信度与版本一样收口到 params 的保留键，避免改动表结构
         if (req.getParamConfidence() != null && !req.getParamConfidence().isEmpty()) {
             params.put("_confidence", req.getParamConfidence());
+        }
+        // 产品图 URL 与版本/置信度一样收口保留键，审核通过后异步下载（T90）
+        if (StringUtils.hasText(req.getImageUrl())) {
+            params.put("_imageUrl", req.getImageUrl());
         }
 
         appendSummaryLogs(task.getId(), req.getLogs());
@@ -635,6 +642,10 @@ public class AgentTaskService {
         // 保留键在返回前摘掉，避免前端把它们当成普通参数展示
         Object rawVariants = params.remove("_variants");
         Object rawConfidence = params.remove("_confidence");
+        Object rawImageUrl = params.remove("_imageUrl");
+        if (rawImageUrl != null) {
+            vo.setImageUrl(String.valueOf(rawImageUrl));
+        }
         vo.setParams(params);
         if (rawVariants != null) {
             vo.setVariants(objectMapper.convertValue(rawVariants, new TypeReference<List<DeviceVariantDTO>>() {
@@ -783,21 +794,41 @@ public class AgentTaskService {
             save.setSeriesId(existing.getSeriesId());
         }
 
-        // 版本数据：优先管理员确认后的，否则回落到采集结果里的 _variants
+        // 版本数据：优先管理员确认后的，否则回落到采集结果里的 _variants；顺带摘出 _imageUrl（T90）
         List<DeviceVariantDTO> variants = req.getVariants();
-        if (variants == null && pending.getParamsJson() != null) {
+        String pendingImageUrl = null;
+        if (pending.getParamsJson() != null) {
             Map<String, Object> stored = objectMapper.readValue(pending.getParamsJson(), new TypeReference<>() {
             });
             Object raw = stored.get("_variants");
-            if (raw != null) {
+            if (variants == null && raw != null) {
                 variants = objectMapper.convertValue(raw, new TypeReference<List<DeviceVariantDTO>>() {
                 });
+            }
+            Object rawImage = stored.get("_imageUrl");
+            if (rawImage != null) {
+                pendingImageUrl = String.valueOf(rawImage);
             }
         }
         save.setVariants(variants);
 
         // 参数级溯源：审核通过时把抓取来源写入每个参数值
         var device = deviceService.save(save, adminId, adminName, pending.getSourceUrl());
+
+        // T90 产品图本地化（硬约束：与主流程解耦）：事务内只写待下载 URL，零网络请求；
+        // 下载在事务提交后由独立线程执行。已有真实上传图（非 SVG 占位）不覆盖；
+        // 下载失败只降级为保留占位图并写日志，绝不影响已入库的参数与上架状态。
+        if (StringUtils.hasText(pendingImageUrl)) {
+            String currentThumbnail = device.getThumbnail();
+            if (!StringUtils.hasText(currentThumbnail) || currentThumbnail.toLowerCase().endsWith(".svg")) {
+                deviceMapper.update(null, Wrappers.<Device>lambdaUpdate()
+                        .eq(Device::getId, device.getId())
+                        .set(Device::getThumbnailPendingUrl, pendingImageUrl));
+                registerImageFetchAfterCommit(device.getId());
+            } else {
+                log.info("机型已有真实图片，跳过采集图下载: deviceId={}", device.getId());
+            }
+        }
 
         pending.setStatus(PendingStatus.APPROVED.name());
         pending.setUpdatedAt(LocalDateTime.now());
@@ -811,6 +842,20 @@ public class AgentTaskService {
         log.info("审核通过: pendingId={} -> deviceId={} 机型 {}（{}）admin={}",
                 pendingId, device.getId(), device.getName(), pending.getBrandName(), adminName);
         return device.getId();
+    }
+
+    /** 图片下载必须在事务提交后启动：批量路径在 transactionTemplate 内、单条路径在代理事务内，都能收到 afterCommit。 */
+    private void registerImageFetchAfterCommit(Long deviceId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    deviceImageFetchService.enqueue(deviceId);
+                }
+            });
+        } else {
+            deviceImageFetchService.enqueue(deviceId);
+        }
     }
 
     /**

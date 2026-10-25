@@ -134,6 +134,18 @@ test('后台：AI 预审打标与批量通过护栏', async ({ page }) => {
   await expect(page.getByText('已通过 1 条')).toBeVisible()
 })
 
+test('后台：采集产品图预览（T90）', async ({ page }) => {
+  await mockApi(page)
+  await login(page)
+
+  await page.goto('/admin/pending')
+  await page.getByRole('button', { name: '审核' }).first().click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  // 详情带 imageUrl：预览区出现，含「通过后将自动下载」说明
+  await expect(page.getByRole('dialog').getByAltText(/产品图/)).toBeVisible()
+  await expect(page.getByRole('dialog')).toContainText('通过后将自动下载到本站')
+})
+
 test('后台：初始密码必须先改密才能进入', async ({ page }) => {
   await mockApi(page, { mustChangePassword: true })
 

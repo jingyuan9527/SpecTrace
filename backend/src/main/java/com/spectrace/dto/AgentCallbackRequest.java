@@ -35,6 +35,9 @@ public class AgentCallbackRequest {
     /** 存储版本与官方发布价（可选，缺省时从 params.variants 读取） */
     private List<DeviceVariantDTO> variants;
 
+    /** 官方产品图 URL（可选，T90）：审核通过后异步下载本地化，失败不影响参数入库 */
+    private String imageUrl;
+
     /** 系列发现任务的机型清单（仅 SERIES_DISCOVERY 回调使用） */
     private List<SeriesModelDTO> seriesModels;
 

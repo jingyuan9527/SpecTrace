@@ -307,6 +307,11 @@ const diffRows = computed(() =>
 const changedRows = computed(() => diffRows.value.filter((row) => row.changed))
 const unchangedRows = computed(() => diffRows.value.filter((row) => !row.changed))
 
+/** 采集图加载失败（外网防盗链等）时隐藏预览，不阻塞审核 */
+function hideImage(event: Event) {
+  (event.target as HTMLImageElement).style.display = 'none'
+}
+
 function addVariant() {
   form.variants.push({ storage: '', ram: '', price: '' })
 }
@@ -493,6 +498,20 @@ function removeVariant(index: number) {
             <Badge variant="warning">建议核实 {{ verifyCount }} 项</Badge>
           </template>
           <Badge v-if="passCount > 0" variant="success">建议直接通过 {{ passCount }} 项</Badge>
+        </div>
+
+        <!-- T90 采集产品图预览：版权与准确性由审核把关，通过后异步下载本地化 -->
+        <div v-if="current?.imageUrl" class="flex items-start gap-3 rounded-md border bg-muted/30 p-3">
+          <img
+            :src="current.imageUrl"
+            :alt="current.modelName + ' 产品图'"
+            class="h-20 w-20 shrink-0 rounded-md bg-background object-contain"
+            @error="hideImage"
+          />
+          <div class="min-w-0 text-xs text-muted-foreground">
+            <p class="font-medium text-foreground">采集到官方产品图</p>
+            <p class="mt-1 break-all">通过后将自动下载到本站（失败不影响参数入库，可手动上传替换）；请确认来源与版权。</p>
+          </div>
         </div>
 
         <Separator />

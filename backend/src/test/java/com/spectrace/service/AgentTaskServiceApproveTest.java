@@ -71,6 +71,8 @@ class AgentTaskServiceApproveTest {
     private AgentTaskLogService taskLogService;
     @Mock
     private TransactionTemplate transactionTemplate;
+    @Mock
+    private com.spectrace.service.DeviceImageFetchService deviceImageFetchService;
 
     private AgentTaskService service;
 
@@ -78,7 +80,7 @@ class AgentTaskServiceApproveTest {
     void setUp() {
         service = new AgentTaskService(taskMapper, pendingMapper, brandMapper, deviceMapper, taskQueue,
                 deviceService, paramService, logService, taskLogService,
-                new com.fasterxml.jackson.databind.ObjectMapper(), transactionTemplate);
+                new com.fasterxml.jackson.databind.ObjectMapper(), transactionTemplate, deviceImageFetchService);
 
         AgentPendingData pending = new AgentPendingData();
         pending.setId(9L);

@@ -20,6 +20,9 @@ public class PendingDataVO {
 
     /** AI 预审风险等级（T86）：HIGH / MEDIUM / NORMAL / PASS，仅待审核状态计算 */
     private String riskLevel;
+
+    /** 官方产品图 URL（T90，可空）：审核页预览用，通过后异步下载本地化 */
+    private String imageUrl;
     private LocalDateTime createdAt;
     private Map<String, Object> params;
     /** paramKey -> 采集置信度（0~1），未提供时为空 */
