@@ -3,14 +3,18 @@ package com.spectrace.controller;
 import com.spectrace.common.R;
 import com.spectrace.dto.AssignSeriesRequest;
 import com.spectrace.dto.MergeSeriesRequest;
+import com.spectrace.dto.SubscriptionSaveRequest;
 import com.spectrace.dto.SeriesMissingDeviceVO;
 import com.spectrace.dto.SeriesSuggestVO;
 import com.spectrace.dto.SeriesVO;
 import com.spectrace.dto.UnassignedDeviceVO;
+import com.spectrace.entity.AgentSubscription;
 import com.spectrace.entity.DeviceSeries;
+import com.spectrace.service.AgentSubscriptionService;
 import com.spectrace.service.DeviceSeriesService;
 import com.spectrace.service.OperationLogService;
 import io.swagger.v3.oas.annotations.Operation;
+import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,6 +30,7 @@ import java.util.List;
 public class AdminSeriesController {
 
     private final DeviceSeriesService seriesService;
+    private final AgentSubscriptionService subscriptionService;
     private final OperationLogService logService;
 
     @Operation(summary = "系列列表（含机型数与起止年份）")
@@ -57,6 +62,24 @@ public class AdminSeriesController {
     public R<List<SeriesMissingDeviceVO>> staleDevices(@PathVariable Long id,
                                                        @RequestParam(defaultValue = "180") int days) {
         return R.ok(seriesService.staleDevices(id, Math.max(days, 0)));
+    }
+
+    @Operation(summary = "查看系列订阅抓取配置，未订阅返回 null")
+    @GetMapping("/{id}/subscription")
+    public R<AgentSubscription> getSubscription(@PathVariable Long id) {
+        return R.ok(subscriptionService.get(id));
+    }
+
+    @Operation(summary = "保存系列订阅抓取配置（T88，到期自动创建系列发现任务）")
+    @PutMapping("/{id}/subscription")
+    public R<AgentSubscription> saveSubscription(@PathVariable Long id,
+                                                 @Valid @RequestBody SubscriptionSaveRequest req,
+                                                 @RequestAttribute Long adminId,
+                                                 @RequestAttribute String adminName) {
+        AgentSubscription saved = subscriptionService.save(id, req);
+        logService.record(adminId, adminName, "SAVE_SUBSCRIPTION", "agent_subscription", id,
+                "周期" + req.getIntervalMonths() + "个月，" + (req.isEnabled() ? "启用" : "暂停"));
+        return R.ok(saved);
     }
 
     @Operation(summary = "机型归类（seriesId 为空表示取消归类）")

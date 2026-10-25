@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS agent_task (
     brand_name   VARCHAR(64)  DEFAULT NULL,
     ai_model_id  BIGINT       DEFAULT NULL,
     task_type    VARCHAR(24)  NOT NULL DEFAULT 'DEVICE_DETAIL',
+    subscription_id BIGINT    DEFAULT NULL,
     status       VARCHAR(24)  NOT NULL DEFAULT 'QUEUED',
     source_url   VARCHAR(512) DEFAULT NULL,
     result       TEXT         DEFAULT NULL,
@@ -204,6 +205,19 @@ CREATE TABLE IF NOT EXISTS operation_log (
     target_id    BIGINT      DEFAULT NULL,
     detail       TEXT        DEFAULT NULL,
     created_at   DATETIME    DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 系列订阅抓取（T88）：按周期自动创建「系列发现」任务，发布季自动跟进；series 唯一
+CREATE TABLE IF NOT EXISTS agent_subscription (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    series_id       BIGINT      NOT NULL,
+    interval_months INTEGER     NOT NULL DEFAULT 3,
+    ai_model_id     BIGINT      DEFAULT NULL,
+    enabled         TINYINT     NOT NULL DEFAULT 1,
+    last_run_at     DATETIME    DEFAULT NULL,
+    created_at      DATETIME    DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME    DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (series_id)
 );
 
 -- 访客行为统计：机型浏览量按天聚合（详情访问与对比发起），热门排序与数据健康度补录优先级的数据源

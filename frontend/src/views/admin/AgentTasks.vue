@@ -457,7 +457,8 @@ function modelLabel(id: number | null | undefined) {
             <TableRow v-for="row in list" :key="row.id">
               <TableCell class="font-mono text-xs text-muted-foreground">#{{ row.id }}</TableCell>
               <TableCell class="font-medium">
-                <Badge v-if="isDiscoveryTask(row)" variant="outline" class="mr-1.5">系列</Badge>{{ row.modelName }}
+                <Badge v-if="isDiscoveryTask(row)" variant="outline" class="mr-1.5">系列</Badge>
+                <Badge v-if="row.subscriptionId" variant="info" class="mr-1.5" title="由系列订阅调度自动创建">订阅</Badge>{{ row.modelName }}
               </TableCell>
               <TableCell class="text-muted-foreground">{{ row.brandName || '—' }}</TableCell>
               <TableCell class="text-xs text-muted-foreground">{{ modelLabel(row.aiModelId) }}</TableCell>

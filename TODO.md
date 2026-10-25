@@ -1121,7 +1121,7 @@
 | T85 | 数据健康度看板 | P1 | ✅ | 全库覆盖率矩阵 + 缺参排行 + 一键补抓 |
 | T86 | AI 预审打标与审核排序 | P1 | ✅ | 可疑置顶、批量通过加护栏，人力花在刀刃 |
 | T87 | 参数陈旧度与系列重抓 | P2 | ✅ | updated_at 消费起来，时效性可见 |
-| T88 | 系列订阅抓取 | P2 | ⬜ | 指定系列周期自动发现，发布季不掉队 |
+| T88 | 系列订阅抓取 | P2 | ✅ | 指定系列周期自动发现，发布季不掉队 |
 | T89 | SEO 与分发中级补强 | P2 | ⬜ | JSON-LD / 缓存头 / RSS / PWA |
 | T90 | 机型图片采集落库 | P3 | ⬜ | Agent 产出图片 URL，异步下载落库；与主流程完全解耦，失败只降级 |
 
@@ -1238,6 +1238,10 @@
 ---
 
 ### T88 系列订阅抓取（P2 · 依赖 T86）
+
+**已完成（2026-10-25）**：新表 `agent_subscription`（series 唯一，schema.sql 建表）；`agent_task` 补列 `subscription_id`（`SqliteSchemaMigration` 兼容老库）；`AgentSubscriptionService` 每日 `SPECTRACE_SUBSCRIPTION_CRON`（默认 05:00，排在备份/清理之后）检查到期订阅——到期即以系列名+所属品牌自动创建「系列发现」任务并回填订阅来源，单条失败只记日志，创建失败不更新 lastRunAt 下个检查日重试，系列已删自动停用订阅，Agent 关闭时跳过调度；接口 `GET/PUT /api/admin/series/{id}/subscription`（保存写 SAVE_SUBSCRIPTION 操作日志）；系列管理行级「订阅抓取」弹窗（周期 1/2/3/6/12 个月 + 可选模型 + 启用开关）；抓取任务列表对订阅来源任务显示「订阅」徽标。
+**验证**：编译 + 42 单测、typecheck / build / e2e 24 例全绿（新增订阅配置用例）；接口冒烟——PUT/GET 回读一致，把 cron 指到下一分钟实跑：到点自动创建 SERIES_DISCOVERY 任务且 subscriptionId=1、modelName=系列名、agent 正常消费（无模型配置按预期 FAILED）。
+**遗留**：订阅以系列名为发现关键词，「iPhone 数字系列」这类命名搜索效果待生产观察；必要时后续给系列加独立「发现关键词」字段。
 
 **问题**：任务全部手动提交（`AdminAgentController`），无任何周期采集；9/10 月新机发布季靠人记得来点按钮。
 

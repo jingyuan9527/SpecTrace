@@ -65,6 +65,24 @@ test('后台：参数分组与参数定义维护', async ({ page }) => {
   await expect(page.getByRole('cell', { name: '摄像头数量' })).toBeVisible()
 })
 
+test('后台：系列订阅抓取配置', async ({ page }) => {
+  await mockApi(page)
+  await login(page)
+
+  await page.goto('/admin/series')
+  await page.getByRole('row', { name: /iPhone 数字系列/ }).getByRole('button', { name: '订阅抓取' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  // 默认 3 个月 + 启用，直接保存
+  await page.getByRole('dialog').getByRole('button', { name: '保存订阅' }).click()
+  await expect(page.getByText(/已订阅「iPhone 数字系列」/)).toBeVisible()
+
+  // 再次打开回显已保存配置并暂停
+  await page.getByRole('row', { name: /iPhone 数字系列/ }).getByRole('button', { name: '订阅抓取' }).click()
+  await page.getByRole('dialog').getByLabel('启用订阅').click()
+  await page.getByRole('dialog').getByRole('button', { name: '保存订阅' }).click()
+  await expect(page.getByText('订阅已暂停')).toBeVisible()
+})
+
 test('后台：系列重抓全系列（参数陈旧）', async ({ page }) => {
   await mockApi(page)
   await login(page)

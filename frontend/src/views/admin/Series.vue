@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
-import { CloudDownload, Combine, GripVertical, History, Loader2, Pencil, Plus, Radar, Sparkles, Trash2 } from '@lucide/vue'
+import { BellRing, CloudDownload, Combine, GripVertical, History, Loader2, Pencil, Plus, Radar, Sparkles, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { useRouter } from 'vue-router'
 import { adminApi } from '@/api'
@@ -309,6 +309,65 @@ const scrapeDescription = computed(() =>
     : `对「${scrapeSeries.value?.name ?? ''}」内没有参数值的机型发起抓取，结果进入待审核`,
 )
 
+// ---- 系列订阅抓取（T88）：到期自动创建系列发现任务，发布季不掉队 ----
+const subDialog = ref(false)
+const subSeries = ref<DeviceSeries | null>(null)
+const subLoading = ref(false)
+const subSaving = ref(false)
+const subForm = reactive({ intervalMonths: 3, aiModelId: null as number | null, enabled: true })
+const subIntervalOptions = [
+  { label: '每 1 个月', value: '1' },
+  { label: '每 2 个月', value: '2' },
+  { label: '每 3 个月', value: '3' },
+  { label: '每 6 个月', value: '6' },
+  { label: '每 12 个月', value: '12' },
+]
+
+async function openSubscription(row: DeviceSeries) {
+  if (!row.id) return
+  subSeries.value = row
+  subForm.intervalMonths = 3
+  subForm.aiModelId = null
+  subForm.enabled = true
+  subDialog.value = true
+  subLoading.value = true
+  try {
+    const [existing, models] = await Promise.all([
+      adminApi.seriesSubscription(row.id),
+      aiModels.value.length ? Promise.resolve(aiModels.value) : adminApi.aiModels(),
+    ])
+    aiModels.value = models
+    if (existing) {
+      subForm.intervalMonths = existing.intervalMonths
+      subForm.aiModelId = existing.aiModelId ?? null
+      subForm.enabled = existing.enabled === 1
+    } else {
+      const def = models.find((m) => m.isDefault === 1)
+      subForm.aiModelId = def?.id ?? null
+    }
+  } finally {
+    subLoading.value = false
+  }
+}
+
+async function saveSubscription() {
+  const series = subSeries.value
+  if (!series || subSaving.value) return
+  subSaving.value = true
+  try {
+    await adminApi.saveSeriesSubscription(series.id, {
+      // Select 的值是字符串，落库前转回数字
+      intervalMonths: Number(subForm.intervalMonths),
+      aiModelId: subForm.aiModelId ?? undefined,
+      enabled: subForm.enabled,
+    })
+    toast.success(subForm.enabled ? `已订阅「${series.name}」，到期自动发起系列发现` : '订阅已暂停')
+    subDialog.value = false
+  } finally {
+    subSaving.value = false
+  }
+}
+
 const scrapeModelOptions = computed(() =>
   aiModels.value.map((m) => ({
     label: `${m.configName} / ${m.model}${m.isDefault === 1 ? '（默认）' : ''}`,
@@ -466,6 +525,15 @@ async function confirmScrape() {
                     @click="openStaleScrape(row)"
                   >
                     <History />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="订阅抓取"
+                    title="按周期自动创建系列发现任务"
+                    @click="openSubscription(row)"
+                  >
+                    <BellRing />
                   </Button>
                   <Button
                     variant="ghost"
@@ -659,6 +727,46 @@ async function confirmScrape() {
         >
           <Loader2 v-if="suggestCreating" class="animate-spin" />
           {{ suggestCreating ? '创建中…' : `创建所选（${selectedSuggestions.length}）` }}
+        </Button>
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model:open="subDialog"
+      title="订阅抓取"
+      :description="`对「${subSeries?.name ?? ''}」按周期自动创建系列发现任务，结果照常进入人工审核`"
+      class="max-w-md"
+    >
+      <div v-if="subLoading" class="space-y-2">
+        <Skeleton v-for="i in 2" :key="i" class="h-9" />
+      </div>
+      <div v-else class="space-y-4">
+        <div class="space-y-1.5">
+          <Label>抓取周期</Label>
+          <Select v-model="subForm.intervalMonths" :options="subIntervalOptions" />
+        </div>
+        <div class="space-y-1.5">
+          <Label>AI 模型（可选）</Label>
+          <Combobox
+            v-model="subForm.aiModelId"
+            :options="scrapeModelOptions"
+            placeholder="默认模型"
+            search-placeholder="搜索供应商 / 模型…"
+          />
+        </div>
+        <div class="flex items-center justify-between">
+          <Label for="subscription-enabled">启用订阅</Label>
+          <Switch id="subscription-enabled" v-model="subForm.enabled" />
+        </div>
+        <p class="text-xs text-muted-foreground">
+          每天凌晨检查到期订阅；系列名即发现关键词，发现结果照常进入人工审核。
+        </p>
+      </div>
+      <template #footer>
+        <Button variant="outline" :disabled="subSaving" @click="subDialog = false">取消</Button>
+        <Button :disabled="subSaving" @click="saveSubscription">
+          <Loader2 v-if="subSaving" class="animate-spin" />
+          保存订阅
         </Button>
       </template>
     </Dialog>

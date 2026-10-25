@@ -222,6 +222,8 @@ export interface AgentTask {
   aiModelId?: number | null
   /** DEVICE_DETAIL（单机型参数抓取）/ SERIES_DISCOVERY（系列机型发现），缺省按 DEVICE_DETAIL 处理 */
   taskType?: string | null
+  /** 来源订阅 id（T88，可空）：非空表示由系列订阅调度自动创建 */
+  subscriptionId?: number | null
   status: AgentTaskStatus
   sourceUrl?: string | null
   result?: string | null
@@ -229,6 +231,24 @@ export interface AgentTask {
   durationMs?: number | null
   createdAt?: string
   updatedAt?: string
+}
+
+/** 系列订阅抓取配置（T88） */
+export interface SeriesSubscription {
+  id: number
+  seriesId: number
+  /** 抓取周期（月） */
+  intervalMonths: number
+  aiModelId?: number | null
+  /** 1 启用 0 暂停 */
+  enabled: number
+  lastRunAt?: string | null
+}
+
+export interface SeriesSubscriptionSaveRequest {
+  intervalMonths: number
+  aiModelId?: number | null
+  enabled: boolean
 }
 
 export interface AgentTaskLog {

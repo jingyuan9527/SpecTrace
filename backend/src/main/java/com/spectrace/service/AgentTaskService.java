@@ -68,6 +68,7 @@ public class AgentTaskService {
         task.setBrandName(req.getBrandName());
         task.setAiModelId(req.getAiModelId());
         task.setTaskType(taskType.name());
+        task.setSubscriptionId(req.getSubscriptionId());
         task.setStatus(TaskStatus.QUEUED.name());
         taskMapper.insert(task);
 

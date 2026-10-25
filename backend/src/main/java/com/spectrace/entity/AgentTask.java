@@ -29,6 +29,10 @@ public class AgentTask {
     /** DEVICE_DETAIL（单机型参数抓取）/ SERIES_DISCOVERY（系列机型发现），存量数据无值按 DEVICE_DETAIL 处理 */
     private String taskType;
 
+    /** 来源订阅（T88，可空）：非空表示该任务由系列订阅调度自动创建 */
+    private Long subscriptionId;
+
+
     /** QUEUED / RUNNING / PENDING_REVIEW / APPROVED / DISCARDED / FAILED */
     private String status;
 

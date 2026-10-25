@@ -49,6 +49,8 @@ import type {
   SeriesMissingDevice,
   SeriesOverviewResult,
   SeriesSaveRequest,
+  SeriesSubscription,
+  SeriesSubscriptionSaveRequest,
   UnassignedDevice,
   UploadResult,
   UserCreateRequest,
@@ -135,6 +137,11 @@ export const adminApi = {
   // 系列内参数陈旧的机型（无参数或超过 days 天未更新），供「重抓全系列」
   seriesStaleDevices: (id: number, days = 180) =>
     request.get<unknown, SeriesMissingDevice[]>(`/admin/series/${id}/stale-devices`, { params: { days } }),
+  // 系列订阅抓取（T88）：到期自动创建系列发现任务
+  seriesSubscription: (id: number) =>
+    request.get<unknown, SeriesSubscription | null>(`/admin/series/${id}/subscription`),
+  saveSeriesSubscription: (id: number, data: SeriesSubscriptionSaveRequest) =>
+    request.put<unknown, SeriesSubscription>(`/admin/series/${id}/subscription`, data),
   saveSeries: (data: SeriesSaveRequest) =>
     data.id
       ? request.put<unknown, DeviceSeries>(`/admin/series/${data.id}`, data)

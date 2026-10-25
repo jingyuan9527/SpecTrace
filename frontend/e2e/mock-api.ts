@@ -56,6 +56,7 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
     defs: [
       { id: 1, paramKey: 'release_date', paramName: '发布时间', groupId: 1, paramType: 'date', sortOrder: 1, enabled: 1 },
     ] as ParamDef[],
+    subscriptions: [] as ({ id: number; seriesId: number; intervalMonths: number; aiModelId?: number | null; enabled: number; lastRunAt?: string | null })[],
     feedback: [
       {
         id: 1,
@@ -76,6 +77,7 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
   let nextUserId = 10
   let nextGroupId = 10
   let nextDefId = 10
+  let nextSubscriptionId = 10
 
   const pageResult = (records: unknown[]) => ({
     total: records.length,
@@ -537,6 +539,19 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
             thumbnail: device.thumbnail,
           })),
       )
+    }
+    if (/^\/admin\/series\/\d+\/subscription$/.test(path)) {
+      const seriesId = Number(path.split('/')[3])
+      if (method === 'PUT') {
+        const body = request.postDataJSON()
+        const existing = state.subscriptions.find((item) => item.seriesId === seriesId)
+        const target =
+          existing ?? ({ id: nextSubscriptionId++, seriesId, intervalMonths: 3, enabled: 1, lastRunAt: null } as (typeof state.subscriptions)[number])
+        Object.assign(target, body, { enabled: body.enabled ? 1 : 0 })
+        if (!existing) state.subscriptions.push(target)
+        return ok(target)
+      }
+      return ok(state.subscriptions.find((item) => item.seriesId === seriesId) ?? null)
     }
     if (/^\/admin\/series\/\d+\/stale-devices$/.test(path)) {
       // T87 重抓全系列：固定把 iPhone 16 当作「陈旧」目标，验证弹窗与提交链路
