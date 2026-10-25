@@ -12,6 +12,7 @@ import com.spectrace.mapper.AgentPendingDataMapper;
 import com.spectrace.mapper.AgentTaskLogMapper;
 import com.spectrace.mapper.AgentTaskMapper;
 import com.spectrace.mapper.DeviceViewDailyMapper;
+import com.spectrace.mapper.SearchLogMapper;
 import com.spectrace.mapper.OperationLogMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +43,7 @@ public class DataRetentionService {
     private final AgentPendingDataMapper pendingMapper;
     private final OperationLogMapper operationLogMapper;
     private final DeviceViewDailyMapper viewMapper;
+    private final SearchLogMapper searchLogMapper;
 
     @Value("${spectrace.retention.enabled:true}")
     private boolean enabled;
@@ -60,6 +62,9 @@ public class DataRetentionService {
 
     @Value("${spectrace.retention.view-daily-days:90}")
     private int viewDailyDays;
+
+    @Value("${spectrace.retention.search-log-days:90}")
+    private int searchLogDays;
 
     /** 默认每天 04:00 执行，排在 03:30 的备份之后：先备份再清理，删除的数据当天快照里仍有。 */
     @Scheduled(cron = "${spectrace.retention.cron:0 0 4 * * *}")
@@ -105,8 +110,11 @@ public class DataRetentionService {
         // 浏览量按天聚合天然有界，但同样按窗口滚动删除，跨年运行不膨胀
         removed.put("device_view_daily", (long) viewMapper.deleteBefore(now.toLocalDate().minusDays(viewDailyDays).toString()));
 
-        log.info("保留策略清理完成: taskDays={} pendingDays={} operationLogDays={} viewDailyDays={} removed={}",
-                taskDays, pendingDays, operationLogDays, viewDailyDays, removed);
+        // 搜索词聚合同样按窗口滚动清理
+        removed.put("search_log", (long) searchLogMapper.deleteBefore(now.toLocalDate().minusDays(searchLogDays).toString()));
+
+        log.info("保留策略清理完成: taskDays={} pendingDays={} operationLogDays={} viewDailyDays={} searchLogDays={} removed={}",
+                taskDays, pendingDays, operationLogDays, viewDailyDays, searchLogDays, removed);
         return removed;
     }
 
@@ -119,6 +127,7 @@ public class DataRetentionService {
         vo.setPendingDays(pendingDays);
         vo.setOperationLogDays(operationLogDays);
         vo.setViewDailyDays(viewDailyDays);
+        vo.setSearchLogDays(searchLogDays);
         vo.setNextRunAt(nextRunAt());
         Map<String, Long> counts = new LinkedHashMap<>();
         counts.put("agent_task", taskMapper.selectCount(null));
@@ -126,6 +135,7 @@ public class DataRetentionService {
         counts.put("agent_pending_data", pendingMapper.selectCount(null));
         counts.put("operation_log", operationLogMapper.selectCount(null));
         counts.put("device_view_daily", viewMapper.selectCount(null));
+        counts.put("search_log", searchLogMapper.selectCount(null));
         vo.setCounts(counts);
         return vo;
     }

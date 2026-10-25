@@ -40,6 +40,7 @@ import type {
   PendingData,
   PendingDataDetail,
   RetentionOverview,
+  SearchMetrics,
   SeriesSuggestion,
   SearchConfig,
   SearchConfigSaveRequest,
@@ -123,6 +124,8 @@ export const adminApi = {
   // 运行监控（T99 起）：采集 / 流量 / 搜索 / 质量
   collectMetrics: (windowDays = 30) =>
     request.get<unknown, CollectMetrics>('/admin/metrics/collect', { params: { windowDays } }),
+  searchMetrics: (windowDays = 30) =>
+    request.get<unknown, SearchMetrics>('/admin/metrics/search', { params: { windowDays } }),
 
   brands: () => request.get<unknown, Brand[]>('/admin/brands'),
   saveBrand: (data: BrandSaveRequest) =>

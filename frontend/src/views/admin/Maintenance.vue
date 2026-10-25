@@ -29,6 +29,7 @@ interface RetentionOverview {
   pendingDays: number
   operationLogDays: number
   viewDailyDays: number
+  searchLogDays: number
   nextRunAt?: string | null
   counts: Record<string, number>
 }
@@ -182,7 +183,8 @@ onMounted(() => {
             <p class="mt-1 text-xs text-muted-foreground">
               每日定时清理终态数据，防止数据库无界膨胀：抓取任务及过程日志保留 {{ retention?.taskDays ?? '—' }} 天、
               已处理待审核保留 {{ retention?.pendingDays ?? '—' }} 天、操作日志保留 {{ retention?.operationLogDays ?? '—' }} 天、
-              浏览量聚合保留 {{ retention?.viewDailyDays ?? '—' }} 天。
+              浏览量聚合保留 {{ retention?.viewDailyDays ?? '—' }} 天、
+              搜索词聚合保留 {{ retention?.searchLogDays ?? '—' }} 天。
             </p>
           </div>
           <div class="flex gap-2">

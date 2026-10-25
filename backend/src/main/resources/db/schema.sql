@@ -207,6 +207,16 @@ CREATE TABLE IF NOT EXISTS operation_log (
     created_at   DATETIME    DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 访客搜索词按天聚合（T102）：只记词 + 次数 + 空结果次数，不记 IP 与任何访客标识
+CREATE TABLE IF NOT EXISTS search_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    keyword      VARCHAR(64) NOT NULL,
+    search_date  DATE        NOT NULL,
+    search_count INTEGER     NOT NULL DEFAULT 0,
+    zero_count   INTEGER     NOT NULL DEFAULT 0,
+    UNIQUE (keyword, search_date)
+);
+
 -- 系列订阅抓取（T88）：按周期自动创建「系列发现」任务，发布季自动跟进；series 唯一
 CREATE TABLE IF NOT EXISTS agent_subscription (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,

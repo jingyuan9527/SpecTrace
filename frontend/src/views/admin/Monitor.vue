@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { Activity, Loader2, RefreshCw } from '@lucide/vue'
+import { Activity, Loader2, RefreshCw, SearchX } from '@lucide/vue'
 import { adminApi } from '@/api'
-import type { CollectMetrics } from '@/types/api'
+import type { CollectMetrics, SearchMetrics } from '@/types/api'
 import PageHeader from '@/components/PageHeader.vue'
 import { useECharts } from '@/composables/useECharts'
 import { cssVar } from '@/lib/utils'
@@ -25,12 +25,13 @@ const theme = useThemeStore()
 const { bind, render } = useECharts()
 
 const collect = ref<CollectMetrics | null>(null)
+const search = ref<SearchMetrics | null>(null)
 const loading = ref(true)
 
 async function load() {
   loading.value = true
   try {
-    collect.value = await adminApi.collectMetrics(30)
+    ;[collect.value, search.value] = await Promise.all([adminApi.collectMetrics(30), adminApi.searchMetrics(30)])
   } finally {
     loading.value = false
   }
@@ -199,6 +200,56 @@ watch([collect, () => theme.dark], () => {
               </TableRow>
             </TableBody>
           </Table>
+        </CardContent>
+
+      </Card>
+
+      <!-- T102 搜索需求信号：空结果词就是补录方向 -->
+      <Card v-if="search">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-5 py-3">
+          <h2 class="flex items-center gap-2 text-sm font-semibold">
+            <SearchX class="h-4 w-4" />
+            搜索需求信号
+          </h2>
+          <span class="text-xs text-muted-foreground">
+            近 {{ search.windowDays }} 天 {{ search.totalSearches }} 次搜索 · 空结果率
+            {{ search.zeroRate == null ? '—' : Math.round(search.zeroRate * 100) + '%' }}
+          </span>
+        </div>
+        <CardContent class="grid gap-4 p-4 md:grid-cols-2">
+          <div>
+            <p class="mb-2 text-xs font-medium text-muted-foreground">热门搜索</p>
+            <div class="space-y-1">
+              <div
+                v-for="item in search.topKeywords"
+                :key="item.keyword"
+                class="flex items-center justify-between gap-2 text-sm"
+              >
+                <span class="min-w-0 truncate" :title="item.keyword">{{ item.keyword }}</span>
+                <span class="shrink-0 text-xs text-muted-foreground">
+                  {{ item.searchCount }} 次
+                  <span v-if="item.zeroCount > 0" class="text-amber-600 dark:text-amber-400">
+                    · 空结果 {{ item.zeroCount }}
+                  </span>
+                </span>
+              </div>
+              <p v-if="!search.topKeywords.length" class="text-sm text-muted-foreground">暂无搜索记录。</p>
+            </div>
+          </div>
+          <div>
+            <p class="mb-2 text-xs font-medium text-muted-foreground">空结果词排行（库里的缺口）</p>
+            <div class="space-y-1">
+              <div
+                v-for="item in search.zeroTop"
+                :key="item.keyword"
+                class="flex items-center justify-between gap-2 text-sm"
+              >
+                <span class="min-w-0 truncate" :title="item.keyword">{{ item.keyword }}</span>
+                <span class="shrink-0 text-xs text-amber-600 dark:text-amber-400">{{ item.zeroCount }} 次未命中</span>
+              </div>
+              <p v-if="!search.zeroTop.length" class="text-sm text-muted-foreground">没有空结果记录。</p>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </template>

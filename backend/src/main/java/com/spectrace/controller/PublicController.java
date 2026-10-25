@@ -26,6 +26,7 @@ import com.spectrace.service.DeviceService;
 import com.spectrace.service.DeviceViewService;
 import com.spectrace.service.EvolutionService;
 import com.spectrace.service.ParamService;
+import com.spectrace.service.SearchLogService;
 import com.spectrace.service.SeriesInsightService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -50,6 +51,7 @@ public class PublicController {
     private final ParamService paramService;
     private final DeviceService deviceService;
     private final DeviceViewService deviceViewService;
+    private final SearchLogService searchLogService;
     private final EvolutionService evolutionService;
     private final CompareInsightService compareInsightService;
     private final SeriesInsightService seriesInsightService;
@@ -87,7 +89,10 @@ public class PublicController {
     @GetMapping("/devices/suggest")
     public R<List<DeviceSuggestVO>> suggest(@RequestParam String keyword,
                                             @RequestParam(defaultValue = "8") int limit) {
-        return R.ok(deviceService.suggest(keyword, Math.min(limit, 50)));
+        List<DeviceSuggestVO> result = deviceService.suggest(keyword, Math.min(limit, 50));
+        // T102 搜索需求信号：只记词与是否命中，失败不影响联想
+        searchLogService.record(keyword, result.size());
+        return R.ok(result);
     }
 
     @Operation(summary = "热门机型")

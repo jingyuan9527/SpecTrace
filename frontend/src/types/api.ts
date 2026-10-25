@@ -206,6 +206,24 @@ export interface ModelStat {
   nearTimeout: number
 }
 
+/** 搜索词统计行（T102） */
+export interface SearchKeywordStat {
+  keyword: string
+  searchCount: number
+  zeroCount: number
+}
+
+/** 搜索需求信号（T102） */
+export interface SearchMetrics {
+  windowDays: number
+  totalSearches: number
+  zeroSearches: number
+  /** 空结果率 0~1，无搜索为 null */
+  zeroRate?: number | null
+  topKeywords: SearchKeywordStat[]
+  zeroTop: SearchKeywordStat[]
+}
+
 /** 采集链路监控（T99） */
 export interface CollectMetrics {
   windowDays: number
@@ -647,6 +665,8 @@ export interface RetentionOverview {
   operationLogDays: number
   /** 机型浏览量按天聚合的保留天数 */
   viewDailyDays: number
+  /** 访客搜索词聚合的保留天数 */
+  searchLogDays: number
   nextRunAt?: string | null
   counts: Record<string, number>
 }

@@ -763,6 +763,23 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         ],
       })
     }
+    if (path === '/admin/metrics/search') {
+      return ok({
+        windowDays: 30,
+        totalSearches: 42,
+        zeroSearches: 9,
+        zeroRate: 0.21,
+        topKeywords: [
+          { keyword: 'iPhone 18', searchCount: 20, zeroCount: 0 },
+          { keyword: 'Mate 80', searchCount: 12, zeroCount: 6 },
+          { keyword: '小米 17', searchCount: 10, zeroCount: 3 },
+        ],
+        zeroTop: [
+          { keyword: 'Mate 80', searchCount: 12, zeroCount: 6 },
+          { keyword: '小米 17', searchCount: 10, zeroCount: 3 },
+        ],
+      })
+    }
     if (path === '/admin/data-health') {
       // 机型 7 视为已有参数，其余进缺参排行；Mate 70 给 PV 以验证排序字段回显
       const devices = state.devices

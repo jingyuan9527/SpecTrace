@@ -162,6 +162,11 @@ test('后台：运行监控页采集漏斗', async ({ page }) => {
   // T101：模型排行表
   await expect(page.getByRole('cell', { name: 'OpenRouter / random' })).toBeVisible()
   await expect(page.getByRole('cell', { name: '80%', exact: true })).toBeVisible()
+  // T102：搜索需求信号卡
+  await expect(page.getByText('搜索需求信号')).toBeVisible()
+  await expect(page.getByText('iPhone 18', { exact: true })).toBeVisible()
+  await expect(page.getByText('6 次未命中')).toBeVisible()
+  await expect(page.getByText(/空结果率/)).toBeVisible()
 })
 
 test('后台：初始密码必须先改密才能进入', async ({ page }) => {
