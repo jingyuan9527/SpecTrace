@@ -74,6 +74,8 @@ export interface Device {
   status: number
   /** 同品牌同名机型的待审核抓取数据条数（管理端列表徽标，0/空为无） */
   pendingReviewCount?: number | null
+  /** 近 30 天访客浏览量（管理端列表用，统计不可用为 null） */
+  pv30d?: number | null
   createdAt?: string
   updatedAt?: string
 }
@@ -531,6 +533,8 @@ export interface RetentionOverview {
   taskDays: number
   pendingDays: number
   operationLogDays: number
+  /** 机型浏览量按天聚合的保留天数 */
+  viewDailyDays: number
   nextRunAt?: string | null
   counts: Record<string, number>
 }

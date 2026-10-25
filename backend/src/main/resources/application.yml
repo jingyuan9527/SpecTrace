@@ -94,6 +94,8 @@ spectrace:
     task-days: ${SPECTRACE_RETENTION_TASK_DAYS:30}
     pending-days: ${SPECTRACE_RETENTION_PENDING_DAYS:30}
     operation-log-days: ${SPECTRACE_RETENTION_OPERATION_LOG_DAYS:90}
+    # 机型浏览量按天聚合的保留天数
+    view-daily-days: ${SPECTRACE_RETENTION_VIEW_DAILY_DAYS:90}
   # ---- 内嵌采集 Agent（AgentScope Java 2.0 · Harness 模式，与后端同进程）----
   agent:
     # 是否随应用启动常驻消费抓取任务

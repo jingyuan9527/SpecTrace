@@ -125,7 +125,7 @@ npm run dev
 | `SPECTRACE_CORS_ORIGINS` | 空（任意来源） | 跨域白名单（逗号分隔，如 `https://a.com,https://b.com`）；公网部署务必收敛 |
 | `SPECTRACE_PUBLIC_QPM` | `120` | 公开接口单 IP 每分钟请求上限（feedback / insight 另有更严格限流，叠加生效） |
 | `SPECTRACE_RETENTION_ENABLED` / `_CRON` | `true` / `0 0 4 * * *` | 增长数据定时清理开关与计划（默认每天 04:00，排在 03:30 备份之后） |
-| `SPECTRACE_RETENTION_TASK_DAYS` / `_PENDING_DAYS` / `_OPERATION_LOG_DAYS` | `30` / `30` / `90` | 终态抓取任务（含过程日志）、已处理待审核、操作日志的保留天数 |
+| `SPECTRACE_RETENTION_TASK_DAYS` / `_PENDING_DAYS` / `_OPERATION_LOG_DAYS` / `_VIEW_DAILY_DAYS` | `30` / `30` / `90` / `90` | 终态抓取任务（含过程日志）、已处理待审核、操作日志、机型浏览量按天聚合的保留天数 |
 | `SPECTRACE_UPLOAD_MAX_BYTES` | `8388608` | 单张图片硬上限（字节）；前端会先压到 500KB，超限提示裁剪 |
 | `SPECTRACE_AI_INSIGHT_ENABLED` | `true` | 是否开放 AI 摘要类能力（对比差异摘要、世代回顾文案），未配置模型时前端自动隐藏入口 |
 | `SPECTRACE_AI_INSIGHT_CACHE_HOURS` | `24` | 摘要缓存时长（小时），同一组机型与参数值在窗口内复用 |
@@ -253,7 +253,8 @@ docker run -d --name spectrace-app -p 80:8080 \
 - **后端会话防线**：JWT 密钥必须经 `SPECTRACE_JWT_SECRET` 注入（未配置拒绝启动）；过滤器每请求回查 `admin_user`——禁用 / 删除的账号 token 立即失效、角色与「待改密」标记以库内最新为准（未改密的 token 只放行 `/api/auth/**`）；登录同账号连续失败 5 次锁定 10 分钟并写入操作日志，可追溯爆破。
 - **公开接口护栏**：`PublicRateLimitFilter` 对 `/api/public/**` 做单 IP 每分钟基础限流（`SPECTRACE_PUBLIC_QPM`，默认 120，feedback / insight 各自更严格的限流叠加生效）；`/devices` 分页 size 收敛上限 100，防止匿名一次拉全库。
 - **公开读缓存**：品牌、参数元信息、系列列表、机型详情走 Caffeine 进程内缓存（TTL 5 分钟兜底 + 管理端写路径 `@CacheEvict` 主动失效），机型发布年份改为 SQL 聚合，SQLite 读压力与机型库规模解耦。
-- **数据保留策略**：终态抓取任务（含过程日志）、已处理待审核、操作日志按保留天数定时清理（默认每天 04:00，排在 03:30 备份之后），防止 SQLite 无界膨胀拖慢查询与备份；「系统运维」页展示各表行数、保留配置并支持手动清理（仅超级管理员）。
+- **数据保留策略**：终态抓取任务（含过程日志）、已处理待审核、操作日志、机型浏览量按天聚合按保留天数定时清理（默认每天 04:00，排在 03:30 备份之后），防止 SQLite 无界膨胀拖慢查询与备份；「系统运维」页展示各表行数、保留配置并支持手动清理（仅超级管理员）。
+- **访客行为统计与热门口径**：机型详情访问与对比发起按天聚合写入 `device_view_daily`（SQLite 原子 upsert 累加；写入与查询都是尽力而为，失败只记日志并回落，绝不阻塞访客主流程）；`/devices/hot` 改为**近 30 天 PV 倒序**，窗口内无统计数据（新库）回落发布时间倒序、不足 limit 用最新机型补齐；机型管理列表附「30天PV」列，为数据健康度的补录优先级提供依据。
 
 ## 接口文档
 

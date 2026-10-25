@@ -23,6 +23,7 @@ import com.spectrace.entity.ParamGroup;
 import com.spectrace.service.BrandService;
 import com.spectrace.service.CompareInsightService;
 import com.spectrace.service.DeviceService;
+import com.spectrace.service.DeviceViewService;
 import com.spectrace.service.EvolutionService;
 import com.spectrace.service.ParamService;
 import com.spectrace.service.SeriesInsightService;
@@ -48,6 +49,7 @@ public class PublicController {
     private final BrandService brandService;
     private final ParamService paramService;
     private final DeviceService deviceService;
+    private final DeviceViewService deviceViewService;
     private final EvolutionService evolutionService;
     private final CompareInsightService compareInsightService;
     private final SeriesInsightService seriesInsightService;
@@ -97,7 +99,10 @@ public class PublicController {
     @Operation(summary = "机型详情")
     @GetMapping("/devices/{id}")
     public R<Map<String, Object>> detail(@PathVariable Long id) {
-        return R.ok(deviceService.detail(id));
+        Map<String, Object> data = deviceService.detail(id);
+        // 浏览统计是尽力而为的旁路写入，失败只记日志不阻塞详情返回
+        deviceViewService.recordViews(List.of(id));
+        return R.ok(data);
     }
 
     @Operation(summary = "机型对比")
@@ -108,7 +113,9 @@ public class PublicController {
                 .filter(s -> !s.isEmpty())
                 .map(Long::valueOf)
                 .toList();
-        return R.ok(deviceService.compare(deviceIds));
+        CompareResultVO result = deviceService.compare(deviceIds);
+        deviceViewService.recordViews(deviceIds);
+        return R.ok(result);
     }
 
     @Operation(summary = "对比差异摘要（只读缓存，用于判定入口是否展示）")

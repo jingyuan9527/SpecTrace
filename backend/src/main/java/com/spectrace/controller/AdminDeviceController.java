@@ -9,6 +9,7 @@ import com.spectrace.entity.Device;
 import com.spectrace.service.AgentTaskService;
 import com.spectrace.service.DeviceImportService;
 import com.spectrace.service.DeviceService;
+import com.spectrace.service.DeviceViewService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -32,6 +33,7 @@ public class AdminDeviceController {
     private final DeviceService deviceService;
     private final DeviceImportService deviceImportService;
     private final AgentTaskService agentTaskService;
+    private final DeviceViewService deviceViewService;
 
     @Operation(summary = "下载机型批量导入 CSV 模板")
     @GetMapping("/import/template")
@@ -62,6 +64,10 @@ public class AdminDeviceController {
         // 列表徽标：标注同品牌同名机型有未处理的抓取结果，管理员不用两边来回对
         Map<Long, Integer> pendingCounts = agentTaskService.pendingCountByDevice(page.getRecords());
         page.getRecords().forEach(d -> d.setPendingReviewCount(pendingCounts.getOrDefault(d.getId(), 0)));
+        // 近 30 天浏览量：让管理员看到哪些机型真的有人看，配合健康度决定补录优先级
+        Map<Long, Long> pvCounts = deviceViewService.pvOf(
+                page.getRecords().stream().map(Device::getId).toList(), DeviceViewService.HOT_WINDOW_DAYS);
+        page.getRecords().forEach(d -> d.setPv30d(pvCounts.get(d.getId())));
         return R.ok(PageResult.of(page));
     }
 

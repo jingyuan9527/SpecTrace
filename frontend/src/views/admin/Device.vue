@@ -643,6 +643,7 @@ function rowMessages(row: any) {
               <TableHead class="w-36">系列</TableHead>
               <TableHead class="w-32">发布时间</TableHead>
               <TableHead class="w-24">状态</TableHead>
+              <TableHead class="w-20 text-right" title="近 30 天访客浏览量，热门机型以此排序">30天PV</TableHead>
               <TableHead class="w-36 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
@@ -683,6 +684,9 @@ function rowMessages(row: any) {
                     抓取待审{{ row.pendingReviewCount > 1 ? ` ${row.pendingReviewCount}` : '' }}
                   </Badge>
                 </div>
+              </TableCell>
+              <TableCell class="text-right text-muted-foreground" title="近 30 天访客浏览量">
+                {{ row.pv30d ?? '—' }}
               </TableCell>
               <TableCell class="text-right">
                 <div class="flex justify-end gap-1">

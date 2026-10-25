@@ -206,6 +206,15 @@ CREATE TABLE IF NOT EXISTS operation_log (
     created_at   DATETIME    DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 访客行为统计：机型浏览量按天聚合（详情访问与对比发起），热门排序与数据健康度补录优先级的数据源
+CREATE TABLE IF NOT EXISTS device_view_daily (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id  BIGINT     NOT NULL,
+    view_date  DATE       NOT NULL,
+    pv         INTEGER    NOT NULL DEFAULT 0,
+    UNIQUE (device_id, view_date)
+);
+
 -- 逻辑删除的软删行不参与唯一约束，删除后允许重建同名记录（SQLite 部分索引）
 CREATE UNIQUE INDEX IF NOT EXISTS uk_param_key ON param_def (param_key) WHERE deleted = 0;
 CREATE UNIQUE INDEX IF NOT EXISTS uk_username ON admin_user (username) WHERE deleted = 0;
@@ -232,3 +241,4 @@ CREATE INDEX IF NOT EXISTS idx_ai_model_config ON ai_model (config_id);
 CREATE INDEX IF NOT EXISTS idx_ai_model_default ON ai_model (is_default);
 CREATE INDEX IF NOT EXISTS idx_log_target ON operation_log (target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_log_created ON operation_log (created_at);
+CREATE INDEX IF NOT EXISTS idx_view_date ON device_view_daily (view_date);

@@ -24,9 +24,12 @@ public class RetentionOverviewVO {
     /** 操作日志保留天数 */
     private int operationLogDays;
 
+    /** 机型浏览量按天聚合的保留天数 */
+    private int viewDailyDays;
+
     /** 下次定时清理时间，cron 非法或功能关闭时为 null */
     private LocalDateTime nextRunAt;
 
-    /** 各增长表当前行数：agent_task / agent_task_log / agent_pending_data / operation_log */
+    /** 各增长表当前行数：agent_task / agent_task_log / agent_pending_data / operation_log / device_view_daily */
     private Map<String, Long> counts;
 }

@@ -49,4 +49,11 @@ public class Device {
      */
     @TableField(exist = false)
     private Integer pendingReviewCount;
+
+    /**
+     * 近 30 天访客浏览量（非表字段，管理端列表展示与数据健康度排行用）。
+     * 统计不可用时为 null，前端按「—」展示。
+     */
+    @TableField(exist = false)
+    private Long pv30d;
 }

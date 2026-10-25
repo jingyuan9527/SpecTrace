@@ -45,6 +45,7 @@ public class DeviceService {
     private final DeviceVariantMapper variantMapper;
     private final BrandMapper brandMapper;
     private final DeviceSeriesMapper seriesMapper;
+    private final DeviceViewService deviceViewService;
     private final ParamService paramService;
     private final OperationLogService logService;
 
@@ -123,11 +124,36 @@ public class DeviceService {
         }).toList();
     }
 
+    /**
+     * 热门机型：近 30 天浏览量倒序（T84 真实热门口径）。
+     * 窗口内无统计数据（新库/新部署）时回落发布时间倒序，保证首页网格永远有内容；
+     * PV 命中但不足 limit 时用最新机型补齐缺位。
+     */
     public List<Device> hot(int limit) {
-        return deviceMapper.selectList(Wrappers.<Device>lambdaQuery()
-                .eq(Device::getStatus, 1)
-                .orderByDesc(Device::getReleaseDate)
-                .last("LIMIT " + limit));
+        List<Device> result = new ArrayList<>();
+        Set<Long> picked = new LinkedHashSet<>();
+        for (Long id : deviceViewService.hotDeviceIds(limit)) {
+            Device device = deviceMapper.selectById(id);
+            if (device != null && device.getStatus() != null && device.getStatus() == 1) {
+                result.add(device);
+                picked.add(id);
+            }
+        }
+        if (result.size() < limit) {
+            var query = Wrappers.<Device>lambdaQuery()
+                    .eq(Device::getStatus, 1)
+                    .orderByDesc(Device::getReleaseDate)
+                    .last("LIMIT " + (limit + picked.size()));
+            for (Device device : deviceMapper.selectList(query)) {
+                if (result.size() >= limit) {
+                    break;
+                }
+                if (picked.add(device.getId())) {
+                    result.add(device);
+                }
+            }
+        }
+        return result;
     }
 
     /**
