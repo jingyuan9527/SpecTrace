@@ -4,6 +4,7 @@ import com.spectrace.common.R;
 import com.spectrace.dto.AssignSeriesRequest;
 import com.spectrace.dto.MergeSeriesRequest;
 import com.spectrace.dto.SubscriptionSaveRequest;
+import com.spectrace.dto.SeriesDeviceVO;
 import com.spectrace.dto.SeriesMissingDeviceVO;
 import com.spectrace.dto.SeriesSuggestVO;
 import com.spectrace.dto.SeriesVO;
@@ -51,6 +52,12 @@ public class AdminSeriesController {
         return R.ok(seriesService.unassigned(brandId));
     }
 
+    @Operation(summary = "系列内机型清单（供把误分机型移到其它系列）")
+    @GetMapping("/{id}/devices")
+    public R<List<SeriesDeviceVO>> devices(@PathVariable Long id) {
+        return R.ok(seriesService.devices(id));
+    }
+
     @Operation(summary = "系列内缺参数的机型（补抓目标清单，含草稿）")
     @GetMapping("/{id}/devices-without-params")
     public R<List<SeriesMissingDeviceVO>> devicesWithoutParams(@PathVariable Long id) {
@@ -87,8 +94,10 @@ public class AdminSeriesController {
     public R<Integer> assign(@RequestBody AssignSeriesRequest req,
                              @RequestAttribute Long adminId, @RequestAttribute String adminName) {
         int updated = seriesService.assign(req.getDeviceIds(), req.getSeriesId());
+        DeviceSeries target = seriesService.get(req.getSeriesId());
         logService.record(adminId, adminName, "ASSIGN_SERIES", "device_series", req.getSeriesId(),
-                "机型 " + req.getDeviceIds() + " 归类，影响 " + updated + " 台");
+                "机型 " + req.getDeviceIds() + " 移到「" + (target == null ? "未归类" : target.getName())
+                        + "」，影响 " + updated + " 台");
         return R.ok(updated);
     }
 

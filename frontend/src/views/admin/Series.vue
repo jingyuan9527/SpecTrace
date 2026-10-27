@@ -1,11 +1,33 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
-import { BellRing, CloudDownload, Combine, GripVertical, History, Loader2, Pencil, Plus, Radar, Sparkles, Trash2 } from '@lucide/vue'
+import {
+  BellRing,
+  CloudDownload,
+  Combine,
+  GripVertical,
+  History,
+  Layers,
+  Loader2,
+  Pencil,
+  Plus,
+  Radar,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+} from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { useRouter } from 'vue-router'
 import { adminApi } from '@/api'
-import type { AiModel, Brand, DeviceSeries, SeriesMissingDevice, SeriesSuggestion, UnassignedDevice } from '@/types/api'
+import type {
+  AiModel,
+  Brand,
+  DeviceSeries,
+  SeriesDevice,
+  SeriesMissingDevice,
+  SeriesSuggestion,
+  UnassignedDevice,
+} from '@/types/api'
 import {
   Badge,
   Button,
@@ -18,6 +40,7 @@ import {
   Input,
   Label,
   Select,
+  Sheet,
   Skeleton,
   Switch,
   Table,
@@ -257,6 +280,124 @@ function onAssignChange(deviceId: number, value: unknown) {
   assign(deviceId, typeof value === 'number' ? value : undefined)
 }
 
+// ---- 系列内机型清单：核对归属，把误分机型移到其它系列（复用 assign，无需新写入接口） ----
+/** 系列下拉里「未归类」的哨兵值：reka-ui 不接受空串作为选项值 */
+const UNASSIGNED = 0
+const devicesOpen = ref(false)
+const devicesSeries = ref<DeviceSeries | null>(null)
+const seriesDeviceList = ref<SeriesDevice[]>([])
+const devicesLoading = ref(false)
+const deviceKeyword = ref('')
+const movingDeviceId = ref<number>()
+const selectedDevices = ref<number[]>([])
+const batchTargetId = ref<number>()
+const batchMoving = ref(false)
+
+const filteredSeriesDevices = computed(() => {
+  const keyword = deviceKeyword.value.trim().toLowerCase()
+  return keyword ? seriesDeviceList.value.filter((d) => d.name.toLowerCase().includes(keyword)) : seriesDeviceList.value
+})
+
+const allSeriesDevicesSelected = computed(
+  () =>
+    filteredSeriesDevices.value.length > 0 &&
+    filteredSeriesDevices.value.every((d) => selectedDevices.value.includes(d.id)),
+)
+
+/** 逐行下拉：同品牌全部系列（含当前）+ 未归类，当前项即当前归属 */
+function moveOptionsOf(device: SeriesDevice) {
+  return [...seriesOptionsOf(device.brandId), { label: '未归类（移出系列）', value: UNASSIGNED }]
+}
+
+/** 批量下拉排除当前系列：批量「移到本系列」没有意义 */
+const batchMoveOptions = computed(() => {
+  const current = devicesSeries.value
+  if (!current) return []
+  return [
+    ...list.value
+      .filter((item) => item.id !== current.id && item.brandId === current.brandId)
+      .map((item) => ({ label: item.name, value: item.id as number })),
+    { label: '未归类（移出系列）', value: UNASSIGNED },
+  ]
+})
+
+function seriesNameOrUnassigned(id?: number) {
+  if (!id) return '未归类'
+  return list.value.find((item) => item.id === id)?.name ?? '目标系列'
+}
+
+async function openDevices(row: DeviceSeries) {
+  if (!row.id) return
+  devicesSeries.value = row
+  deviceKeyword.value = ''
+  selectedDevices.value = []
+  batchTargetId.value = undefined
+  seriesDeviceList.value = []
+  devicesOpen.value = true
+  await loadSeriesDevices()
+}
+
+async function loadSeriesDevices() {
+  const series = devicesSeries.value
+  if (!series?.id) return
+  devicesLoading.value = true
+  try {
+    seriesDeviceList.value = await adminApi.seriesDevices(series.id)
+    // 移走的机型已不在清单里，顺手剔除残留选中项，避免批量操作打到别的记录
+    const ids = new Set(seriesDeviceList.value.map((d) => d.id))
+    selectedDevices.value = selectedDevices.value.filter((id) => ids.has(id))
+  } finally {
+    devicesLoading.value = false
+  }
+}
+
+function toggleDevice(id: number, checked: boolean) {
+  if (checked) {
+    if (!selectedDevices.value.includes(id)) selectedDevices.value.push(id)
+  } else {
+    selectedDevices.value = selectedDevices.value.filter((item) => item !== id)
+  }
+}
+
+function toggleAllDevices(checked: boolean) {
+  selectedDevices.value = checked ? filteredSeriesDevices.value.map((d) => d.id) : []
+}
+
+function clearDeviceSelection() {
+  selectedDevices.value = []
+  batchTargetId.value = undefined
+}
+
+/** 单台移动即时生效：Toast 写明原系列与新系列，选错可再选回去 */
+async function onMoveDevice(device: SeriesDevice, value: unknown) {
+  if (typeof value !== 'number') return
+  if (value === (device.seriesId ?? UNASSIGNED)) return
+  movingDeviceId.value = device.id
+  try {
+    await adminApi.assignSeries([device.id], value === UNASSIGNED ? undefined : value)
+    toast.success(
+      `已把「${device.name}」从「${devicesSeries.value?.name ?? '原系列'}」移到「${seriesNameOrUnassigned(value)}」`,
+    )
+    await Promise.all([loadSeriesDevices(), load()])
+  } finally {
+    movingDeviceId.value = undefined
+  }
+}
+
+async function moveSelectedDevices() {
+  if (!selectedDevices.value.length || batchTargetId.value === undefined || batchMoving.value) return
+  const target = batchTargetId.value
+  batchMoving.value = true
+  try {
+    const updated = await adminApi.assignSeries([...selectedDevices.value], target === UNASSIGNED ? undefined : target)
+    toast.success(`已把 ${updated} 台机型从「${devicesSeries.value?.name ?? '原系列'}」移到「${seriesNameOrUnassigned(target)}」`)
+    clearDeviceSelection()
+    await Promise.all([loadSeriesDevices(), load()])
+  } finally {
+    batchMoving.value = false
+  }
+}
+
 /** 拖拽结束把顺序写回后端，保持列表排序与前台一致。 */
 async function saveOrder() {
   try {
@@ -471,7 +612,7 @@ async function confirmScrape() {
               <TableHead class="w-28">完善度</TableHead>
               <TableHead class="w-28">年份范围</TableHead>
               <TableHead class="w-20">状态</TableHead>
-              <TableHead class="w-44 text-right">操作</TableHead>
+              <TableHead class="w-72 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <VueDraggable v-model="list" tag="tbody" handle=".drag-handle" class="[&_tr:last-child]:border-0" @end="saveOrder">
@@ -506,6 +647,15 @@ async function confirmScrape() {
               </TableCell>
               <TableCell class="text-right">
                 <div class="flex justify-end gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="机型清单"
+                    title="查看系列内机型，逐行或批量移动归属"
+                    @click="openDevices(row)"
+                  >
+                    <Layers />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon-sm"
@@ -610,6 +760,97 @@ async function confirmScrape() {
         <Empty v-else title="没有未归类机型" description="所有机型都已归入系列，可回访客端「世代回顾」查看走势。" />
       </CardContent>
     </Card>
+
+    <Sheet
+      v-model:open="devicesOpen"
+      title="系列机型清单"
+      :description="`「${devicesSeries?.name ?? ''}」共 ${seriesDeviceList.length} 台，选择其它系列即可移动归属`"
+      side="right"
+      class="w-[92vw] sm:w-[560px]"
+    >
+      <div class="space-y-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <Input v-model="deviceKeyword" placeholder="搜索机型名" class="w-full sm:w-52" />
+          <Button variant="outline" size="sm" :disabled="devicesLoading" @click="loadSeriesDevices">
+            <RefreshCw />
+            刷新
+          </Button>
+          <span class="ml-auto text-xs text-muted-foreground">
+            {{ filteredSeriesDevices.length }} / {{ seriesDeviceList.length }} 台
+          </span>
+        </div>
+
+        <div
+          v-if="selectedDevices.length"
+          class="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm"
+        >
+          <span class="font-medium">已选 {{ selectedDevices.length }} 台</span>
+          <Select v-model="batchTargetId" :options="batchMoveOptions" placeholder="移到系列" class="w-40" />
+          <Button size="sm" :disabled="batchMoving || batchTargetId === undefined" @click="moveSelectedDevices">
+            <Loader2 v-if="batchMoving" class="animate-spin" />
+            移动所选
+          </Button>
+          <Button size="sm" variant="ghost" :disabled="batchMoving" @click="clearDeviceSelection">取消选择</Button>
+        </div>
+
+        <div v-if="devicesLoading" class="space-y-2">
+          <Skeleton v-for="i in 5" :key="i" class="h-10" />
+        </div>
+
+        <Table v-else-if="filteredSeriesDevices.length">
+          <TableHeader>
+            <TableRow class="hover:bg-transparent">
+              <TableHead class="w-10">
+                <Checkbox
+                  :model-value="allSeriesDevicesSelected"
+                  aria-label="全选本系列机型"
+                  @update:model-value="toggleAllDevices"
+                />
+              </TableHead>
+              <TableHead>机型</TableHead>
+              <TableHead class="w-20">发布年</TableHead>
+              <TableHead class="w-20">状态</TableHead>
+              <TableHead class="w-36">移动到</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow v-for="device in filteredSeriesDevices" :key="device.id">
+              <TableCell>
+                <Checkbox
+                  :model-value="selectedDevices.includes(device.id)"
+                  :aria-label="`选择 ${device.name}`"
+                  @update:model-value="toggleDevice(device.id, $event)"
+                />
+              </TableCell>
+              <TableCell class="font-medium">{{ device.name }}</TableCell>
+              <TableCell class="text-muted-foreground">
+                {{ device.releaseDate ? device.releaseDate.slice(0, 4) : '—' }}
+              </TableCell>
+              <TableCell>
+                <Badge :variant="device.status === 1 ? 'success' : 'secondary'">
+                  {{ device.status === 1 ? '已上架' : '草稿' }}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <Select
+                  :model-value="device.seriesId ?? UNASSIGNED"
+                  :options="moveOptionsOf(device)"
+                  :disabled="movingDeviceId === device.id"
+                  :aria-label="`移动 ${device.name} 到其它系列`"
+                  @update:model-value="onMoveDevice(device, $event)"
+                />
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+
+        <Empty v-else title="该系列暂无机型" description="到机型管理或未归类清单把机型归入本系列。" />
+
+        <p class="text-xs leading-5 text-muted-foreground">
+          移动立即生效：机型会从当前系列移除并归入目标系列，选错可再选回去；「未归类」用于暂时移出。系列与机型必须同品牌，因此下拉只列同品牌系列。
+        </p>
+      </div>
+    </Sheet>
 
     <Dialog v-model:open="dialog" :title="form.id ? '编辑系列' : '新增系列'" class="max-w-md">
       <div class="space-y-4">

@@ -112,6 +112,18 @@ export interface SeriesMissingDevice {
   thumbnail?: string | null
 }
 
+/** 系列内机型清单（后台移动系列用） */
+export interface SeriesDevice {
+  id: number
+  name: string
+  brandId: number
+  seriesId?: number | null
+  /** 0 草稿 1 上架 */
+  status: number
+  releaseDate?: string | null
+  thumbnail?: string | null
+}
+
 export interface AdminUser {
   id: number
   username: string

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.spectrace.common.BizException;
 import com.spectrace.config.CacheConfig;
 import com.spectrace.dto.DeviceLastUpdate;
+import com.spectrace.dto.SeriesDeviceVO;
 import com.spectrace.dto.SeriesMissingDeviceVO;
 import com.spectrace.dto.SeriesSuggestVO;
 import com.spectrace.dto.SeriesVO;
@@ -276,6 +277,22 @@ public class DeviceSeriesService {
         }
     }
 
+    /** 系列内机型清单：后台据此刻对归属，把误分机型移到其它系列（移动仍走 assign）。 */
+    public List<SeriesDeviceVO> devices(Long seriesId) {
+        requireSeries(seriesId);
+        return seriesDevices(seriesId).stream().map(device -> {
+            SeriesDeviceVO vo = new SeriesDeviceVO();
+            vo.setId(device.getId());
+            vo.setName(device.getName());
+            vo.setBrandId(device.getBrandId());
+            vo.setSeriesId(device.getSeriesId());
+            vo.setStatus(device.getStatus());
+            vo.setReleaseDate(device.getReleaseDate());
+            vo.setThumbnail(device.getThumbnail());
+            return vo;
+        }).toList();
+    }
+
     /** 未归类机型：后台逐个选择系列即时归类。 */
     public List<UnassignedDeviceVO> unassigned(Long brandId) {
         var query = Wrappers.<Device>lambdaQuery()
@@ -327,11 +344,38 @@ public class DeviceSeriesService {
                 }
             }
         }
+        Map<Long, String> before = seriesNamesOf(devices);
         int updated = deviceMapper.update(null, Wrappers.<Device>lambdaUpdate()
                 .in(Device::getId, deviceIds)
                 .set(Device::getSeriesId, seriesId));
-        log.info("机型归类: seriesId={} 影响 {} 台，机型 {}", seriesId, updated, deviceIds);
+        String target = series == null ? "未归类" : series.getName();
+        // 逐台记录原系列 → 新系列：系列分错后要能查清是谁、什么时候移的
+        log.info("机型换系列: 目标={} 影响 {} 台，明细：{}", target, updated, describeMoves(devices, before, target));
         return updated;
+    }
+
+    /** 机型当前系列名映射，供换系列日志标注「原系列」。 */
+    private Map<Long, String> seriesNamesOf(List<Device> devices) {
+        List<Long> seriesIds = devices.stream()
+                .map(Device::getSeriesId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (seriesIds.isEmpty()) {
+            return Map.of();
+        }
+        return seriesMapper.selectBatchIds(seriesIds).stream()
+                .collect(Collectors.toMap(DeviceSeries::getId, DeviceSeries::getName));
+    }
+
+    private String describeMoves(List<Device> devices, Map<Long, String> before, String target) {
+        return devices.stream()
+                .map(device -> {
+                    // 未归类机型没有原系列；Map.of() 不接受 null 键，不能直接用 getOrDefault
+                    String from = device.getSeriesId() == null ? null : before.get(device.getSeriesId());
+                    return device.getName() + "（" + (from == null ? "未归类" : from) + "→" + target + "）";
+                })
+                .collect(Collectors.joining("、"));
     }
 
     /** 合并系列：机型迁到目标系列后删除源系列，两个系列必须同品牌。 */

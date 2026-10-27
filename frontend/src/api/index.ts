@@ -49,6 +49,7 @@ import type {
   SearchConfigSaveRequest,
   SearchTestResult,
   SeriesCreateResult,
+  SeriesDevice,
   SeriesDiscoveryDetail,
   SeriesItem,
   SeriesMissingDevice,
@@ -148,6 +149,8 @@ export const adminApi = {
     request.post<unknown, number>(`/admin/series/${id}/merge`, { targetId }),
   seriesMissingDevices: (id: number) =>
     request.get<unknown, SeriesMissingDevice[]>(`/admin/series/${id}/devices-without-params`),
+  // 系列内全部机型（含草稿）：核对归属并把误分机型移到其它系列
+  seriesDevices: (id: number) => request.get<unknown, SeriesDevice[]>(`/admin/series/${id}/devices`),
   // 系列内参数陈旧的机型（无参数或超过 days 天未更新），供「重抓全系列」
   seriesStaleDevices: (id: number, days = 180) =>
     request.get<unknown, SeriesMissingDevice[]>(`/admin/series/${id}/stale-devices`, { params: { days } }),
