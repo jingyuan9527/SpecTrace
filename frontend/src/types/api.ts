@@ -383,6 +383,8 @@ export interface AgentTask {
   updatedAt?: string
   /** 对应待审核记录 id（后端列表补充）：待审核任务可直达抓取审核页 */
   pendingId?: number | null
+  /** 失败任务是否已有同品牌同名机型的审核通过记录（后端补充，true 时不再提供重试） */
+  approved?: boolean | null
 }
 
 /** 系列订阅抓取配置（T88） */

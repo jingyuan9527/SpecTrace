@@ -57,4 +57,11 @@ public class AgentTask {
      */
     @TableField(exist = false)
     private Long pendingId;
+
+    /**
+     * 该机型是否已有审核通过的抓取结果（非表字段，仅失败任务填充）：
+     * 前端据此隐藏重试入口，避免重复抓取已入库的机型。
+     */
+    @TableField(exist = false)
+    private Boolean approved;
 }

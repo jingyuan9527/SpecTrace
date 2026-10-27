@@ -500,9 +500,18 @@ function modelLabel(id: number | null | undefined) {
               <TableCell class="text-muted-foreground">{{ row.brandName || '—' }}</TableCell>
               <TableCell class="text-xs text-muted-foreground">{{ modelLabel(row.aiModelId) }}</TableCell>
               <TableCell>
-                <Badge :variant="statusMap[row.status]?.variant ?? 'secondary'">
-                  {{ statusMap[row.status]?.label ?? row.status }}
-                </Badge>
+                <div class="flex flex-wrap items-center gap-1">
+                  <Badge :variant="statusMap[row.status]?.variant ?? 'secondary'">
+                    {{ statusMap[row.status]?.label ?? row.status }}
+                  </Badge>
+                  <Badge
+                    v-if="row.status === 'FAILED' && row.approved"
+                    variant="success"
+                    title="该机型已有审核通过的抓取结果，无需重试"
+                  >
+                    已入库
+                  </Badge>
+                </div>
               </TableCell>
               <TableCell class="tabular-nums text-muted-foreground">
                 {{ row.durationMs ? `${row.durationMs} ms` : '—' }}
@@ -536,7 +545,7 @@ function modelLabel(id: number | null | undefined) {
                   </Button>
                   <Button variant="ghost" size="sm" @click="detailTarget = row">详情</Button>
                   <Button
-                    v-if="row.status === 'FAILED'"
+                    v-if="row.status === 'FAILED' && !row.approved"
                     variant="outline"
                     size="sm"
                     @click="openRetry(row)"
@@ -578,9 +587,18 @@ function modelLabel(id: number | null | undefined) {
       <div v-if="detailTarget" class="space-y-4 text-sm">
         <div class="grid grid-cols-[88px_1fr] gap-y-2">
           <span class="text-muted-foreground">状态</span>
-          <Badge :variant="statusMap[detailTarget.status]?.variant ?? 'secondary'">
-            {{ statusMap[detailTarget.status]?.label ?? detailTarget.status }}
-          </Badge>
+          <span class="flex flex-wrap items-center gap-1.5">
+            <Badge :variant="statusMap[detailTarget.status]?.variant ?? 'secondary'">
+              {{ statusMap[detailTarget.status]?.label ?? detailTarget.status }}
+            </Badge>
+            <Badge
+              v-if="detailTarget.status === 'FAILED' && detailTarget.approved"
+              variant="success"
+              title="该机型已有审核通过的抓取结果，无需重试"
+            >
+              已入库
+            </Badge>
+          </span>
           <span class="text-muted-foreground">品牌</span>
           <span>{{ detailTarget.brandName || '—' }}</span>
           <span class="text-muted-foreground">AI 模型</span>
@@ -730,7 +748,7 @@ function modelLabel(id: number | null | undefined) {
           }}</pre>
         </div>
 
-        <Button v-if="detailTarget.status === 'FAILED'" @click="openRetry(detailTarget)">
+        <Button v-if="detailTarget.status === 'FAILED' && !detailTarget.approved" @click="openRetry(detailTarget)">
           <RotateCcw />
           重试该任务
         </Button>

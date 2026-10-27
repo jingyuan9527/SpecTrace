@@ -37,9 +37,13 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -165,7 +169,54 @@ public class AgentTaskService {
         }
         IPage<AgentTask> page = taskMapper.selectPage(new Page<>(current, size), query);
         fillPendingIds(page.getRecords());
+        fillApprovedFlags(page.getRecords());
         return page;
+    }
+
+    /**
+     * 标注失败任务对应的机型是否已审核通过，前端据此隐藏重试。
+     *
+     * <p>判定口径是「同品牌同名机型存在 APPROVED 的抓取记录」，而不是机型库里是否有档案：
+     * 手工新增 / CSV 导入的机型没有抓取记录，重抓仍可能是有意义的。</p>
+     */
+    private void fillApprovedFlags(List<AgentTask> records) {
+        List<AgentTask> failed = records.stream()
+                .filter(task -> TaskStatus.FAILED.name().equals(task.getStatus()))
+                .filter(task -> TaskType.parse(task.getTaskType()) == TaskType.DEVICE_DETAIL)
+                .toList();
+        if (failed.isEmpty()) {
+            return;
+        }
+        List<String> modelNames = failed.stream()
+                .map(AgentTask::getModelName)
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .toList();
+        if (modelNames.isEmpty()) {
+            return;
+        }
+        // 机型名可能有大小写差异，先按 IN 收窄候选，再在内存里做归一化比对
+        Map<String, Set<String>> approvedBrands = new HashMap<>();
+        pendingMapper.selectList(Wrappers.<AgentPendingData>lambdaQuery()
+                        .eq(AgentPendingData::getStatus, PendingStatus.APPROVED.name())
+                        .in(AgentPendingData::getModelName, modelNames))
+                .forEach(row -> approvedBrands
+                        .computeIfAbsent(normalizeMatchValue(row.getModelName()), key -> new HashSet<>())
+                        .add(normalizeMatchValue(row.getBrandName())));
+        for (AgentTask task : failed) {
+            Set<String> brands = approvedBrands.get(normalizeMatchValue(task.getModelName()));
+            // 任务未指定品牌时（由 Agent 推断）品牌不可比，退化为按机型名匹配
+            boolean matched = brands != null
+                    && (StringUtils.hasText(task.getBrandName())
+                        ? brands.contains(normalizeMatchValue(task.getBrandName()))
+                        : !brands.isEmpty());
+            task.setApproved(matched);
+        }
+    }
+
+    private String normalizeMatchValue(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     /**
@@ -183,7 +234,7 @@ public class AgentTaskService {
         if (taskIds.isEmpty()) {
             return;
         }
-        Map<Long, Long> pendingIds = new java.util.HashMap<>();
+        Map<Long, Long> pendingIds = new HashMap<>();
         pendingMapper.selectList(Wrappers.<AgentPendingData>lambdaQuery()
                         .in(AgentPendingData::getTaskId, taskIds)
                         .eq(AgentPendingData::getStatus, PendingStatus.PENDING_REVIEW.name()))
