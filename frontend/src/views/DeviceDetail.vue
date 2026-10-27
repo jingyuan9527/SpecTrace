@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { motion } from 'motion-v'
-import { ArrowLeft, CalendarDays, Check, Clock3, Flag, GitCompareArrows, LineChart, Link2, Loader2, TrendingUp } from '@lucide/vue'
+import { ArrowLeft, CalendarDays, Check, Clock3, Flag, GitCompareArrows, LineChart, Link2, Loader2, RefreshCw, TrendingUp } from '@lucide/vue'
+import type { AxiosError } from 'axios'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
 import type { DeviceVariant, EvolutionDevice, FeedbackStatus, ParamDef, ParamGroup, ParamMeta, SeriesBrief } from '@/types/api'
@@ -40,12 +41,16 @@ const series = ref<SeriesBrief | null>(null)
 const seriesDevices = ref<EvolutionDevice[]>([])
 const params = ref<Record<string, string>>({})
 const paramMeta = ref<Record<string, ParamMeta>>({})
+// paramKey -> OPEN 反馈数；提交反馈后本地自增，不为一个计数重拉整页
+const paramFeedback = ref<Record<string, number>>({})
 const lastUpdated = ref<string | null>(null)
 const variants = ref<DeviceVariant[]>([])
 const groups = ref<ParamGroup[]>([])
 const defs = ref<ParamDef[]>([])
 const loading = ref(true)
 const notFound = ref(false)
+// 与 notFound 分开：后端 404 才是「已下架」，网络中断 / 5xx 属于可重试的加载失败
+const loadError = ref(false)
 
 const grouped = computed(() =>
   groups.value
@@ -54,13 +59,33 @@ const grouped = computed(() =>
       name: group.name,
       items: defs.value
         .filter((d) => d.groupId === group.id)
-        .map((d) => ({ ...d, value: params.value[d.paramKey] ?? '', meta: paramMeta.value[d.paramKey] }))
+        .map((d) => ({
+          ...d,
+          value: params.value[d.paramKey] ?? '',
+          meta: paramMeta.value[d.paramKey],
+          pendingCount: paramFeedback.value[d.paramKey] ?? 0,
+        }))
         .filter((d) => d.value !== ''),
     }))
     .filter((g) => g.items.length > 0),
 )
 
-onMounted(async () => {
+/**
+ * 参数元数据是准静态数据，失败只影响参数区的分组与顺序，
+ * 不能连带把整页判成「机型不存在」——那会让一次元数据抖动伪装成数据缺失。
+ */
+async function loadParamMeta() {
+  try {
+    ;[groups.value, defs.value] = await Promise.all([publicApi.paramGroups(), publicApi.paramDefs()])
+  } catch (error) {
+    console.error('[DeviceDetail] 参数元数据加载失败，参数区降级为不分组', error)
+  }
+}
+
+async function loadDetail() {
+  loading.value = true
+  notFound.value = false
+  loadError.value = false
   try {
     const id = Number(route.params.id)
     const detail = await publicApi.deviceDetail(id)
@@ -70,6 +95,7 @@ onMounted(async () => {
     seriesDevices.value = detail.seriesDevices || []
     params.value = detail.params || {}
     paramMeta.value = detail.paramMeta || {}
+    paramFeedback.value = detail.paramFeedback || {}
     lastUpdated.value = detail.lastUpdated || null
     variants.value = detail.variants || []
     // SEO：详情页动态标题与分享卡片信息
@@ -82,13 +108,26 @@ onMounted(async () => {
       image: absoluteUrl(detail.device.thumbnail),
       url: location.href,
     })
-    ;[groups.value, defs.value] = await Promise.all([publicApi.paramGroups(), publicApi.paramDefs()])
     setJsonLd(buildProductJsonLd(detail))
-  } catch {
-    notFound.value = true
+    await loadParamMeta()
+  } catch (error) {
+    if ((error as AxiosError)?.response?.status === 404) {
+      notFound.value = true
+      return
+    }
+    console.error('[DeviceDetail] 机型详情加载失败', { deviceId: route.params.id }, error)
+    loadError.value = true
   } finally {
     loading.value = false
   }
+}
+
+onMounted(loadDetail)
+
+// 同路由换机型（系列条互跳）会复用组件实例，onMounted 不再触发：不重载就会出现
+// 「URL 已是 iPhone 16、页面还是 iPhone 17」的错配
+watch(() => route.params.id, (next, prev) => {
+  if (next && next !== prev) loadDetail()
 })
 
 /** T89 结构化数据：Product schema，参数摘要取前 12 项控制体积 */
@@ -216,6 +255,10 @@ async function submitFeedback() {
     })
     feedbackSubmittedId.value = id
     feedbackView.value = 'success'
+    // 后端已失效详情缓存，这里只把当前参数计数补上：访客立刻看到「自己不是一个人」，
+    // 整页重拉会把参数区的滚动位置和展开态一起丢掉，代价大于收益
+    const key = feedbackTarget.value.paramKey
+    paramFeedback.value = { ...paramFeedback.value, [key]: (paramFeedback.value[key] ?? 0) + 1 }
   } finally {
     feedbackSaving.value = false
   }
@@ -263,6 +306,13 @@ function queryFromReceipt() {
       <Skeleton class="h-64 rounded-xl" />
       <Skeleton class="h-72 rounded-xl" />
     </div>
+
+    <Empty v-else-if="loadError" title="机型加载失败" description="网络或服务暂时不可用，稍后重试通常即可恢复。">
+      <Button variant="outline" size="sm" class="mt-2" @click="loadDetail">
+        <RefreshCw />
+        重试
+      </Button>
+    </Empty>
 
     <Empty v-else-if="notFound || !device" title="未找到该机型" description="机型可能已下架，返回机型库重新选择。">
       <Button variant="outline" size="sm" class="mt-2" @click="router.push({ name: 'devices' })">返回机型库</Button>
@@ -409,7 +459,12 @@ function queryFromReceipt() {
                     {{ item.value }}
                     <span v-if="item.unit" class="ml-1 text-xs font-normal text-muted-foreground">{{ item.unit }}</span>
                     <div
-                      v-if="item.meta?.sourceUrl || item.meta?.updatedAt || item.meta?.confidence != null"
+                      v-if="
+                        item.meta?.sourceUrl ||
+                        item.meta?.updatedAt ||
+                        item.meta?.confidence != null ||
+                        item.pendingCount > 0
+                      "
                       class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-normal text-muted-foreground"
                     >
                       <!-- 手机宽度下值列只有 ~190px，完整时间会被拆成两三行，小屏只留日期 -->
@@ -443,6 +498,14 @@ function queryFromReceipt() {
                         <Link2 class="h-3 w-3" />
                         来源
                       </a>
+                      <!-- 同参数已有 N 人反馈存疑：让人知道不是自己一个人看错，处理完自然消失 -->
+                      <span
+                        v-if="item.pendingCount > 0"
+                        class="whitespace-nowrap"
+                        :title="`该参数已有 ${item.pendingCount} 条待核实的纠错反馈`"
+                      >
+                        {{ item.pendingCount }} 人待核实
+                      </span>
                     </div>
                   </TableCell>
                   <TableCell class="text-right align-top">

@@ -3,10 +3,11 @@ package com.spectrace.controller;
 import com.spectrace.common.PageResult;
 import com.spectrace.common.R;
 import com.spectrace.dto.DeviceBatchStatusRequest;
+import com.spectrace.dto.DeviceDetailVO;
 import com.spectrace.dto.DeviceImportResult;
 import com.spectrace.dto.DeviceSaveRequest;
 import com.spectrace.entity.Device;
-import com.spectrace.service.AgentTaskService;
+import com.spectrace.service.AgentReviewService;
 import com.spectrace.service.DeviceImportService;
 import com.spectrace.service.DeviceService;
 import com.spectrace.service.DeviceViewService;
@@ -32,7 +33,7 @@ public class AdminDeviceController {
 
     private final DeviceService deviceService;
     private final DeviceImportService deviceImportService;
-    private final AgentTaskService agentTaskService;
+    private final AgentReviewService agentReviewService;
     private final DeviceViewService deviceViewService;
 
     @Operation(summary = "下载机型批量导入 CSV 模板")
@@ -63,7 +64,7 @@ public class AdminDeviceController {
                                       @RequestParam(required = false) Integer status) {
         var page = deviceService.page(current, size, brandId, seriesId, null, keyword, status);
         // 列表徽标：标注同品牌同名机型有未处理的抓取结果，管理员不用两边来回对
-        Map<Long, Integer> pendingCounts = agentTaskService.pendingCountByDevice(page.getRecords());
+        Map<Long, Integer> pendingCounts = agentReviewService.pendingCountByDevice(page.getRecords());
         page.getRecords().forEach(d -> d.setPendingReviewCount(pendingCounts.getOrDefault(d.getId(), 0)));
         // 近 30 天浏览量：让管理员看到哪些机型真的有人看，配合健康度决定补录优先级
         Map<Long, Long> pvCounts = deviceViewService.pvOf(
@@ -73,7 +74,7 @@ public class AdminDeviceController {
     }
 
     @GetMapping("/{id}")
-    public R<java.util.Map<String, Object>> detail(@PathVariable Long id) {
+    public R<DeviceDetailVO> detail(@PathVariable Long id) {
         return R.ok(deviceService.detail(id));
     }
 

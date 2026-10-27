@@ -9,9 +9,9 @@ import com.spectrace.dto.SeriesCreateDevicesRequest;
 import com.spectrace.dto.SeriesCreateResultVO;
 import com.spectrace.dto.SeriesDiscoveryVO;
 import com.spectrace.dto.TaskCreateRequest;
-import com.spectrace.entity.AgentPendingData;
 import com.spectrace.entity.AgentTask;
 import com.spectrace.entity.AgentTaskLog;
+import com.spectrace.service.AgentReviewService;
 import com.spectrace.service.AgentTaskLogService;
 import com.spectrace.service.AgentTaskService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.*;
 public class AdminAgentController {
 
     private final AgentTaskService agentTaskService;
+    private final AgentReviewService agentReviewService;
     private final AgentTaskLogService agentTaskLogService;
 
     @Operation(summary = "新建抓取任务")
@@ -91,22 +92,22 @@ public class AdminAgentController {
                                                 @RequestParam(defaultValue = "10") long size,
                                                 @RequestParam(required = false) String status,
                                                 @RequestParam(required = false) String keyword) {
-        var page = agentTaskService.pagePending(current, size, status, keyword);
-        var records = page.getRecords().stream().map(agentTaskService::toVO).toList();
+        var page = agentReviewService.pagePending(current, size, status, keyword);
+        var records = page.getRecords().stream().map(agentReviewService::toVO).toList();
         return R.ok(PageResult.of(page.getTotal(), page.getCurrent(), page.getSize(), records));
     }
 
     @Operation(summary = "待审核数据详情（含库中现有值，供 diff）")
     @GetMapping("/pending-data/{id}")
     public R<PendingDataVO> pendingDetail(@PathVariable Long id) {
-        return R.ok(agentTaskService.toDetailVO(agentTaskService.getPending(id)));
+        return R.ok(agentReviewService.toDetailVO(agentReviewService.getPending(id)));
     }
 
     @Operation(summary = "审核通过，迁移至正式机型库")
     @PostMapping("/pending-data/{id}/approve")
     public R<Long> approve(@PathVariable Long id, @RequestBody ApproveRequest req,
                            @RequestAttribute Long adminId, @RequestAttribute String adminName) {
-        return R.ok(agentTaskService.approve(id, req, adminId, adminName));
+        return R.ok(agentReviewService.approve(id, req, adminId, adminName));
     }
 
     @Operation(summary = "批量通过待审核数据（使用抓取值直接入库）")
@@ -114,7 +115,7 @@ public class AdminAgentController {
     public R<java.util.Map<String, Object>> batchApprove(@RequestBody BatchIdsRequest req,
                                                          @RequestAttribute Long adminId,
                                                          @RequestAttribute String adminName) {
-        return R.ok(agentTaskService.batchApprove(req.getIds(), adminId, adminName));
+        return R.ok(agentReviewService.batchApprove(req.getIds(), adminId, adminName));
     }
 
     @Operation(summary = "批量丢弃待审核数据")
@@ -122,14 +123,14 @@ public class AdminAgentController {
     public R<java.util.Map<String, Object>> batchDiscard(@RequestBody BatchIdsRequest req,
                                                          @RequestAttribute Long adminId,
                                                          @RequestAttribute String adminName) {
-        return R.ok(agentTaskService.batchDiscard(req.getIds(), adminId, adminName));
+        return R.ok(agentReviewService.batchDiscard(req.getIds(), adminId, adminName));
     }
 
     @Operation(summary = "丢弃待审核数据")
     @PostMapping("/pending-data/{id}/discard")
     public R<Void> discard(@PathVariable Long id,
                            @RequestAttribute Long adminId, @RequestAttribute String adminName) {
-        agentTaskService.discard(id, adminId, adminName);
+        agentReviewService.discard(id, adminId, adminName);
         return R.ok();
     }
 }

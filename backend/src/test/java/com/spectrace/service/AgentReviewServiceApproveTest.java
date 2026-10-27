@@ -4,13 +4,11 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.spectrace.dto.ApproveRequest;
 import com.spectrace.dto.DeviceSaveRequest;
 import com.spectrace.entity.AgentPendingData;
-import com.spectrace.entity.Device;
 import com.spectrace.entity.AgentTask;
+import com.spectrace.entity.Device;
 import com.spectrace.mapper.AgentPendingDataMapper;
-import com.spectrace.mapper.AgentTaskMapper;
 import com.spectrace.mapper.BrandMapper;
 import com.spectrace.mapper.DeviceMapper;
-import com.spectrace.task.TaskQueue;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,7 +30,6 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -41,7 +38,7 @@ import static org.mockito.Mockito.when;
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
-class AgentTaskServiceApproveTest {
+class AgentReviewServiceApproveTest {
 
     @BeforeAll
     static void initTableInfo() {
@@ -52,15 +49,11 @@ class AgentTaskServiceApproveTest {
     }
 
     @Mock
-    private AgentTaskMapper taskMapper;
-    @Mock
     private AgentPendingDataMapper pendingMapper;
     @Mock
     private BrandMapper brandMapper;
     @Mock
     private DeviceMapper deviceMapper;
-    @Mock
-    private TaskQueue taskQueue;
     @Mock
     private DeviceService deviceService;
     @Mock
@@ -68,19 +61,19 @@ class AgentTaskServiceApproveTest {
     @Mock
     private OperationLogService logService;
     @Mock
-    private AgentTaskLogService taskLogService;
+    private AgentTaskStatusService taskStatusService;
     @Mock
     private TransactionTemplate transactionTemplate;
     @Mock
-    private com.spectrace.service.DeviceImageFetchService deviceImageFetchService;
+    private DeviceImageFetchService deviceImageFetchService;
 
-    private AgentTaskService service;
+    private AgentReviewService service;
 
     @BeforeEach
     void setUp() {
-        service = new AgentTaskService(taskMapper, pendingMapper, brandMapper, deviceMapper, taskQueue,
-                deviceService, paramService, logService, taskLogService,
-                new com.fasterxml.jackson.databind.ObjectMapper(), transactionTemplate, deviceImageFetchService);
+        service = new AgentReviewService(pendingMapper, brandMapper, deviceMapper, deviceService, paramService,
+                logService, taskStatusService, new com.fasterxml.jackson.databind.ObjectMapper(),
+                transactionTemplate, deviceImageFetchService);
 
         AgentPendingData pending = new AgentPendingData();
         pending.setId(9L);
@@ -90,17 +83,13 @@ class AgentTaskServiceApproveTest {
         pending.setStatus("PENDING_REVIEW");
         when(pendingMapper.selectById(9L)).thenReturn(pending);
 
-        AgentTask task = new AgentTask();
-        task.setId(19L);
-        when(taskMapper.selectById(19L)).thenReturn(task);
-
         // 库中已有同品牌同名机型，且已归类到系列 5
         Device existing = new Device();
         existing.setId(11L);
         existing.setBrandId(2L);
         existing.setName("Xiaomi 17");
         existing.setSeriesId(5L);
-        when(deviceMapper.selectOne(any())).thenReturn(existing);
+        when(deviceService.findByName(eq(2L), anyString())).thenReturn(existing);
 
         Device saved = new Device();
         saved.setId(11L);
@@ -127,7 +116,7 @@ class AgentTaskServiceApproveTest {
     @Test
     @DisplayName("新机型审核通过不携带系列（保持未归类）")
     void approveNewDeviceStaysUnassigned() {
-        when(deviceMapper.selectOne(any())).thenReturn(null);
+        when(deviceService.findByName(eq(2L), anyString())).thenReturn(null);
         Device saved = new Device();
         saved.setId(30L);
         saved.setName("Xiaomi 18");

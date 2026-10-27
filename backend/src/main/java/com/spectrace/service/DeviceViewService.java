@@ -25,19 +25,17 @@ public class DeviceViewService {
     public static final int HOT_WINDOW_DAYS = 30;
 
     private final DeviceViewDailyMapper viewMapper;
+    private final DeviceViewAggregator aggregator;
 
-    public void recordViews(Collection<Long> deviceIds) {
+    /**
+     * 记录浏览：只写内存缓冲，落库由 {@link DeviceViewAggregator} 定时批量完成。
+     * 统计失败不影响公开接口——这也是把它从请求线程摘出去的另一半原因。
+     */
+    public void recordViews(String clientIp, Collection<Long> deviceIds) {
         if (deviceIds == null || deviceIds.isEmpty()) {
             return;
         }
-        String today = LocalDate.now().toString();
-        for (Long deviceId : deviceIds.stream().distinct().toList()) {
-            try {
-                viewMapper.upsertIncrement(deviceId, today);
-            } catch (Exception e) {
-                log.warn("浏览量写入失败（不影响主流程）: deviceId={} date={}", deviceId, today, e);
-            }
-        }
+        aggregator.record(clientIp, deviceIds);
     }
 
     /** 热门机型 id 列表（PV 倒序）；窗口内无数据返回空，调用方回落。 */

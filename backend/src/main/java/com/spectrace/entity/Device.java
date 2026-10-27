@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 
 import java.time.LocalDate;
@@ -29,7 +30,8 @@ public class Device {
 
     private String thumbnail;
 
-    /** 待下载的产品图 URL（T90）：审核通过只落 URL，下载由独立线程异步完成，失败静默清空 */
+    /** 待下载的产品图 URL（T90）：内部调度字段，不对外暴露 */
+    @JsonIgnore
     private String thumbnailPendingUrl;
 
     private String description;
@@ -43,6 +45,8 @@ public class Device {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
+    /** 逻辑删除标记：查询条件已由 MyBatis-Plus 处理，对外没有任何意义 */
+    @JsonIgnore
     @TableLogic
     private Integer deleted;
 

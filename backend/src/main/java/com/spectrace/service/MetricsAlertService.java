@@ -23,7 +23,7 @@ import java.nio.file.Paths;
 @RequiredArgsConstructor
 public class MetricsAlertService {
 
-    private final AgentTaskService agentTaskService;
+    private final AgentReviewService agentReviewService;
     private final AlertSender alertSender;
 
     /** 待审核条数阈值，0 关闭该规则 */
@@ -70,8 +70,8 @@ public class MetricsAlertService {
         if (pendingCountThreshold <= 0 && pendingOldestHours <= 0) {
             return;
         }
-        long count = agentTaskService.countPendingReview();
-        long oldestHours = count == 0 ? 0 : agentTaskService.oldestPendingHours();
+        long count = agentReviewService.countPendingReview();
+        long oldestHours = count == 0 ? 0 : agentReviewService.oldestPendingHours();
         boolean overCount = pendingCountThreshold > 0 && count >= pendingCountThreshold;
         boolean overAge = pendingOldestHours > 0 && oldestHours >= pendingOldestHours;
         if (overCount || overAge) {

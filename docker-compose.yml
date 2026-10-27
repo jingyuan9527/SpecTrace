@@ -20,8 +20,9 @@ services:
       SPECTRACE_UPLOAD_DIR: /data/uploads
       # 每日备份落在同一挂载目录内，容器重建不丢；保留份数可用 SPECTRACE_BACKUP_KEEP 调整
       SPECTRACE_BACKUP_DIR: /data/backups
-      # ---- 应用密钥（生产务必修改）----
-      SPECTRACE_JWT_SECRET: ${JWT_SECRET:-change-me-spectrace-jwt-secret-please-use-32bytes-min}
+      # ---- 应用密钥（必填，无默认值）----
+      # 用 :? 而非 :-：缺失或为空时 compose 直接报错退出，避免带着公开示例串上线
+      SPECTRACE_JWT_SECRET: ${JWT_SECRET:?未设置 JWT_SECRET：请在 .env 中填入至少 32 位随机串（openssl rand -hex 32）}
       # ---- 内嵌采集 Agent（可关闭；AI Key 正常在后台「AI 配置」维护）----
       SPECTRACE_AGENT_ENABLED: ${SPECTRACE_AGENT_ENABLED:-true}
       # 任务队列：memory（默认，无需外部服务）/ redis（可选，多实例部署）

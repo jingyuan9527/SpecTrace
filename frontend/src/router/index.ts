@@ -117,4 +117,27 @@ router.beforeEach(async (to) => {
 // 详情页会在数据加载后覆盖标题，这里负责把其它页面的标题复位，避免残留
 router.afterEach(() => resetPageMeta())
 
+/**
+ * 动态 import 失败（发版后旧 chunk 已被替换、或资源短暂不可达）时自动刷新一次。
+ *
+ * <p>用时间窗口而不是布尔标记：标记清得太早会无限刷新，清得太晚会让后续故障失去自愈机会。
+ * 10 秒内重复失败说明不是缓存问题，改为提示用户手动刷新。</p>
+ */
+const CHUNK_RELOAD_AT = 'spectrace-chunk-reload-at'
+router.onError((error) => {
+  const message = String((error as Error)?.message ?? '')
+  const isChunkError = /dynamically imported module|Importing a module script failed|ChunkLoadError/i.test(message)
+  if (!isChunkError) return
+
+  const now = Date.now()
+  const last = Number(sessionStorage.getItem(CHUNK_RELOAD_AT) ?? 0)
+  if (now - last < 10_000) {
+    toast.error('页面资源加载失败，请手动刷新')
+    return
+  }
+  console.warn('[router] 资源加载失败，刷新后重试', { message })
+  sessionStorage.setItem(CHUNK_RELOAD_AT, String(now))
+  window.location.reload()
+})
+
 export default router

@@ -1,9 +1,11 @@
 package com.spectrace.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.spectrace.common.BizException;
+import com.spectrace.common.NotFoundException;
 import com.spectrace.common.ParamValueParser;
 import com.spectrace.config.CacheConfig;
 import com.spectrace.dto.*;
@@ -12,6 +14,7 @@ import com.spectrace.entity.Device;
 import com.spectrace.entity.DeviceParamValue;
 import com.spectrace.entity.DeviceSeries;
 import com.spectrace.entity.DeviceVariant;
+import com.spectrace.entity.Feedback;
 import com.spectrace.entity.ParamDef;
 import com.spectrace.entity.ParamGroup;
 import com.spectrace.mapper.BrandMapper;
@@ -19,6 +22,7 @@ import com.spectrace.mapper.DeviceMapper;
 import com.spectrace.mapper.DeviceParamValueMapper;
 import com.spectrace.mapper.DeviceSeriesMapper;
 import com.spectrace.mapper.DeviceVariantMapper;
+import com.spectrace.mapper.FeedbackMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
@@ -48,6 +52,7 @@ public class DeviceService {
     private final DeviceViewService deviceViewService;
     private final ParamService paramService;
     private final OperationLogService logService;
+    private final FeedbackMapper feedbackMapper;
 
     public IPage<Device> page(long current, long size, Long brandId, Integer year, String keyword) {
         return page(current, size, brandId, null, year, keyword, null);
@@ -143,11 +148,17 @@ public class DeviceService {
     public List<Device> hot(int limit) {
         List<Device> result = new ArrayList<>();
         Set<Long> picked = new LinkedHashSet<>();
-        for (Long id : deviceViewService.hotDeviceIds(limit)) {
-            Device device = deviceMapper.selectById(id);
-            if (device != null && device.getStatus() != null && device.getStatus() == 1) {
-                result.add(device);
-                picked.add(id);
+        List<Long> hotIds = deviceViewService.hotDeviceIds(limit);
+        if (!hotIds.isEmpty()) {
+            // 一次批量取回再按 PV 顺序重排：原实现逐个 selectById，首页每次加载都是 1+N 次查询
+            Map<Long, Device> byId = deviceMapper.selectBatchIds(hotIds).stream()
+                    .filter(device -> device.getStatus() != null && device.getStatus() == 1)
+                    .collect(Collectors.toMap(Device::getId, device -> device, (a, b) -> a));
+            for (Long id : hotIds) {
+                Device device = byId.get(id);
+                if (device != null && picked.add(id)) {
+                    result.add(device);
+                }
             }
         }
         if (result.size() < limit) {
@@ -168,29 +179,94 @@ public class DeviceService {
     }
 
     /**
+     * 按「品牌名 + 机型名」定位库中已有记录；品牌或机型名为空返回 null。
+     *
+     * <p>抓取结果与人工录入的匹配口径：只去首尾空格，大小写按原样比对。
+     * 采集链路（审核入库、系列发现去重）与审核落库都走这里，避免各写一套匹配规则。</p>
+     */
+    public Device findByName(String brandName, String modelName) {
+        if (!StringUtils.hasText(brandName) || !StringUtils.hasText(modelName)) {
+            return null;
+        }
+        Brand brand = brandMapper.selectOne(Wrappers.<Brand>lambdaQuery()
+                .eq(Brand::getName, brandName.trim())
+                .last("LIMIT 1"));
+        if (brand == null) {
+            return null;
+        }
+        return findByName(brand.getId(), modelName);
+    }
+
+    public Device findByName(Long brandId, String modelName) {
+        if (brandId == null || !StringUtils.hasText(modelName)) {
+            return null;
+        }
+        return deviceMapper.selectOne(Wrappers.<Device>lambdaQuery()
+                .eq(Device::getBrandId, brandId)
+                .eq(Device::getName, modelName.trim())
+                .last("LIMIT 1"));
+    }
+
+    /**
      * 机型详情：主表 + 参数值（paramKey -> value）+ 字段级溯源 + 最后更新时间 + 系列归属。
      * paramMeta 与 params 并行返回，避免改变既有参数结构导致管理端编辑表单失效。
      */
     @Cacheable(cacheNames = CacheConfig.DEVICE_DETAIL, key = "#id")
-    public Map<String, Object> detail(Long id) {
+    public DeviceDetailVO detail(Long id) {
         Device device = deviceMapper.selectById(id);
         if (device == null) {
-            throw new BizException("机型不存在");
+            throw new NotFoundException("机型不存在");
         }
         Brand brand = brandMapper.selectById(device.getBrandId());
         List<DeviceParamValue> values = rawParamValues(id);
         Map<Long, ParamDef> defMap = defMap();
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("device", device);
-        result.put("brand", brand);
-        result.put("series", seriesOf(device));
-        result.put("seriesDevices", seriesDevicesOf(device));
-        result.put("params", toParamValues(values, defMap));
-        result.put("paramMeta", toParamMeta(values, defMap));
-        result.put("lastUpdated", lastUpdated(device, values));
-        result.put("variants", variantsOf(id));
-        return result;
+        DeviceDetailVO vo = new DeviceDetailVO();
+        vo.setDevice(device);
+        vo.setBrand(brand);
+        vo.setSeries(seriesOf(device));
+        vo.setSeriesDevices(seriesDevicesOf(device));
+        vo.setParams(toParamValues(values, defMap));
+        vo.setParamMeta(toParamMeta(values, defMap));
+        vo.setLastUpdated(lastUpdated(device, values));
+        vo.setVariants(variantsOf(id));
+        vo.setParamFeedback(openFeedbackCounts(id));
+        return vo;
+    }
+
+    /**
+     * 各参数待核实的反馈数（T97）：只统计 OPEN 状态，处理完自然从页面消失。
+     *
+     * <p>挂在详情缓存里一起算，反馈提交与处理时由 FeedbackService 失效该机型缓存——
+     * 否则访客提交完仍看不到「N 人待核实」，管理员处理完徽标也不会消失。</p>
+     */
+    private Map<String, Integer> openFeedbackCounts(Long deviceId) {
+        List<Map<String, Object>> rows = feedbackMapper.selectMaps(new QueryWrapper<Feedback>()
+                .select("param_key AS param_key", "COUNT(*) AS cnt")
+                .eq("device_id", deviceId)
+                .eq("status", "OPEN")
+                .isNotNull("param_key")
+                .groupBy("param_key"));
+        return toFeedbackCounts(rows);
+    }
+
+    /**
+     * 聚合行转 paramKey -> 计数。
+     *
+     * <p>单独拆出是因为 selectMaps 的 COUNT 类型随驱动变化（Integer / Long / BigDecimal 都见过），
+     * 且脏数据里可能残留空 key——这两点直接决定前端能否匹配到参数行，值得脱离 DB 锁死。</p>
+     */
+    static Map<String, Integer> toFeedbackCounts(List<Map<String, Object>> rows) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            Object key = row.get("param_key");
+            Object count = row.get("cnt");
+            if (key == null || String.valueOf(key).isBlank() || !(count instanceof Number number)) {
+                continue;
+            }
+            counts.put(String.valueOf(key), number.intValue());
+        }
+        return counts;
     }
 
     /** 机型所属系列，未归类返回 null，前端据此隐藏系列条。 */

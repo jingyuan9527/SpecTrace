@@ -24,6 +24,14 @@ public interface DeviceViewDailyMapper extends BaseMapper<DeviceViewDaily> {
             """)
     int upsertIncrement(@Param("deviceId") Long deviceId, @Param("viewDate") String viewDate);
 
+    /** 按批次增量累加：定时 flush 一次写一条，替代每次访问一条 UPDATE。 */
+    @Insert("""
+            INSERT INTO device_view_daily (device_id, view_date, pv) VALUES (#{deviceId}, #{viewDate}, #{delta})
+            ON CONFLICT(device_id, view_date) DO UPDATE SET pv = pv + #{delta}
+            """)
+    int upsertIncrementBy(@Param("deviceId") Long deviceId, @Param("viewDate") String viewDate,
+                          @Param("delta") int delta);
+
     /** 近窗口期浏览量最高的机型 id，按 PV 倒序；无数据返回空列表，由调用方回落旧口径。 */
     @Select("""
             SELECT device_id FROM device_view_daily

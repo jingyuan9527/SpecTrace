@@ -2,7 +2,7 @@ package com.spectrace.controller;
 
 import com.spectrace.common.R;
 import com.spectrace.dto.BadgeVO;
-import com.spectrace.service.AgentTaskService;
+import com.spectrace.service.AgentReviewService;
 import com.spectrace.service.FeedbackService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -23,13 +23,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminBadgeController {
 
     private final FeedbackService feedbackService;
-    private final AgentTaskService agentTaskService;
+    private final AgentReviewService agentReviewService;
 
     @Operation(summary = "侧栏徽标计数")
     @GetMapping
     public R<BadgeVO> badges() {
         return R.ok(BadgeVO.of(feedbackService.countOpen(),
-                agentTaskService.countPendingReview(),
-                agentTaskService.oldestPendingHours()));
+                agentReviewService.countPendingReview(),
+                agentReviewService.oldestPendingHours()));
     }
 }

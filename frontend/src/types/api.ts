@@ -524,6 +524,8 @@ export interface DeviceDetail {
   paramMeta: Record<string, ParamMeta>
   lastUpdated?: string | null
   variants: DeviceVariant[]
+  /** paramKey -> 待核实（OPEN）反馈数，无反馈的参数不出现 */
+  paramFeedback?: Record<string, number>
 }
 
 export interface CompareParam {

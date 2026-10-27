@@ -2,19 +2,17 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Activity, Bot, CloudDownload, Loader2, RefreshCw } from '@lucide/vue'
-import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
-import type { AiModel, Brand, DataHealth, DataHealthMissingDevice, DeviceSeries } from '@/types/api'
+import type { Brand, DataHealth, DataHealthMissingDevice, DeviceSeries } from '@/types/api'
 import PageHeader from '@/components/PageHeader.vue'
+import ScrapeModelDialog from '@/components/admin/ScrapeModelDialog.vue'
+import { useScrapeDispatch } from '@/composables/useScrapeDispatch'
 import {
   Badge,
   Button,
   Card,
   CardContent,
-  Combobox,
-  Dialog,
   Empty,
-  Label,
   Select,
   Skeleton,
   Table,
@@ -73,48 +71,37 @@ watch(brandId, async () => {
 watch(seriesId, load)
 
 // ---- 缺参机型补抓：行级单台与批量（当前排行可见项）共用一个弹窗 ----
-const scrapeDialog = ref(false)
-const scrapeTargets = ref<DataHealthMissingDevice[]>([])
-const scrapeModelId = ref<number | null>(null)
-const scrapeSubmitting = ref(false)
-const aiModels = ref<AiModel[]>([])
+const {
+  open: scrapeOpen,
+  targets: scrapeTargets,
+  loading: scrapeLoading,
+  submitting: scrapeSubmitting,
+  modelId: scrapeModelId,
+  modelOptions: scrapeModelOptions,
+  title: scrapeTitle,
+  description: scrapeDescription,
+  meta: scrapeMeta,
+  emptyText: scrapeEmptyText,
+  submitText: scrapeSubmitText,
+  start: startScrape,
+  confirm: confirmScrape,
+} = useScrapeDispatch({ onSubmitted: load })
 
-const scrapeModelOptions = computed(() =>
-  aiModels.value.map((m) => ({
-    label: `${m.configName} / ${m.model}${m.isDefault === 1 ? '（默认）' : ''}`,
-    value: m.id,
-  })),
-)
-
-async function openScrape(rows: DataHealthMissingDevice[]) {
+function openScrape(rows: DataHealthMissingDevice[]) {
   if (!rows.length) return
-  scrapeTargets.value = rows
-  scrapeDialog.value = true
-  if (!aiModels.value.length) {
-    aiModels.value = await adminApi.aiModels()
-  }
-  const def = aiModels.value.find((m) => m.isDefault === 1)
-  scrapeModelId.value = def?.id ?? null
-}
-
-async function confirmScrape() {
-  if (!scrapeTargets.value.length || scrapeSubmitting.value) return
-  scrapeSubmitting.value = true
-  try {
-    // 逐台顺序提交，与机型页 / 系列页的批量抓取一致，避免一次并发打满任务队列
-    for (const target of scrapeTargets.value) {
-      await adminApi.createAgentTask({
-        modelName: target.name,
-        brandName: target.brandName ?? '',
-        aiModelId: scrapeModelId.value ?? undefined,
-      })
-    }
-    toast.success(`已提交 ${scrapeTargets.value.length} 个抓取任务，结果将进入待审核`)
-    scrapeDialog.value = false
-    await load()
-  } finally {
-    scrapeSubmitting.value = false
-  }
+  startScrape({
+    targets: rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      brandName: row.brandName ?? '',
+      status: row.status,
+    })),
+    title: '发起抓取',
+    description: '对选中的缺参机型发起抓取，结果进入待审核',
+    meta: 'status',
+    emptyText: '当前筛选下没有缺参机型',
+    submitLabel: () => '提交抓取',
+  })
 }
 </script>
 
@@ -269,45 +256,21 @@ async function confirmScrape() {
       </Card>
     </template>
 
-    <Dialog
-      v-model:open="scrapeDialog"
-      title="发起抓取"
-      description="对选中的缺参机型发起抓取，结果进入待审核"
-      class="max-w-md"
-    >
-      <div class="space-y-4">
-        <div class="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
-          <div
-            v-for="target in scrapeTargets"
-            :key="target.id"
-            class="flex items-center justify-between gap-2 px-1 py-0.5 text-sm"
-          >
-            <span class="min-w-0 truncate font-medium" :title="target.name">{{ target.name }}</span>
-            <Badge :variant="target.status === 1 ? 'secondary' : 'outline'">
-              {{ target.status === 1 ? '已上架' : '草稿' }}
-            </Badge>
-          </div>
-        </div>
-        <div class="space-y-1.5">
-          <Label>AI 模型（可选）</Label>
-          <Combobox
-            v-model="scrapeModelId"
-            :options="scrapeModelOptions"
-            placeholder="默认模型"
-            search-placeholder="搜索供应商 / 模型…"
-          />
-          <p class="text-xs text-muted-foreground">
-            选项为「供应商连接 / 模型名」，不选择时使用后台设置的默认模型
-          </p>
-        </div>
-      </div>
-      <template #footer>
-        <Button variant="outline" :disabled="scrapeSubmitting" @click="scrapeDialog = false">取消</Button>
-        <Button :disabled="scrapeSubmitting" @click="confirmScrape">
-          <Loader2 v-if="scrapeSubmitting" class="animate-spin" />
-          提交抓取
-        </Button>
-      </template>
-    </Dialog>
+    <ScrapeModelDialog
+      :open="scrapeOpen"
+      :title="scrapeTitle"
+      :description="scrapeDescription"
+      :targets="scrapeTargets"
+      :loading="scrapeLoading"
+      :submitting="scrapeSubmitting"
+      :model-id="scrapeModelId"
+      :model-options="scrapeModelOptions"
+      :meta="scrapeMeta"
+      :empty-text="scrapeEmptyText"
+      :submit-text="scrapeSubmitText"
+      @update:open="scrapeOpen = $event"
+      @update:model-id="scrapeModelId = $event"
+      @confirm="confirmScrape"
+    />
   </div>
 </template>

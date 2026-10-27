@@ -19,7 +19,9 @@ import {
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
 import { usePagedList } from '@/composables/usePagedList'
-import type { AiModel, ParamDef } from '@/types/api'
+import { useScrapeDispatch } from '@/composables/useScrapeDispatch'
+import type { ParamDef } from '@/types/api'
+import ScrapeModelDialog from '@/components/admin/ScrapeModelDialog.vue'
 import {
   Badge,
   Button,
@@ -162,14 +164,12 @@ watch(
 )
 
 onMounted(async () => {
-  ;[brands.value, seriesList.value, groups.value, defs.value, aiModels.value] = await Promise.all([
+  ;[brands.value, seriesList.value, groups.value, defs.value] = await Promise.all([
     adminApi.brands(),
     // 系列是可选归类维度，接口异常时退化为「无系列」，不能让机型表单整体崩掉
     adminApi.series().catch(() => [] as any[]),
     adminApi.paramGroups(),
     adminApi.paramDefs(),
-    // 抓取弹窗的模型下拉；未配置 AI 时为空列表，抓取走默认模型
-    adminApi.aiModels().catch(() => [] as AiModel[]),
   ])
   seriesList.value ??= []
   await load()
@@ -404,19 +404,27 @@ async function confirmAssign() {
 // ---------- 抓取详情与批量上/下架 ----------
 // 抓取发起前弹窗确认：可切换供应商连接与模型（任务页的表单自带模型下拉，这里补齐机型页入口）
 const selectedIds = ref<number[]>([])
-const aiModels = ref<AiModel[]>([])
-const scrapeDialog = ref(false)
-const scrapeTargets = ref<any[]>([])
-const scrapeModelId = ref<number | null>(null)
-const scrapeSubmitting = ref(false)
 const statusUpdating = ref(false)
 
-const scrapeModelOptions = computed(() =>
-  aiModels.value.map((m) => ({
-    label: `${m.configName} / ${m.model}${m.isDefault === 1 ? '（默认）' : ''}`,
-    value: m.id,
-  })),
-)
+const {
+  open: scrapeOpen,
+  targets: scrapeTargets,
+  submitting: scrapeSubmitting,
+  modelId: scrapeModelId,
+  modelOptions: scrapeModelOptions,
+  title: scrapeTitle,
+  description: scrapeDescription,
+  meta: scrapeMeta,
+  emptyText: scrapeEmptyText,
+  submitText: scrapeSubmitText,
+  start: startScrape,
+  confirm: confirmScrape,
+} = useScrapeDispatch({
+  // 提交成功后清空勾选：再点批量抓取时不该还带着上次的机型
+  onSubmitted: () => {
+    selectedIds.value = []
+  },
+})
 
 const allPageSelected = computed(
   () => list.value.length > 0 && list.value.every((row: any) => selectedIds.value.includes(row.id)),
@@ -436,37 +444,21 @@ function togglePage(checked: boolean) {
   selectedIds.value = checked ? list.value.map((row: any) => row.id) : []
 }
 
-async function loadAiModels() {
-  aiModels.value = await adminApi.aiModels()
-}
-
 /** 打开抓取确认弹窗：单台（行按钮）与批量（勾选）共用。 */
 function openScrape(rows: any[]) {
   if (!rows.length) return
-  scrapeTargets.value = rows
-  const def = aiModels.value.find((m) => m.isDefault === 1)
-  scrapeModelId.value = def?.id ?? null
-  scrapeDialog.value = true
-}
-
-async function confirmScrape() {
-  if (!scrapeTargets.value.length || scrapeSubmitting.value) return
-  scrapeSubmitting.value = true
-  try {
-    // 逐台顺序提交，避免一次并发打满任务队列
-    for (const row of scrapeTargets.value) {
-      await adminApi.createAgentTask({
-        modelName: row.name,
-        brandName: brandName(row.brandId),
-        aiModelId: scrapeModelId.value ?? undefined,
-      })
-    }
-    toast.success(`已提交 ${scrapeTargets.value.length} 个抓取任务，结果将进入待审核`)
-    scrapeDialog.value = false
-    selectedIds.value = []
-  } finally {
-    scrapeSubmitting.value = false
-  }
+  startScrape({
+    targets: rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      brandName: brandName(row.brandId),
+      status: row.status,
+    })),
+    title: '发起抓取',
+    description: `共 ${rows.length} 台机型，提交后由采集 Agent 检索参数，结果进入待审核`,
+    meta: 'brand',
+    emptyText: '没有可抓取的机型',
+  })
 }
 
 async function batchUpdateStatus(status: 0 | 1) {
@@ -1003,44 +995,21 @@ function rowMessages(row: any) {
       </template>
     </Dialog>
 
-    <Dialog
-      v-model:open="scrapeDialog"
-      title="发起抓取"
-      :description="`共 ${scrapeTargets.length} 台机型，提交后由采集 Agent 检索参数，结果进入待审核`"
-      class="max-w-md"
-    >
-      <div class="space-y-4">
-        <div class="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
-          <div
-            v-for="row in scrapeTargets"
-            :key="row.id"
-            class="flex items-center justify-between gap-2 px-1 py-0.5 text-sm"
-          >
-            <span class="min-w-0 truncate font-medium" :title="row.name">{{ row.name }}</span>
-            <span class="shrink-0 text-xs text-muted-foreground">{{ brandName(row.brandId) }}</span>
-          </div>
-        </div>
-        <div class="space-y-1.5">
-          <Label>AI 模型（可选）</Label>
-          <Combobox
-            v-model="scrapeModelId"
-            :options="scrapeModelOptions"
-            placeholder="默认模型"
-            search-placeholder="搜索供应商 / 模型…"
-          />
-          <p class="text-xs text-muted-foreground">
-            选项为「供应商连接 / 模型名」，不选择时使用后台设置的默认模型
-          </p>
-        </div>
-      </div>
-      <template #footer>
-        <Button variant="outline" :disabled="scrapeSubmitting" @click="scrapeDialog = false">取消</Button>
-        <Button :disabled="scrapeSubmitting" @click="confirmScrape">
-          <Loader2 v-if="scrapeSubmitting" class="animate-spin" />
-          {{ scrapeSubmitting ? '提交中…' : `提交 ${scrapeTargets.length} 个任务` }}
-        </Button>
-      </template>
-    </Dialog>
+    <ScrapeModelDialog
+      :open="scrapeOpen"
+      :title="scrapeTitle"
+      :description="scrapeDescription"
+      :targets="scrapeTargets"
+      :submitting="scrapeSubmitting"
+      :model-id="scrapeModelId"
+      :model-options="scrapeModelOptions"
+      :meta="scrapeMeta"
+      :empty-text="scrapeEmptyText"
+      :submit-text="scrapeSubmitText"
+      @update:open="scrapeOpen = $event"
+      @update:model-id="scrapeModelId = $event"
+      @confirm="confirmScrape"
+    />
 
     <ConfirmDialog
       :open="!!deleteTarget"

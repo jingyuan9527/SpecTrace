@@ -387,6 +387,8 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
           screen_size: { paramDefId: 3, sourceUrl: 'https://example.com/spec', updatedAt: '2026-10-20T09:00:00' },
           battery_capacity: { paramDefId: 11, updatedAt: '2026-10-20T09:00:00' },
         },
+        // 屏幕尺寸造 2 条待核实反馈，覆盖参数行「N 人待核实」灰标
+        paramFeedback: { screen_size: 2 },
         lastUpdated: '2026-10-20T09:00:00',
         variants: [{ id: 1, storage: '256GB', price: 5999, currency: 'CNY', priceType: 'LAUNCH' }],
       })

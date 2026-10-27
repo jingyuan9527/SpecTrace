@@ -56,30 +56,29 @@ public class QualityMetricsService {
         return vo;
     }
 
-    /** 反馈量表受保留策略约束（已处理 30 天滚动清理），全量载入分组足够小。 */
+    /**
+     * 被报错最多的参数 TOP10：分组下推给 SQL。
+     *
+     * <p>反馈表虽受保留策略约束，但监控页每分钟可能被刷新，全表载入的代价随站点增长只会更差。</p>
+     */
     private List<FeedbackParamStat> topErrorParams() {
-        Map<String, FeedbackParamStat> byParam = new LinkedHashMap<>();
-        for (Feedback feedback : feedbackMapper.selectList(Wrappers.<Feedback>lambdaQuery()
-                .select(Feedback::getParamKey, Feedback::getParamName))) {
-            String key = feedback.getParamKey() == null ? "整机" : feedback.getParamKey();
-            FeedbackParamStat stat = byParam.computeIfAbsent(key, k -> {
-                FeedbackParamStat created = new FeedbackParamStat();
-                created.setParamKey(k);
-                return created;
-            });
-            stat.setCount(stat.getCount() + 1);
-            if (stat.getParamName() == null && feedback.getParamName() != null) {
-                stat.setParamName(feedback.getParamName());
-            }
-        }
-        return byParam.values().stream()
-                .sorted((a, b) -> Long.compare(b.getCount(), a.getCount()))
-                .limit(10)
-                .peek(stat -> {
-                    if (stat.getParamName() == null) {
-                        stat.setParamName(stat.getParamKey());
-                    }
-                })
-                .toList();
+        List<Map<String, Object>> rows = feedbackMapper.selectMaps(
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<Feedback>()
+                        .select("COALESCE(param_key, '整机') AS param_key",
+                                "MAX(param_name) AS param_name",
+                                "COUNT(*) AS cnt")
+                        .groupBy("COALESCE(param_key, '整机')")
+                        .orderByDesc("cnt")
+                        .last("LIMIT 10"));
+        return rows.stream().map(row -> {
+            String key = row.get("param_key") == null ? "整机" : String.valueOf(row.get("param_key"));
+            FeedbackParamStat stat = new FeedbackParamStat();
+            stat.setParamKey(key);
+            Object name = row.get("param_name");
+            stat.setParamName(name == null ? key : String.valueOf(name));
+            Object count = row.get("cnt");
+            stat.setCount(count instanceof Number number ? number.longValue() : 0L);
+            return stat;
+        }).toList();
     }
 }

@@ -1326,7 +1326,7 @@
 | T94 | 热门口径稳定性观察 | 观察 | ⬜ | 上线两周后核对 hot 排序是否符合直觉、回落逻辑是否频繁触发 |
 | T95 | 采集搜索源真实验证（T63 遗留） | 验证 | ⬜ | 生产配好 Tavily/SearXNG 后用「测试」按钮验通并记录延迟 |
 | T96 | 模型挂死快速失败复核（T61/T62 遗留） | 观察 | ⬜ | 生产再遇挂死模型记录现象，必要时升级 AgentScope 重测 |
-| T97 | 详情页参数行「N 条待核实」（T83 遗留） | 开发 | ⬜ | 同机型 OPEN 反馈数聚合到参数行，访客可见数据存疑提示 |
+| T97 | 详情页参数行「N 条待核实」（T83 遗留） | 开发 | ✅ | 同机型 OPEN 反馈数按参数聚合到参数行，访客可见数据存疑提示 |
 | T98 | 发布前真机 / 读屏人工复核（T26/T34 遗留） | 人工 | ⬜ | 每次发布前走查键盘路径与读屏，自动化替代不了 |
 
 ### T91 订阅发现关键词效果验证（观察）
@@ -1360,10 +1360,13 @@
 **背景**：`MODEL_TIMEOUT_SECONDS=90` 在挂死端点场景曾观察不到快速失败（疑似框架内部重试或未走 transport 配置），当前靠任务级 300s 兜底。
 **动作**：生产遇到「超时且无工具调用日志」的任务时，记录模型名与现象；若高频出现，升级 AgentScope 版本后用挂死端点重测 transport 超时链路。
 
-### T97 详情页参数行「N 条待核实」（开发，T83 遗留）
+### T97 详情页参数行「N 条待核实」（开发，T83 遗留）✅
 
 **改动**：详情接口对带参数的行附带该机型 OPEN 状态反馈数（`feedback` 按 device_id + status 聚合，可挂进现有 detail 缓存失效链）；前端参数行 meta 区显示「N 人待核实」灰标。访客提交反馈后立即可见自己不是一个人在报，管理员处理完自然消失。
 **预估**：0.5 天（后端聚合 + 前端一行展示）。
+
+**已完成（2026-10-27）**：`DeviceDetailVO.paramFeedback` 返回「paramKey → OPEN 反馈数」，`openFeedbackCounts` 按 `device_id + status=OPEN + param_key` 分组计数，空 key 与非数字计数直接跳过；计数随 `detail` 进缓存，提交反馈按机型 evict、处理反馈全量 evict，故访客提交后即时可见、管理员处理后即时消失；详情页参数行 meta 区展示「N 人待核实」灰标（`title` 给出完整说明），提交成功后本地自增而非重拉整页，保住滚动位置。
+**验证**：`DeviceServiceTest` 3 例锁住 selectMaps 计数类型兼容（Integer/Long/BigDecimal）与脏行跳过；`mvn test` 49 例全绿、typecheck / build 通过、全量 e2e 27 passed / 2 skipped（`series-connection` 补灰标断言：屏幕尺寸显示 2 人待核实、芯片行不显示）。
 
 ### T98 发布前真机 / 读屏人工复核（人工，T26/T34 遗留）
 
@@ -1452,6 +1455,56 @@
 
 **改动**：系统运维页新增：SQLite 文件大小、备份耗时趋势、磁盘剩余、JVM 堆/线程（Micrometer）、图片下载队列数。
 **预估**：1 天
+
+---
+
+## P17 · 上线安全与容错（2026-10-27 完成）
+
+> 来源：全量代码复盘后的 P0 三条（安全底线、白屏兜底、主链路错误分型）。验证：`mvn test` 44 例全绿、`npm run typecheck` / `build`、`npx playwright test` 27 passed / 2 skipped；真实后端冒烟——`/api/public/devices/999999` 返回 HTTP 404 且 body `code=404`，正常机型仍 200；`/api/public/compare?ids=abc` 返回「错误编号 3ea3b77fff59」，日志同一编号带 `/api/public/compare` 与堆栈。T120 补齐状态码后复跑：`mvn test` 46 例全绿。
+
+| 任务 | 状态 | 落地要点 |
+| --- | --- | --- |
+| T108 JWT 密钥无默认值 | ✅ | `docker-compose.yml` 改 `${JWT_SECRET:?...}`（缺失或为空 compose 直接退出），`.env.example` 留空并注明必填，README 部署段同步；补上「compose 默认值绕过后端拒绝启动」这道缺口 |
+| T109 异常信息不回流客户端 | ✅ | `handleOther` 只回「服务器内部错误（错误编号 xxx）」，traceId 同时写进日志与响应；新增单测断言 message 不含 SQL / 字段名 |
+| T110 404 语义与详情页错误分型 | ✅ | 新增 `NotFoundException`（回真实 404），`DeviceService.detail` 改抛它；详情页拆出 `loadError` 态与重试，参数元数据加载失败只降级参数区、不再整页判成「机型不存在」；顺带修同路由换机型（系列条互跳）不重载——组件被复用后 URL 变了内容没变，e2e 补断言锁住 |
+| T111 前端渲染期兜底 | ✅ | 新增 `AppErrorBoundary`（`onErrorCaptured` + 重建子树重试，路由切换复位）、`app.config.errorHandler` 兜边界外异常、`router.onError` 处理发版后 chunk 失效（10 秒窗口内只自动刷新一次） |
+| T120 异常统一真实状态码 | ✅ | `handleBiz` 按 code 回真实 4xx/5xx（非 HTTP 码回退 400）、`handleValid` / `handleTypeMismatch` / `handleUnreadable` 回 400、`handleOther` 回 500，body 结构不变；前端拦截器本就按 `error.response.data.message` 取提示，无需改动；单测补 400/500 状态断言 |
+
+**遗留已清零**：此前业务异常一律 HTTP 200 + `body.code`，网关 5xx 告警、APM 错误率与日志巡检都读不到失败，已由 T120 统一。
+
+---
+
+## P18 · AgentTaskService 拆分（2026-10-27 完成）
+
+> 来源：`AgentTaskService` 1160 行承担任务调度、回调落库、待审核读取、审核入库、风险打分、系列发现六类职责，且是全站最需要稳定、测试覆盖最薄的模块。本轮只搬不改，行为零变更。
+
+| 任务 | 状态 | 落地要点 |
+| --- | --- | --- |
+| T112 按职责拆四类 + 状态写入器 | ✅ | `AgentTaskService` 369 行（提交/重试/列表/重启恢复/系列发现）、`AgentCallbackService` 235 行（回调落库与幂等覆盖）、`AgentReviewService` 533 行（待审核读与审、风险打标）、`AgentTaskStatusService` 38 行（状态唯一写入口）；调用点同步切分：`AdminAgentController` / `AdminBadgeController` / `AdminDeviceController` / `CollectorWorker` / `MetricsAlertService` |
+| T113 机型匹配下沉 | ✅ | `DeviceService.findByName` 两个重载承接「品牌名+机型名 → 已有机型」，审核覆盖判断与系列发现去重共用一套口径，不再各写一份查询 |
+| T114 采集日期解析共用 | ✅ | 抽出 `CollectedDate.parse`，审核入库与系列建档共用；解析失败降级为空值且留 warn 日志 |
+| T115 测试随迁 | ✅ | `AgentTaskServiceApproveTest` → `AgentReviewServiceApproveTest`（原文件已删除，用例与会话断言不变，仅把机型查找的桩点改到 `DeviceService.findByName`） |
+
+**未再细拆的原因**：`AgentReviewService` 533 行虽超过「300 行量级」，但仍是「待审核」单一职责；读侧的风险打标与写侧的置信度收敛共用同一套置信度/单位解析，按读写再拆会形成双向调用。如后续审核规则继续增长，再考虑把「风险预审」抽为独立评估器。
+
+**验证**：`mvn test` 44 例全绿；打包后以临时库真实启动（无循环依赖），登录后验证——新建任务返回 QUEUED 且列表可见；`/api/admin/pending-data` 风险排序与非排序两条分支均正常；`/api/admin/devices` 待审核徽标计数正常；对种子待审核数据真实执行审核通过，生成 deviceId=7、待审核置 APPROVED、公开详情页 200、`badges.pendingReview` 归零。
+
+---
+
+## P19 · 抓取入口归一 && Series 页拆分（2026-10-27 完成）
+
+> 来源：`Series.vue` 998 行并列 7 个场景；「选模型 → 批量抓取」在机型页 / 数据健康度 / 系列页各写一遍，文案与默认模型选择逐渐分叉。
+
+| 任务 | 状态 | 落地要点 |
+| --- | --- | --- |
+| T116 抓取弹窗三合一 | ✅ | 新增 `ScrapeModelDialog`（目标列表 + 模型下拉 + 提交）与 `useScrapeDispatch`（状态、默认模型、逐台顺序提交、成功提示）；三处入口只保留「目标归一 + 文案」；健康度保留「提交抓取」按钮文案，系列页保留「已为「X」提交 N 个任务」提示 |
+| T117 AI 模型选项缓存 | ✅ | `useAiModels` 进程内缓存 60s + 请求去重，替代系列页三处 `aiModels.value.length ? ... : adminApi.aiModels()`；加载失败降级为空列表（仍可用后台默认模型），不阻断弹窗 |
+| T118 Series 页拆分 | ✅ | 998 → 557 行；抽出 `SeriesDevicesSheet`（230）、`SeriesSuggestDialog`（143）、`SeriesSubscriptionDialog`（114）、`SeriesMergeDialog`（71）；页面只保留列表、未归类清单、编辑表单与删除确认，子组件变更通过 `changed/merged/created` 事件回传刷新 |
+| T119 机型页首屏减负 | ✅ | 模型下拉改为按需加载（打开弹窗时拉），机型页首屏少一次请求；提交成功后仍清空勾选 |
+
+**行为差异（有意）**：系列页抓取弹窗改为「先开弹窗、目标与模型并行加载」，原来要先等两个请求返回再打开；慢网络下用户能立刻看到反馈，代价是弹窗内会先出现骨架。
+
+**验证**：`npm run typecheck`、`npm run build` 通过；`playwright test admin-quality + series-connection + admin` 17 例全绿（含订阅、重抓、补抓、AI 推荐相关链路）。T97 交付后已补跑全量套件：27 passed / 2 skipped（2026-10-27），此处缺口已闭环。
 
 ---
 

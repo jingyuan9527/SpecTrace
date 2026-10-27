@@ -18,6 +18,8 @@ test('访客：详情页系列条与参数走势入口', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'iPhone 17 iPhone 17 2025' })).toBeDisabled()
   await page.getByRole('button', { name: 'iPhone 16 iPhone 16 2024' }).click()
   await expect(page).toHaveURL(/\/devices\/4/)
+  // 同路由换机型必须重新加载：否则 URL 变了、页面还停在上一台
+  await expect(page.getByRole('heading', { level: 1, name: 'iPhone 16' })).toBeVisible()
 
   // 系列趋势入口直达该系列的跨代视图（挂载后 URL 会补全 brandId/paramDefIds 等）
   await page.goto('/devices/7')
@@ -27,6 +29,9 @@ test('访客：详情页系列条与参数走势入口', async ({ page }) => {
   // 数值参数行带走势入口，点击后趋势页聚焦到该参数
   await page.goto('/devices/7')
   const screenRow = page.getByRole('row', { name: /屏幕尺寸/ })
+  // T97：待核实灰标只在详情页存在，点击跳走后 locator 会落到趋势页，必须先断言
+  await expect(screenRow.getByText('2 人待核实')).toBeVisible()
+  await expect(page.getByRole('row', { name: /芯片/ }).getByText(/人待核实/)).toHaveCount(0)
   await screenRow.getByRole('button', { name: '查看参数走势' }).click()
   await expect(page).toHaveURL(/\/trends\?.*seriesId=1&paramDefIds=3,11,18,2&paramDefId=3/)
   await expect(page.getByText('Apple · iPhone 数字系列')).toBeVisible()

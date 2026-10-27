@@ -6,6 +6,7 @@ import com.spectrace.common.R;
 import com.spectrace.dto.CompareInsightRequest;
 import com.spectrace.dto.CompareInsightVO;
 import com.spectrace.dto.CompareResultVO;
+import com.spectrace.dto.DeviceDetailVO;
 import com.spectrace.dto.DeviceSuggestVO;
 import com.spectrace.dto.EvolutionVO;
 import com.spectrace.dto.GenerationMatrixVO;
@@ -105,23 +106,23 @@ public class PublicController {
 
     @Operation(summary = "机型详情")
     @GetMapping("/devices/{id}")
-    public R<Map<String, Object>> detail(@PathVariable Long id) {
-        Map<String, Object> data = deviceService.detail(id);
-        // 浏览统计是尽力而为的旁路写入，失败只记日志不阻塞详情返回
-        deviceViewService.recordViews(List.of(id));
+    public R<DeviceDetailVO> detail(@PathVariable Long id, HttpServletRequest request) {
+        DeviceDetailVO data = deviceService.detail(id);
+        // 浏览统计只进内存缓冲：统计失败不该影响详情返回，也不该占用 SQLite 写锁
+        deviceViewService.recordViews(clientKey(request), List.of(id));
         return R.ok(data);
     }
 
     @Operation(summary = "机型对比")
     @GetMapping("/compare")
-    public R<CompareResultVO> compare(@RequestParam("ids") String ids) {
+    public R<CompareResultVO> compare(@RequestParam("ids") String ids, HttpServletRequest request) {
         List<Long> deviceIds = Arrays.stream(ids.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .map(Long::valueOf)
                 .toList();
         CompareResultVO result = deviceService.compare(deviceIds);
-        deviceViewService.recordViews(deviceIds);
+        deviceViewService.recordViews(clientKey(request), deviceIds);
         trafficMetricsService.recordCompare();
         return R.ok(result);
     }

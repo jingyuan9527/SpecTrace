@@ -6,8 +6,10 @@ import com.spectrace.dto.AgentCallbackRequest;
 import com.spectrace.dto.AgentTaskPayload;
 import com.spectrace.dto.ResolvedModel;
 import com.spectrace.entity.ParamDef;
+import com.spectrace.service.AgentCallbackService;
 import com.spectrace.service.AgentTaskLogService;
 import com.spectrace.service.AgentTaskService;
+import com.spectrace.service.AgentTaskStatusService;
 import com.spectrace.service.AiConfigService;
 import com.spectrace.service.ParamService;
 import com.spectrace.task.TaskQueue;
@@ -41,6 +43,8 @@ public class CollectorWorker implements ApplicationRunner {
     private final TaskQueue taskQueue;
     private final CollectService collectService;
     private final AgentTaskService agentTaskService;
+    private final AgentCallbackService agentCallbackService;
+    private final AgentTaskStatusService agentTaskStatusService;
     private final AgentTaskLogService taskLogService;
     private final AiConfigService aiConfigService;
     private final ParamService paramService;
@@ -105,7 +109,7 @@ public class CollectorWorker implements ApplicationRunner {
     }
 
     private void doHandle(AgentTaskPayload payload, long start) {
-        agentTaskService.markRunning(payload.getTaskId());
+        agentTaskStatusService.markRunning(payload.getTaskId());
 
         List<ParamDef> schemaDefs = paramService.listDefs(null, 1);
 
@@ -137,7 +141,7 @@ public class CollectorWorker implements ApplicationRunner {
         result.setDurationMs(System.currentTimeMillis() - start);
 
         try {
-            agentTaskService.handleCallback(result);
+            agentCallbackService.handleCallback(result);
             log.info("采集完成 taskId={} status={}", payload.getTaskId(), result.getStatus());
         } catch (Exception e) {
             log.error("写回采集结果失败 taskId={}，任务保持中间态，等待下次启动恢复", payload.getTaskId(), e);
@@ -155,7 +159,7 @@ public class CollectorWorker implements ApplicationRunner {
         result.setError(error);
         result.setDurationMs(System.currentTimeMillis() - start);
         try {
-            agentTaskService.handleCallback(result);
+            agentCallbackService.handleCallback(result);
             trackFailure(payload, result);
         } catch (Exception e) {
             log.error("失败状态落库失败 taskId={}", payload.getTaskId(), e);

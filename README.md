@@ -183,6 +183,8 @@ npm run dev
 2. 打开 `.env`，只改三项：`HTTP_PORT`、`SPECTRACE_DATA_DIR`、`JWT_SECRET`
 3. `docker compose up -d`
 
+> `JWT_SECRET` **无默认值**：留空或不填时 `docker compose` 会直接报错退出（不会带着示例串启动）。生成方式：`openssl rand -hex 32`。
+
 然后访问 `http://<服务器IP>:<HTTP_PORT>`，后台 `/admin/login`（默认 `admin / admin123`，首次登录会强制跳转改密页，不修改无法进入后台）。
 
 编排文件：
@@ -276,7 +278,7 @@ docker run -d --name spectrace-app -p 80:8080 \
 - **系列机型发现**：抓取任务按类型分流（`agent_task.task_type`）；「系列发现」用独立提示词只产出机型清单，勾选后批量创建草稿机型（`status=0`），机型管理页支持行级与批量「抓取详情」（提交前可选供应商与模型）、勾选批量上架 / 下架，审核通过复用既有覆盖逻辑自动上架；清单项自动标注库中已存在的同名机型，创建幂等。
 - **AI 连接与模型集中管理**：后台「AI 配置」维护多个供应商连接（服务商 / 接口地址 / API Key），支持**拉取远端模型列表**批量导入、导入多个模型并设置默认；创建抓取任务时可指定具体模型，缺省用默认模型。Agent 每任务解析并构建大模型（DashScope 原生或 OpenAI 兼容端点，兼容 DeepSeek / Kimi / vLLM / Ollama）。
 - **LLM 抽取约束**：Agent 系统提示强制按 `param_def` 定义的 `param_key` 输出 JSON，并对未知键做丢弃清洗。
-- **字段级溯源**：`device_param_value` 记录 `source_url` / `confidence` / `updated_at`，审核通过时把抓取来源写入对应参数值；人工修正会清空来源并把更新时间刷新。详情页逐行展示来源、置信度与更新时间，页头展示机型最后更新时间；参数更新时间超过 180 天的行与页头显示「可能过期」提示（T87，OTA / 调价都会让旧值失真）。
+- **字段级溯源**：`device_param_value` 记录 `source_url` / `confidence` / `updated_at`，审核通过时把抓取来源写入对应参数值；人工修正会清空来源并把更新时间刷新。详情页逐行展示来源、置信度与更新时间，页头展示机型最后更新时间；参数更新时间超过 180 天的行与页头显示「可能过期」提示（T87，OTA / 调价都会让旧值失真）。同一参数被访客反馈纠错的条数会聚合为「N 人待核实」灰标（T97）：访客提交后即时可见，管理员处理完自动消失，不做无来源的猜测提示。
 - **置信度链路**：Agent 输出可选 `paramConfidence`（参数级 0~1），缺省时回落到整次抓取的 `confidence`（high/medium/low 映射为 0.9/0.7/0.4）；审核页对低于 60% 的参数标注「建议核实」，管理员改过的参数按人工确认处理、清掉置信度。
 - **参数值单位解析**：`6.1英寸`、`3600mAh`、`1TB` 这类取值会拆出数值与单位，同量纲（长度/存储/电池/重量/频率/功率）自动换算到参数定义的单位后再对比；量纲不一致或无单位定义时，历史图表提示冲突并按原值展示，导入预览与审核页也会给出警告。
 - **产品图采集本地化**（T90）：Agent 输出可选 `imageUrl`（官方产品图直链）；审核页预览确认后通过——**与主流程完全解耦**：审核事务内零网络请求，只落待下载 URL，由独立单线程在提交后异步下载（文件头校验 / 大小上限 / 15s 超时），失败只清标记保留占位图并写日志，不重试不阻塞；已有真实上传图不覆盖，启动时自动恢复中断的下载队列，兜底是手动上传。
@@ -314,6 +316,9 @@ docker run -d --name spectrace-app -p 80:8080 \
 - 类型契约：前后端共享类型集中在 `frontend/src/types/api.ts`（以后端 VO 字段为准），`api/index.ts` 与各视图必须引用而非另写本地 interface；e2e 的 `mock-api.ts` 同样引用该文件，且未 mock 的接口会显式 404（不再静默返回 null），后端改字段名时 `typecheck`（含 `tsconfig.e2e.json`）会同时拦住前端与 mock
 - 图表与 AI 文案复用：ECharts 生命周期统一走 `src/composables/useECharts`（按 key 注册、容器重建自动重挂、resize/卸载自动处理），AI 摘要/回顾统一 `useInsight` + `InsightCard.vue`（available/failed/429 护栏语义收口一处），新页面不得再手写图表生命周期或复制文案卡片
 - 大体积依赖按需加载：`html2canvas` 与 `pinyin-pro` 词典均通过动态 `import()` 引入（截图导出与首次聚焦搜索时才加载），新增重依赖时保持同样的按需方式
+- 错误语义：资源确实不存在抛 `NotFoundException`（回真实 HTTP 404，如机型详情），其它未预期异常只回「错误编号」并在日志里按同一编号记堆栈——异常 message 含 SQL / 路径，不得回给客户端
+- 前端容错：渲染期异常由 `AppErrorBoundary` 兜住并降级为可重试提示，路由动态 import 失败（发版后旧 chunk 失效）自动刷新一次；新增页面不需要各自写兜底，但不要吞掉 `catch` 里的错误对象（打日志）
+- 抓取入口统一：机型管理 / 数据健康度 / 系列管理三处「选模型 → 批量提交抓取」共用 `ScrapeModelDialog` + `useScrapeDispatch`（模型选项走 `useAiModels` 的 60s 缓存）；新增抓取入口直接复用，不要再复制一份弹窗与提交循环
 - README 配图：`SHOTS=1 npx playwright test e2e/shots.spec.ts` 用 mock 数据重新生成 `docs/screenshots/` 下截图（默认与 CI 自动跳过）
 - 可访问性：键盘路径已由 e2e 覆盖——全程 Tab + Enter 可完成登录、新增品牌、新增机型、提交抓取与审核通过，弹窗打开后焦点自动进入、Esc 可关闭；真机与读屏环境的人工复核仍需发布前补一次，自动化无法替代
 - 表结构变更：新增列请同时改 `db/schema.sql` 与 `SqliteSchemaMigration`（老库靠后者补列）；**新列上的索引必须放在迁移里**，`schema.sql` 在 `CREATE TABLE IF NOT EXISTS` 之后执行，老库此时还没有该列，索引语句会直接中断启动

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.spectrace.common.BizException;
+import com.spectrace.config.CacheConfig;
 import com.spectrace.dto.FeedbackRequest;
 import com.spectrace.entity.Device;
 import com.spectrace.entity.Feedback;
@@ -12,6 +13,7 @@ import com.spectrace.mapper.DeviceMapper;
 import com.spectrace.mapper.FeedbackMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -46,6 +48,7 @@ public class FeedbackService {
     private final Map<String, Long> lastSubmitAt = new ConcurrentHashMap<>();
 
     @Transactional
+    @CacheEvict(cacheNames = CacheConfig.DEVICE_DETAIL, key = "#req.deviceId")
     public Long submit(FeedbackRequest req, String clientKey) {
         String suggested = trimTo(req.getSuggestedValue(), 512);
         String description = trimTo(req.getDescription(), MAX_TEXT);
@@ -115,6 +118,7 @@ public class FeedbackService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = CacheConfig.DEVICE_DETAIL, allEntries = true)
     public void updateStatus(Long id, String status, String note, Long adminId, String adminName) {
         if (!ALLOWED_STATUS.contains(status)) {
             throw new BizException("不支持的状态: " + status);
