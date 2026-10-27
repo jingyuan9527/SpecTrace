@@ -23,6 +23,7 @@ import {
   Card,
   CardContent,
   Checkbox,
+  DatePicker,
   Dialog,
   Empty,
   Input,
@@ -124,8 +125,8 @@ async function openReviewById(id: number): Promise<any | null> {
   current.value = detail
   paramConfidence.value = detail.paramConfidence || {}
   paramWarnings.value = detail.paramWarnings || {}
-  // Agent 抽取的发布日期可能只有年份（如 "2025"）：date 输入框显示为空但绑定值会原样提交，
-  // 导致后端反序列化 500。不合法时置空并提示，审核时手动补选。
+  // Agent 抽取的发布日期可能只有年份（如 "2025"）：日期控件无法表示不完整日期，
+  // 原样提交会让后端反序列化 500。不合法时置空并提示，审核时手动补选。
   const crawledDate = detail.params?.['release_date'] || ''
   const validDate = /^\d{4}-\d{2}-\d{2}$/.test(crawledDate)
   if (crawledDate && !validDate) {
@@ -508,7 +509,7 @@ function removeVariant(index: number) {
           </div>
           <div class="space-y-1.5">
             <Label for="review-date">发布日期</Label>
-            <Input id="review-date" v-model="form.releaseDate" type="date" />
+            <DatePicker id="review-date" v-model="form.releaseDate" placeholder="yyyy-MM-dd" />
           </div>
         </div>
 

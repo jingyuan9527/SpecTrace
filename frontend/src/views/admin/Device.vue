@@ -27,6 +27,7 @@ import {
   CardContent,
   Checkbox,
   Combobox,
+  DatePicker,
   Dialog,
   Empty,
   Input,
@@ -764,7 +765,7 @@ function rowMessages(row: any) {
           </div>
           <div class="space-y-1.5">
             <Label for="device-date">发布时间</Label>
-            <Input id="device-date" v-model="form.releaseDate" type="date" />
+            <DatePicker id="device-date" v-model="form.releaseDate" placeholder="yyyy-MM-dd" />
           </div>
           <div class="space-y-1.5">
             <Label>缩略图</Label>
@@ -850,11 +851,17 @@ function rowMessages(row: any) {
                 :options="optionsOf(def).map((o) => ({ label: o, value: o }))"
                 placeholder="请选择"
               />
+              <DatePicker
+                v-else-if="def.paramType === 'date'"
+                :id="`param-${def.paramKey}`"
+                v-model="form.params[def.paramKey]"
+                placeholder="yyyy-MM-dd"
+              />
               <Input
                 v-else
                 :id="`param-${def.paramKey}`"
                 v-model="form.params[def.paramKey]"
-                :type="def.paramType === 'number' ? 'number' : def.paramType === 'date' ? 'date' : 'text'"
+                :type="def.paramType === 'number' ? 'number' : 'text'"
                 :placeholder="def.unit ? `单位：${def.unit}` : '请输入'"
               />
             </div>
