@@ -478,7 +478,12 @@ function removeVariant(index: number) {
 
     <Pagination v-if="total > query.size" v-model:page="query.current" :page-size="query.size" :total="total" />
 
-    <Dialog v-model:open="dialog" title="审核 Agent 抓取数据" class="max-w-2xl">
+    <Dialog
+      v-model:open="dialog"
+      title="审核 Agent 抓取数据"
+      class="max-w-2xl"
+      footer-class="sticky bottom-0 z-10 rounded-lg border bg-background/95 p-2.5 shadow-lg backdrop-blur sm:items-center"
+    >
       <div class="space-y-4">
         <Alert variant="info" :title="`来源：${current?.confidence ? `置信度 ${current.confidence}` : 'Agent 抓取结果'}`">
           <a
@@ -629,7 +634,15 @@ function removeVariant(index: number) {
       </div>
 
       <template #footer>
-        <Button variant="outline" :disabled="saving" @click="dialog = false">取消</Button>
+        <!-- 操作栏滚动时常驻，左侧带上决策摘要，避免必须滚到底才能提交 -->
+        <div class="mr-auto hidden min-w-0 items-center gap-1 text-xs text-muted-foreground sm:flex">
+          <span class="truncate">{{ isNewDevice ? '将新增入库' : `${changedRows.length} 项参数有变化` }}</span>
+          <span v-if="verifyCount > 0" class="shrink-0 text-amber-600 dark:text-amber-400">
+            · {{ verifyCount }} 项建议核实
+          </span>
+        </div>
+        <!-- 移动端取消交给右上角关闭按钮，底部只留决策动作 -->
+        <Button variant="outline" class="hidden sm:inline-flex" :disabled="saving" @click="dialog = false">取消</Button>
         <Button variant="ghost" class="text-destructive" :disabled="saving" @click="discardTarget = current">丢弃</Button>
         <Button :disabled="saving" @click="approve">
           <Loader2 v-if="saving" class="animate-spin" />

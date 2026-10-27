@@ -18,6 +18,8 @@ const props = withDefaults(
     title?: string
     description?: string
     class?: string
+    /** 追加到 footer 容器的类名：长表单可用 sticky 让操作按钮常驻可见区 */
+    footerClass?: string
     hideClose?: boolean
   }>(),
   { hideClose: false },
@@ -53,7 +55,10 @@ const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 
         <slot />
 
-        <div v-if="$slots.footer" class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <div
+          v-if="$slots.footer"
+          :class="cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', props.footerClass)"
+        >
           <slot name="footer" />
         </div>
 
