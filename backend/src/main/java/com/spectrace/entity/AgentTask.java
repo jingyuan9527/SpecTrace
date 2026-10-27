@@ -50,4 +50,11 @@ public class AgentTask {
 
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
+
+    /**
+     * 对应待审核记录 id（非表字段）：DEVICE_DETAIL 任务进入待审核后填充，
+     * 供任务列表「去审核」直接定位到该条抓取结果，免去按机型名二次查找。
+     */
+    @TableField(exist = false)
+    private Long pendingId;
 }

@@ -369,6 +369,8 @@ export interface AgentTask {
   durationMs?: number | null
   createdAt?: string
   updatedAt?: string
+  /** 对应待审核记录 id（后端列表补充）：待审核任务可直达抓取审核页 */
+  pendingId?: number | null
 }
 
 /** 系列订阅抓取配置（T88） */

@@ -1,7 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { Ban, Bot, CheckCircle2, ExternalLink, Loader2, RefreshCw, RotateCcw, Send, Terminal } from '@lucide/vue'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  Ban,
+  Bot,
+  CheckCircle2,
+  ClipboardCheck,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  RotateCcw,
+  Send,
+  Terminal,
+} from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
 import type { AiModel, SeriesDiscoveryDetail } from '@/types/api'
@@ -185,6 +196,32 @@ const creatingDevices = ref(false)
 
 function isDiscoveryTask(task: any) {
   return task?.taskType === 'SERIES_DISCOVERY'
+}
+
+/** 来源列只展示域名：完整 URL 太长会挤歪表格，完整地址放在悬停提示与任务详情里。 */
+function sourceHost(url?: string | null) {
+  if (!url) return ''
+  try {
+    return new URL(url).host.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
+
+const router = useRouter()
+
+/** 单机型抓取进入待审核后可一键去审核；系列发现的结果只在任务详情里处理。 */
+function canGoReview(task: any) {
+  return !!task && task.status === 'PENDING_REVIEW' && !isDiscoveryTask(task)
+}
+
+function goReview(task: any) {
+  detailTarget.value = null
+  router.push({
+    path: '/admin/pending',
+    // pendingId 精确直达该条；极端情况下缺失时退回按机型名筛选，至少能定位到队列
+    query: task.pendingId ? { pendingId: String(task.pendingId) } : { keyword: task.modelName },
+  })
 }
 
 // 已存在同名机型的行不可勾选（库里已有档案，重复创建只会被后端跳过）
@@ -449,8 +486,8 @@ function modelLabel(id: number | null | undefined) {
               <TableHead class="w-24">状态</TableHead>
               <TableHead class="w-24">耗时</TableHead>
               <TableHead class="w-44">创建时间</TableHead>
-              <TableHead class="min-w-44">来源 / 异常</TableHead>
-              <TableHead class="w-32 text-right">操作</TableHead>
+              <TableHead class="w-56">来源 / 异常</TableHead>
+              <TableHead class="w-44 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -471,21 +508,32 @@ function modelLabel(id: number | null | undefined) {
                 {{ row.durationMs ? `${row.durationMs} ms` : '—' }}
               </TableCell>
               <TableCell class="text-xs tabular-nums text-muted-foreground">{{ formatTime(row.createdAt) }}</TableCell>
-              <TableCell class="max-w-56 text-xs">
+              <TableCell class="w-56 max-w-56 text-xs">
                 <a
                   v-if="row.sourceUrl"
                   :href="row.sourceUrl"
                   target="_blank"
                   rel="noreferrer"
-                  class="line-clamp-2 break-all text-primary hover:underline"
+                  class="block truncate text-primary hover:underline"
+                  :title="row.sourceUrl"
                 >
-                  {{ row.sourceUrl }}
+                  {{ sourceHost(row.sourceUrl) }}
                 </a>
-                <span v-if="row.errorMsg" class="mt-1 block break-words text-destructive">{{ row.errorMsg }}</span>
+                <span
+                  v-if="row.errorMsg"
+                  class="mt-1 line-clamp-2 break-words text-destructive"
+                  :title="row.errorMsg"
+                >
+                  {{ row.errorMsg }}
+                </span>
                 <span v-if="!row.sourceUrl && !row.errorMsg" class="text-muted-foreground">—</span>
               </TableCell>
               <TableCell class="text-right">
                 <div class="flex justify-end gap-1">
+                  <Button v-if="canGoReview(row)" size="sm" variant="outline" @click="goReview(row)">
+                    <ClipboardCheck />
+                    去审核
+                  </Button>
                   <Button variant="ghost" size="sm" @click="detailTarget = row">详情</Button>
                   <Button
                     v-if="row.status === 'FAILED'"
@@ -544,6 +592,11 @@ function modelLabel(id: number | null | undefined) {
           <span class="text-muted-foreground">更新时间</span>
           <span class="tabular-nums">{{ formatTime(detailTarget.updatedAt) }}</span>
         </div>
+
+        <Button v-if="canGoReview(detailTarget)" size="sm" class="w-full sm:w-auto" @click="goReview(detailTarget)">
+          <ClipboardCheck />
+          去抓取审核页处理该条结果
+        </Button>
 
         <template v-if="isDiscoveryTask(detailTarget)">
           <Separator />

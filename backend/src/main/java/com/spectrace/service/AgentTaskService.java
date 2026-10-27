@@ -163,7 +163,37 @@ public class AgentTaskService {
         if (status != null && !status.isBlank()) {
             query.eq(AgentTask::getStatus, status);
         }
-        return taskMapper.selectPage(new Page<>(current, size), query);
+        IPage<AgentTask> page = taskMapper.selectPage(new Page<>(current, size), query);
+        fillPendingIds(page.getRecords());
+        return page;
+    }
+
+    /**
+     * 补齐待审核任务的 pendingId，供前端一键跳到抓取审核页并直接打开该条。
+     *
+     * <p>只有单机型抓取会产生待审核记录（系列发现的结果只落在 task.result），
+     * 因此只查 DEVICE_DETAIL 且状态为待审核的任务，避免无谓查询。
+     */
+    private void fillPendingIds(List<AgentTask> records) {
+        List<Long> taskIds = records.stream()
+                .filter(task -> TaskStatus.PENDING_REVIEW.name().equals(task.getStatus()))
+                .filter(task -> TaskType.parse(task.getTaskType()) == TaskType.DEVICE_DETAIL)
+                .map(AgentTask::getId)
+                .toList();
+        if (taskIds.isEmpty()) {
+            return;
+        }
+        Map<Long, Long> pendingIds = new java.util.HashMap<>();
+        pendingMapper.selectList(Wrappers.<AgentPendingData>lambdaQuery()
+                        .in(AgentPendingData::getTaskId, taskIds)
+                        .eq(AgentPendingData::getStatus, PendingStatus.PENDING_REVIEW.name()))
+                .forEach(row -> {
+                    if (row.getTaskId() != null) {
+                        // 同一任务理论上只有一条待审核记录，万一有历史重复取最新一条
+                        pendingIds.merge(row.getTaskId(), row.getId(), Math::max);
+                    }
+                });
+        records.forEach(task -> task.setPendingId(pendingIds.get(task.getId())));
     }
 
     /** 标记任务为抓取中（内嵌 Agent 开始执行时调用，便于后台展示进度）。 */

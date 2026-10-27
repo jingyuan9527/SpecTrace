@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowRight,
   ChevronDown,
@@ -76,7 +76,10 @@ const statusMeta: Record<string, { label: string; variant: 'info' | 'success' | 
 
 // 机型管理页「抓取待审」徽标跳转进来时带 keyword，直接按机型名筛
 const route = useRoute()
+const router = useRouter()
 const initialKeyword = typeof route.query.keyword === 'string' ? route.query.keyword : ''
+// 抓取任务页「去审核」带 pendingId 直达该条记录
+const initialPendingId = Number(route.query.pendingId) || null
 
 const { list, total, loading, query, load, search } = usePagedList({
   size: 10,
@@ -93,11 +96,31 @@ const { list, total, loading, query, load, search } = usePagedList({
 
 onMounted(async () => {
   ;[brands.value, defs.value] = await Promise.all([adminApi.brands(), adminApi.paramDefs()])
+  // 任务页直达：先按机型名收窄列表，保证关闭弹窗后这条记录仍在视野内
+  if (initialPendingId) {
+    try {
+      const detail = await openReviewById(initialPendingId)
+      if (detail && !query.keyword) query.keyword = detail.modelName
+    } catch {
+      // 记录不存在或接口异常：不阻塞列表加载，错误提示由请求拦截器统一给出
+    }
+    // pendingId 只用于一次性定位，从地址栏摘掉，避免刷新后重复弹出
+    router.replace({ query: { ...route.query, pendingId: undefined } })
+  }
   await load()
 })
 
 async function openReview(row: any) {
-  const detail = await adminApi.pendingDetail(row.id)
+  await openReviewById(row.id)
+}
+
+/** 列表行与任务页直达共用：按 id 打开审核弹窗，返回详情供调用方定位列表。 */
+async function openReviewById(id: number): Promise<any | null> {
+  const detail = await adminApi.pendingDetail(id)
+  if (detail.status !== 'PENDING_REVIEW') {
+    toast.warning('该抓取结果已处理，无法再次审核')
+    return null
+  }
   current.value = detail
   paramConfidence.value = detail.paramConfidence || {}
   paramWarnings.value = detail.paramWarnings || {}
@@ -124,6 +147,7 @@ async function openReview(row: any) {
   })
   showUnchanged.value = false
   dialog.value = true
+  return detail
 }
 
 async function approve() {
