@@ -128,14 +128,24 @@ const defsByGroup = computed(() =>
     .filter((group) => group.defs.length > 0),
 )
 
+// 上架状态筛选：'' 表示全部，1 上架、0 下架
+const statusFilterOptions = [
+  { label: '全部状态', value: '' },
+  { label: '已上架', value: 1 },
+  { label: '已下架', value: 0 },
+]
+
 const { list, total, loading, query, load, search } = usePagedList({
   size: 10,
   filters: () => ({
     keyword: '',
     brandId: undefined as number | undefined,
     seriesId: undefined as number | undefined,
+    status: '' as number | '',
   }),
-  fetcher: (params) => adminApi.devices(params),
+  // 后端 status 只认 0/1，空串表示不筛选
+  fetcher: (params) =>
+    adminApi.devices({ ...params, status: params.status === '' ? undefined : params.status }),
   // 基础数据（品牌/系列/参数定义）先加载完再拉列表，保持原有首屏顺序
   immediate: false,
 })
@@ -598,6 +608,12 @@ function rowMessages(row: any) {
           placeholder="全部系列"
           class="w-full lg:w-44"
           :disabled="!query.brandId"
+        />
+        <Select
+          v-model="query.status"
+          :options="statusFilterOptions"
+          class="w-full lg:w-32"
+          @update:model-value="search"
         />
         <Button variant="outline" @click="search">查询</Button>
         <template v-if="selectedIds.length">

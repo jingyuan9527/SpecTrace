@@ -50,10 +50,18 @@ public class DeviceService {
     private final OperationLogService logService;
 
     public IPage<Device> page(long current, long size, Long brandId, Integer year, String keyword) {
-        return page(current, size, brandId, null, year, keyword);
+        return page(current, size, brandId, null, year, keyword, null);
     }
 
     public IPage<Device> page(long current, long size, Long brandId, Long seriesId, Integer year, String keyword) {
+        return page(current, size, brandId, seriesId, year, keyword, null);
+    }
+
+    /**
+     * 管理端机型分页：status 非空时按上架状态筛选（1 上架 / 0 下架），公开端不传以保持原有可见性口径。
+     */
+    public IPage<Device> page(long current, long size, Long brandId, Long seriesId, Integer year,
+                              String keyword, Integer status) {
         var query = Wrappers.<Device>lambdaQuery().orderByDesc(Device::getReleaseDate);
         if (brandId != null) {
             query.eq(Device::getBrandId, brandId);
@@ -72,6 +80,9 @@ public class DeviceService {
         }
         if (StringUtils.hasText(keyword)) {
             query.like(Device::getName, keyword);
+        }
+        if (status != null) {
+            query.eq(Device::getStatus, status);
         }
         return deviceMapper.selectPage(new Page<>(current, size), query);
     }
