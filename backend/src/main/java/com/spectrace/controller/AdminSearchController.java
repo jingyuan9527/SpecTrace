@@ -4,6 +4,7 @@ import com.spectrace.common.R;
 import com.spectrace.dto.SearchConfigSaveRequest;
 import com.spectrace.dto.SearchConfigVO;
 import com.spectrace.dto.SearchTestResultVO;
+import com.spectrace.dto.TavilyUsageVO;
 import com.spectrace.service.OperationLogService;
 import com.spectrace.service.SearchConfigService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "后台-采集搜索源")
@@ -43,6 +45,12 @@ public class AdminSearchController {
                 "搜索引擎：" + (vo.getEngines() == null || vo.getEngines().isEmpty()
                         ? "系统默认" : String.join("→", vo.getEngines())));
         return R.ok(vo);
+    }
+
+    @Operation(summary = "Tavily 本月用量（含剩余额度）；refresh=true 表示手动刷新，60 秒内只回缓存")
+    @GetMapping("/tavily-usage")
+    public R<TavilyUsageVO> tavilyUsage(@RequestParam(defaultValue = "false") boolean refresh) {
+        return R.ok(searchConfigService.tavilyUsage(refresh));
     }
 
     @Operation(summary = "真实搜索一次验证可用性；body 可传未保存的表单值（Key 留空沿用已存值），为空则测试已保存配置")

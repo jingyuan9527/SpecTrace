@@ -96,11 +96,15 @@ public class WebSearchService {
         }
     }
 
+    /** Tavily 用量原始数据；limit 为 null 表示不限量或未返回。 */
+    public record TavilyUsage(String plan, Integer used, Integer limit, Integer keyUsed, Integer keyLimit) {
+    }
+
     /**
-     * 查询 Tavily 用量（GET /usage，10 分钟限 10 次，只应在测试场景调用）。
-     * 失败返回 null，不影响测试结论。
+     * 查询 Tavily 用量（GET /usage，10 分钟限 10 次，调用方必须缓存）。
+     * 失败返回 null，由调用方决定是否提示；异常细节只记日志，不带出 Key。
      */
-    public String fetchTavilyUsage(String apiKey) {
+    public TavilyUsage fetchTavilyUsage(String apiKey) {
         try {
             JsonNode data = restClientBuilder.build()
                     .get()
@@ -112,27 +116,29 @@ public class WebSearchService {
                 return null;
             }
             String plan = data.path("account").path("current_plan").asText("");
-            int planUsage = data.path("account").path("plan_usage").asInt(-1);
-            int planLimit = data.path("account").path("plan_limit").asInt(-1);
-            int keyUsage = data.path("key").path("usage").asInt(-1);
-            int keyLimit = data.path("key").path("limit").asInt(-1);
-            StringBuilder sb = new StringBuilder();
-            if (!plan.isBlank()) {
-                sb.append(plan).append(" 计划：已用 ").append(Math.max(planUsage, 0));
-                sb.append(planLimit >= 0 ? " / " + planLimit : "（不限量）");
+            Integer planUsage = intOrNull(data.path("account").path("plan_usage"));
+            Integer planLimit = intOrNull(data.path("account").path("plan_limit"));
+            Integer keyUsage = intOrNull(data.path("key").path("usage"));
+            Integer keyLimit = intOrNull(data.path("key").path("limit"));
+            if (planUsage == null && keyUsage == null) {
+                return null;
             }
-            if (keyUsage >= 0 && (keyLimit >= 0 || keyUsage != planUsage)) {
-                if (!sb.isEmpty()) {
-                    sb.append("；");
-                }
-                sb.append("本 Key：已用 ").append(keyUsage);
-                sb.append(keyLimit >= 0 ? " / " + keyLimit : "");
+            // 0 或负数表示不限量：按 null 处理，避免前端算出「剩余 0」
+            if (planLimit != null && planLimit <= 0) {
+                planLimit = null;
             }
-            return sb.isEmpty() ? null : sb.toString() + " 积分";
+            if (keyLimit != null && keyLimit <= 0) {
+                keyLimit = null;
+            }
+            return new TavilyUsage(plan.isBlank() ? null : plan, planUsage, planLimit, keyUsage, keyLimit);
         } catch (Exception e) {
             log.warn("查询 Tavily 用量失败: {}", e.getMessage());
             return null;
         }
+    }
+
+    private Integer intOrNull(JsonNode node) {
+        return node == null || node.isMissingNode() || node.isNull() ? null : node.asInt();
     }
 
     private List<Map<String, Object>> searchTavily(SearchRuntime cfg, String query) throws Exception {

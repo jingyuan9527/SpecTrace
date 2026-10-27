@@ -48,6 +48,7 @@ import type {
   TrafficMetrics,
   SearchConfigSaveRequest,
   SearchTestResult,
+  TavilyUsage,
   SeriesCreateResult,
   SeriesDevice,
   SeriesDiscoveryDetail,
@@ -231,6 +232,9 @@ export const adminApi = {
     request.put<unknown, SearchConfig>('/admin/search-config', data),
   testSearchConfig: (data?: Partial<SearchConfigSaveRequest>) =>
     request.post<unknown, SearchTestResult>('/admin/search-config/test', data ?? {}),
+  // Tavily 本月用量：refresh=true 手动刷新，60 秒内后端只回缓存（接口限 10 次/10 分钟）
+  getTavilyUsage: (refresh = false) =>
+    request.get<unknown, TavilyUsage>('/admin/search-config/tavily-usage', { params: { refresh } }),
   // AI 模型
   aiModels: () => request.get<unknown, AiModel[]>('/admin/ai-models'),
   setDefaultAiModel: (id: number) => request.post<unknown, void>(`/admin/ai-models/${id}/default`),

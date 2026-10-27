@@ -2,21 +2,28 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
   ChevronDown,
+  ChevronUp,
   CloudDownload,
   Globe,
+  GripVertical,
   KeyRound,
   Loader2,
   Pencil,
   PlugZap,
   Plus,
+  RefreshCw,
+  RotateCcw,
   Search,
   Server,
   Star,
   Trash2,
+  TriangleAlert,
+  X,
 } from '@lucide/vue'
+import { VueDraggable } from 'vue-draggable-plus'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
-import type { ConnectivityTest, SearchConfig, SearchTestResult } from '@/types/api'
+import type { ConnectivityTest, SearchConfig, SearchTestResult, TavilyUsage } from '@/types/api'
 import {
   Badge,
   Button,
@@ -84,8 +91,102 @@ const engineLabels: Record<string, string> = {
   none: '无可用引擎',
 }
 
+/** 默认优先级：与后端默认链（Tavily → SearXNG → Serper → DuckDuckGo）保持一致 */
+const DEFAULT_ENGINE_ORDER = ['tavily', 'searxng', 'serper']
+type EngineDef = (typeof engineDefs)[number]
+
+function engineDefOf(value: string): EngineDef | undefined {
+  return engineDefs.find((engine) => engine.value === value)
+}
+
+/** 未启用的引擎不参与调用，也不出现在排序列表里 */
+const disabledEngines = computed(() => engineDefs.filter((engine) => !searchForm.engines.includes(engine.value)))
+
+/** 拖拽之外的兜底操作：键盘 / 移动端用上下移按钮调整 */
+function moveEngine(index: number, delta: number) {
+  const target = index + delta
+  if (target < 0 || target >= searchForm.engines.length) return
+  const next = [...searchForm.engines]
+  ;[next[index], next[target]] = [next[target], next[index]]
+  searchForm.engines = next
+}
+
+/** 只恢复已启用引擎的相对顺序，不改变启用/停用选择 */
+function restoreDefaultOrder() {
+  searchForm.engines = DEFAULT_ENGINE_ORDER.filter((value) => searchForm.engines.includes(value))
+}
+
+// ---- Tavily 本月用量 ----
+const tavilyUsage = ref<TavilyUsage | null>(null)
+const usageLoading = ref(false)
+const usageRefreshing = ref(false)
+
 async function loadSearchConfig() {
   searchConfig.value = await adminApi.getSearchConfig()
+  // 只有配置了 Key 才查用量；查询失败由请求拦截器提示，不阻塞 AI 连接列表
+  if (searchConfig.value.tavilyApiKeySet) void loadTavilyUsage()
+}
+
+/**
+ * 用量走后端 10 分钟缓存（Tavily /usage 限 10 次/10 分钟）；
+ * 手动刷新 60 秒内也会拿到 cached=true，此时提示而不是重复打上游。
+ */
+async function loadTavilyUsage(refresh = false) {
+  if (!searchConfig.value?.tavilyApiKeySet) {
+    tavilyUsage.value = null
+    return
+  }
+  if (refresh) usageRefreshing.value = true
+  else usageLoading.value = true
+  try {
+    const data = await adminApi.getTavilyUsage(refresh)
+    if (refresh && data.cached) {
+      toast.info('刚刚查询过，展示的是最近一次结果（Tavily 限 10 次/10 分钟）')
+    }
+    tavilyUsage.value = data
+  } finally {
+    if (refresh) usageRefreshing.value = false
+    else usageLoading.value = false
+  }
+}
+
+const usagePercent = computed(() => {
+  const usage = tavilyUsage.value
+  if (!usage?.limit || usage.used == null) return null
+  return Math.min(100, Math.round((usage.used / usage.limit) * 100))
+})
+const usageRemainingPercent = computed(() => (usagePercent.value == null ? null : 100 - usagePercent.value))
+/** 剩余越多越安全：≥50% 正常、20%~50% 关注、<20% 告警 */
+const usageTone = computed<'normal' | 'warn' | 'danger'>(() => {
+  const remain = usageRemainingPercent.value
+  if (remain == null) return 'normal'
+  if (remain < 20) return 'danger'
+  if (remain < 50) return 'warn'
+  return 'normal'
+})
+const usageValueClass = computed(
+  () =>
+    ({
+      normal: 'text-emerald-600 dark:text-emerald-400',
+      warn: 'text-amber-600 dark:text-amber-400',
+      danger: 'text-destructive',
+    })[usageTone.value],
+)
+const usageBarClass = computed(
+  () => ({ normal: 'bg-emerald-500', warn: 'bg-amber-500', danger: 'bg-destructive' })[usageTone.value],
+)
+
+/** 当天只显示时分，跨天补月-日，避免把更新时间看错 */
+function formatUsageTime(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  const today = new Date()
+  return date.toDateString() === today.toDateString()
+    ? time
+    : `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${time}`
 }
 
 function toggleEngine(value: string, checked: boolean) {
@@ -114,6 +215,8 @@ async function saveSearch() {
     searchConfig.value = await adminApi.saveSearchConfig({ ...searchForm })
     toast.success('搜索源配置已保存，下个抓取任务生效')
     searchDialog.value = false
+    // Key 可能刚被替换，重新取一次用量
+    void loadTavilyUsage()
   } finally {
     searchSaving.value = false
   }
@@ -411,7 +514,7 @@ async function confirmDeleteModel() {
 
     <template v-else>
       <Card v-if="searchConfig">
-        <CardContent class="p-4">
+        <CardContent class="space-y-3 p-4">
           <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
             <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
               <Globe class="h-4 w-4 text-muted-foreground" />
@@ -419,15 +522,23 @@ async function confirmDeleteModel() {
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="text-sm font-semibold">采集搜索源</span>
-                <Badge v-for="engine in searchConfig.engines" :key="engine" variant="outline">
-                  {{ engineLabels[engine] ?? engine }}
+                <Badge v-if="searchConfig.engines?.length" variant="secondary">
+                  {{ searchConfig.engines.length }} 个引擎
                 </Badge>
-                <span v-if="!searchConfig.engines?.length" class="text-xs text-muted-foreground">
-                  未启用第三方引擎，走系统默认（Serper Key 或 DuckDuckGo）
-                </span>
+              </div>
+              <!-- 当前生效的调用顺序：排在前面的优先，失败才尝试下一个 -->
+              <div class="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                <span>生效顺序：</span>
+                <template v-if="searchConfig.engines?.length">
+                  <template v-for="(engine, index) in searchConfig.engines" :key="engine">
+                    <span class="font-medium text-foreground">{{ engineLabels[engine] ?? engine }}</span>
+                    <span v-if="index < searchConfig.engines.length - 1">→</span>
+                  </template>
+                  <span>→ DuckDuckGo</span>
+                </template>
+                <span v-else>未启用第三方引擎：Serper（若配置）→ DuckDuckGo</span>
               </div>
               <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                <span>Tavily Key：{{ searchConfig.tavilyApiKeySet ? '已配置' : '未配置' }}</span>
                 <span v-if="searchConfig.searxngBaseUrl">
                   SearXNG：{{ searchConfig.searxngBaseUrl }}{{ searchConfig.searxngTokenSet ? '（含 Token）' : '' }}
                 </span>
@@ -453,6 +564,91 @@ async function confirmDeleteModel() {
                 编辑
               </Button>
             </div>
+          </div>
+
+          <!-- Tavily 本月用量：剩余额度直接给数字，已用/额度与更新时间作为辅助信息 -->
+          <div class="rounded-lg border bg-muted/30 p-3">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-sm font-medium">Tavily 用量</span>
+                <Badge :variant="searchConfig.tavilyApiKeySet ? 'success' : 'secondary'">
+                  Key {{ searchConfig.tavilyApiKeySet ? '已配置' : '未配置' }}
+                </Badge>
+                <Badge v-if="tavilyUsage?.plan" variant="outline">{{ tavilyUsage.plan }}</Badge>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                class="shrink-0"
+                :disabled="usageLoading || usageRefreshing || !searchConfig.tavilyApiKeySet"
+                @click="loadTavilyUsage(true)"
+              >
+                <RefreshCw :class="usageRefreshing && 'animate-spin'" />
+                刷新
+              </Button>
+            </div>
+
+            <p v-if="!searchConfig.tavilyApiKeySet" class="mt-2 text-xs text-muted-foreground">
+              配置 API Key 后展示本月剩余额度；Tavily 免费档每月 1000 积分。
+            </p>
+
+            <div v-else-if="usageLoading" class="mt-3 space-y-2">
+              <Skeleton class="h-8 w-40" />
+              <Skeleton class="h-2 w-full" />
+              <Skeleton class="h-3 w-52" />
+            </div>
+
+            <div
+              v-else-if="tavilyUsage?.error && tavilyUsage.used == null"
+              class="mt-2 flex flex-wrap items-center gap-2 text-xs text-destructive"
+            >
+              <TriangleAlert class="h-3.5 w-3.5 shrink-0" />
+              {{ tavilyUsage.error }}
+              <Button variant="ghost" size="sm" @click="loadTavilyUsage(true)">重试</Button>
+            </div>
+
+            <template v-else-if="tavilyUsage">
+              <div class="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span class="text-3xl font-semibold leading-none tabular-nums" :class="usageValueClass">
+                  {{ tavilyUsage.remaining ?? '—' }}
+                </span>
+                <span class="text-sm text-muted-foreground">积分可用</span>
+                <span v-if="tavilyUsage.limit != null" class="text-xs text-muted-foreground">
+                  / 本月额度 {{ tavilyUsage.limit }}
+                </span>
+                <span v-else class="text-xs text-muted-foreground">（计划不限量或未返回额度）</span>
+              </div>
+
+              <div
+                v-if="usagePercent !== null"
+                class="mt-3 h-2 overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                :aria-valuenow="usagePercent"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                :aria-label="`Tavily 本月已用 ${usagePercent}%`"
+              >
+                <div class="h-full rounded-full transition-all" :class="usageBarClass" :style="{ width: `${usagePercent}%` }" />
+              </div>
+
+              <p class="mt-2 text-xs text-muted-foreground">
+                本月已用
+                <span class="font-medium tabular-nums text-foreground">{{ tavilyUsage.used ?? '—' }}</span>
+                <template v-if="tavilyUsage.limit != null"> / {{ tavilyUsage.limit }}</template>
+                积分
+                <template v-if="usageRemainingPercent !== null"> · 剩余 {{ usageRemainingPercent }}%</template>
+              </p>
+              <p class="mt-1 text-xs text-muted-foreground">
+                <template v-if="tavilyUsage.fetchedAt">更新于 {{ formatUsageTime(tavilyUsage.fetchedAt) }} · </template>
+                缓存 10 分钟（Tavily 限 10 次/10 分钟），可手动刷新
+              </p>
+              <p v-if="tavilyUsage.error" class="mt-1 flex items-center gap-1 text-xs text-destructive">
+                <TriangleAlert class="h-3.5 w-3.5 shrink-0" />
+                {{ tavilyUsage.error }}
+              </p>
+            </template>
+
+            <p v-else class="mt-2 text-xs text-muted-foreground">暂无用量数据，点击「刷新」重试。</p>
           </div>
         </CardContent>
       </Card>
@@ -581,27 +777,101 @@ async function confirmDeleteModel() {
     <Dialog
       v-model:open="searchDialog"
       title="采集搜索源"
-      description="可同时启用多个引擎：按 Tavily → SearXNG → Serper 顺序尝试第一个可用引擎，全部失败回落 DuckDuckGo"
+      description="可同时启用多个引擎；调用时按下方优先级从上到下尝试，第一个返回结果即采用，全部失败回落 DuckDuckGo"
       class="max-w-xl"
     >
       <div class="space-y-4">
         <div class="space-y-2">
-          <label
-            v-for="engine in engineDefs"
-            :key="engine.value"
-            class="flex cursor-pointer items-start gap-2.5 rounded-md border p-3"
-            :class="searchForm.engines.includes(engine.value) && 'border-primary/40 bg-muted/40'"
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p class="text-sm font-medium">已启用引擎（按调用优先级）</p>
+              <p class="mt-0.5 text-xs text-muted-foreground">
+                排行越靠前越先调用；拖动行或点上下箭头调整，保存后下个抓取任务即生效。
+              </p>
+            </div>
+            <Button variant="ghost" size="sm" :disabled="!searchForm.engines.length" @click="restoreDefaultOrder">
+              <RotateCcw />
+              恢复默认排序
+            </Button>
+          </div>
+
+          <VueDraggable
+            v-if="searchForm.engines.length"
+            v-model="searchForm.engines"
+            :animation="150"
+            handle=".engine-handle"
+            class="space-y-2"
           >
-            <Checkbox
-              :model-value="searchForm.engines.includes(engine.value)"
-              class="mt-0.5"
-              @update:model-value="toggleEngine(engine.value, $event)"
-            />
-            <span class="min-w-0">
+            <div
+              v-for="(value, index) in searchForm.engines"
+              :key="value"
+              class="flex items-center gap-2 rounded-md border bg-muted/30 p-2"
+            >
+              <button
+                type="button"
+                class="engine-handle cursor-grab text-muted-foreground/60 hover:text-foreground active:cursor-grabbing"
+                aria-label="拖拽调整优先级"
+              >
+                <GripVertical class="h-4 w-4" />
+              </button>
+              <Badge variant="outline" class="tabular-nums">{{ index + 1 }}</Badge>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-medium">{{ engineLabels[value] ?? value }}</p>
+                <p class="truncate text-xs text-muted-foreground">{{ engineDefOf(value)?.desc }}</p>
+              </div>
+              <div class="flex shrink-0 items-center gap-0.5">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="上移"
+                  :disabled="index === 0"
+                  @click="moveEngine(index, -1)"
+                >
+                  <ChevronUp />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="下移"
+                  :disabled="index === searchForm.engines.length - 1"
+                  @click="moveEngine(index, 1)"
+                >
+                  <ChevronDown />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  class="text-destructive"
+                  aria-label="停用该引擎"
+                  @click="toggleEngine(value, false)"
+                >
+                  <X />
+                </Button>
+              </div>
+            </div>
+          </VueDraggable>
+
+          <p v-else class="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+            未启用任何引擎，走系统默认链：有 Serper Key 用 Google 结果，否则 DuckDuckGo。
+          </p>
+        </div>
+
+        <div v-if="disabledEngines.length" class="space-y-2">
+          <p class="text-sm font-medium">未启用</p>
+          <button
+            v-for="engine in disabledEngines"
+            :key="engine.value"
+            type="button"
+            class="flex w-full items-center gap-2 rounded-md border border-dashed p-2 text-left transition-colors hover:bg-muted/40"
+            @click="toggleEngine(engine.value, true)"
+          >
+            <Plus class="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span class="min-w-0 flex-1">
               <span class="block text-sm font-medium">{{ engine.label }}</span>
               <span class="block text-xs text-muted-foreground">{{ engine.desc }}</span>
             </span>
-          </label>
+            <span class="shrink-0 text-xs text-muted-foreground">启用</span>
+          </button>
         </div>
 
         <div v-if="searchForm.engines.includes('tavily')" class="space-y-1.5">
@@ -613,6 +883,15 @@ async function confirmDeleteModel() {
             :placeholder="searchConfig?.tavilyApiKeySet ? '已配置，留空表示不修改' : 'tvly-…'"
             autocomplete="off"
           />
+          <p v-if="searchForm.tavilyApiKey" class="text-xs text-muted-foreground">
+            保存后按新 Key 重新查询用量。
+          </p>
+          <p v-else-if="tavilyUsage && searchConfig?.tavilyApiKeySet" class="text-xs text-muted-foreground">
+            当前用量：剩余
+            <span class="font-medium tabular-nums text-foreground">{{ tavilyUsage.remaining ?? '—' }}</span>
+            <template v-if="tavilyUsage.limit != null"> / {{ tavilyUsage.limit }}</template>
+            积分（本月已用 {{ tavilyUsage.used ?? '—' }}，更新于 {{ formatUsageTime(tavilyUsage.fetchedAt) || '—' }}）
+          </p>
         </div>
         <template v-if="searchForm.engines.includes('searxng')">
           <div class="space-y-1.5">

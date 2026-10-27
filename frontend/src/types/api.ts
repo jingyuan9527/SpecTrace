@@ -467,6 +467,22 @@ export interface SearchConfigSaveRequest {
   serperApiKey?: string
 }
 
+/** Tavily 本月用量（后端已算好剩余积分，前端不再做减法） */
+export interface TavilyUsage {
+  configured: boolean
+  plan?: string | null
+  used?: number | null
+  /** 本月额度，null 表示不限量或未返回 */
+  limit?: number | null
+  remaining?: number | null
+  keyUsed?: number | null
+  keyLimit?: number | null
+  /** 用量数据获取时间（命中缓存时为上次真实查询时间） */
+  fetchedAt?: string | null
+  cached: boolean
+  error?: string | null
+}
+
 export interface SearchTestResult {
   success: boolean
   engine: string

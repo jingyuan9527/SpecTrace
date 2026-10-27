@@ -5,6 +5,7 @@ import com.spectrace.common.BizException;
 import com.spectrace.dto.SearchConfigSaveRequest;
 import com.spectrace.dto.SearchConfigVO;
 import com.spectrace.dto.SearchTestResultVO;
+import com.spectrace.dto.TavilyUsageVO;
 import com.spectrace.entity.AgentSearchConfig;
 import com.spectrace.mapper.AgentSearchConfigMapper;
 import lombok.RequiredArgsConstructor;
@@ -12,7 +13,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -31,9 +34,17 @@ public class SearchConfigService {
 
     private static final Set<String> ENGINES = Set.of("tavily", "searxng", "serper");
 
+    /** Tavily /usage 限 10 次/10 分钟：自动加载 10 分钟内复用缓存，手动刷新至少间隔 60 秒 */
+    private static final long USAGE_CACHE_TTL_MS = 10 * 60 * 1000L;
+    private static final long USAGE_MIN_REFRESH_MS = 60 * 1000L;
+
     private final AgentSearchConfigMapper configMapper;
     private final AgentProperties props;
     private final WebSearchService webSearchService;
+
+    /** 用量缓存：key 变更或保存配置时清空，避免展示旧 Key 的额度 */
+    private volatile TavilyUsageVO tavilyUsageCache;
+    private volatile long tavilyUsageFetchedAt;
 
     public AgentSearchConfig getOrCreate() {
         AgentSearchConfig config = configMapper.selectById(AgentSearchConfig.SINGLETON_ID);
@@ -85,7 +96,99 @@ public class SearchConfigService {
                 config.getSearxngBaseUrl(),
                 StringUtils.hasText(config.getSearxngToken()) ? "已配置" : "无",
                 StringUtils.hasText(config.getSerperApiKey()) ? "已配置" : "无");
+        // Key 可能刚被替换，旧用量不再可信
+        tavilyUsageCache = null;
         return getVO();
+    }
+
+    /**
+     * 本月 Tavily 用量（account 口径）。force=true 表示管理员点了刷新：
+     * 60 秒内不重复打上游，10 分钟内的自动加载直接回缓存，避免触发 /usage 的 10 次/10 分钟限流。
+     * 上游失败时优先回上一次成功数据，并把错误原因带给前端。
+     */
+    public synchronized TavilyUsageVO tavilyUsage(boolean force) {
+        AgentSearchConfig config = getOrCreate();
+        TavilyUsageVO vo = new TavilyUsageVO();
+        String apiKey = config.getTavilyApiKey();
+        if (!StringUtils.hasText(apiKey)) {
+            return vo;
+        }
+        vo.setConfigured(true);
+        long now = System.currentTimeMillis();
+        TavilyUsageVO cached = tavilyUsageCache;
+        if (cached != null) {
+            long age = now - tavilyUsageFetchedAt;
+            if ((!force && age < USAGE_CACHE_TTL_MS) || age < USAGE_MIN_REFRESH_MS) {
+                return copyOf(cached, true, null);
+            }
+        }
+        WebSearchService.TavilyUsage usage = webSearchService.fetchTavilyUsage(apiKey);
+        if (usage == null) {
+            String error = "用量查询失败，请检查 Key 是否有效或稍后重试";
+            if (cached != null) {
+                return copyOf(cached, true, error);
+            }
+            vo.setError(error);
+            return vo;
+        }
+        TavilyUsageVO fresh = toVO(usage, now);
+        tavilyUsageCache = fresh;
+        tavilyUsageFetchedAt = now;
+        log.info("Tavily 用量已刷新: plan={} used={} limit={} keyUsed={} keyLimit={}",
+                usage.plan(), usage.used(), usage.limit(), usage.keyUsed(), usage.keyLimit());
+        return copyOf(fresh, false, null);
+    }
+
+    private TavilyUsageVO toVO(WebSearchService.TavilyUsage usage, long fetchedAtMillis) {
+        TavilyUsageVO vo = new TavilyUsageVO();
+        vo.setConfigured(true);
+        vo.setPlan(usage.plan());
+        // 优先账户月度口径，缺失时回落到本 Key；两者一致时前端只展示一组数字
+        Integer used = usage.used() != null ? usage.used() : usage.keyUsed();
+        Integer limit = usage.limit() != null ? usage.limit() : usage.keyLimit();
+        vo.setUsed(used);
+        vo.setLimit(limit);
+        if (used != null && limit != null) {
+            vo.setRemaining(Math.max(limit - used, 0));
+        }
+        vo.setKeyUsed(usage.keyUsed());
+        vo.setKeyLimit(usage.keyLimit());
+        vo.setFetchedAt(LocalDateTime.ofInstant(Instant.ofEpochMilli(fetchedAtMillis), ZoneId.systemDefault()));
+        return vo;
+    }
+
+    private TavilyUsageVO copyOf(TavilyUsageVO source, boolean cached, String error) {
+        TavilyUsageVO copy = new TavilyUsageVO();
+        copy.setConfigured(source.isConfigured());
+        copy.setPlan(source.getPlan());
+        copy.setUsed(source.getUsed());
+        copy.setLimit(source.getLimit());
+        copy.setRemaining(source.getRemaining());
+        copy.setKeyUsed(source.getKeyUsed());
+        copy.setKeyLimit(source.getKeyLimit());
+        copy.setFetchedAt(source.getFetchedAt());
+        copy.setCached(cached);
+        copy.setError(error);
+        return copy;
+    }
+
+    /** 测试结果里的用量摘要，沿用原有文案格式。 */
+    private String formatUsage(WebSearchService.TavilyUsage usage) {
+        StringBuilder sb = new StringBuilder();
+        if (usage.plan() != null) {
+            sb.append(usage.plan()).append(" 计划：已用 ").append(usage.used() == null ? 0 : usage.used());
+            sb.append(usage.limit() != null ? " / " + usage.limit() : "（不限量）");
+        }
+        if (usage.keyUsed() != null && (usage.keyLimit() != null || !usage.keyUsed().equals(usage.used()))) {
+            if (!sb.isEmpty()) {
+                sb.append("；");
+            }
+            sb.append("本 Key：已用 ").append(usage.keyUsed());
+            if (usage.keyLimit() != null) {
+                sb.append(" / ").append(usage.keyLimit());
+            }
+        }
+        return sb.isEmpty() ? null : sb + " 积分";
     }
 
     /** 采集运行时视图：Serper Key 库里没配时回落到环境变量。 */
@@ -140,7 +243,10 @@ public class SearchConfigService {
         vo.setLatencyMs(System.currentTimeMillis() - start);
         if (engines.contains("tavily") && StringUtils.hasText(runtime.getTavilyApiKey())) {
             // 用量属附加信息，失败不影响测试结论
-            vo.setTavilyUsage(webSearchService.fetchTavilyUsage(runtime.getTavilyApiKey()));
+            WebSearchService.TavilyUsage usage = webSearchService.fetchTavilyUsage(runtime.getTavilyApiKey());
+            if (usage != null) {
+                vo.setTavilyUsage(formatUsage(usage));
+            }
         }
         return vo;
     }
