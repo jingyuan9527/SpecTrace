@@ -448,6 +448,90 @@ export interface ConnectivityTest {
   error?: string | null
 }
 
+/** AI 绘图供应商（OpenAI 兼容 /images/generations） */
+export interface AiImageProvider {
+  id: number
+  name: string
+  baseUrl: string
+  /** 响应中恒为 null，仅用 apiKeySet 表示是否已配置 */
+  apiKey?: null
+  apiKeySet?: boolean
+  model: string
+  /** 出图尺寸，如 1024x1536 */
+  size: string
+  quality?: string | null
+  enabled: number
+  isDefault: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+/** AI 绘图提示词模板：内置模板不可删除，正文用 {{变量}} 占位 */
+export interface AiImagePrompt {
+  id: number
+  name: string
+  content: string
+  builtin: number
+  isDefault: number
+  enabled: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+/** 访客端可选的提示词模板 */
+export interface AiImagePromptOption {
+  id: number
+  name: string
+  content: string
+  isDefault: number
+}
+
+/** AI 绘图历史：成功与失败都记录，promptText 为渲染后的快照 */
+export interface AiImageJob {
+  id: number
+  providerId?: number | null
+  providerName?: string | null
+  model?: string | null
+  promptId?: number | null
+  promptName?: string | null
+  promptText?: string | null
+  deviceNames?: string | null
+  paramNames?: string | null
+  /** SUCCESS / FAILED */
+  status: string
+  imageUrl?: string | null
+  errorMsg?: string | null
+  durationMs?: number | null
+  createdAt?: string
+}
+
+export interface AiImageStatus {
+  available: boolean
+  enabled: boolean
+  reason?: string | null
+}
+
+export interface AiImageGenerateRequest {
+  seriesId: number
+  /** 机型范围（系列内子集），不传表示全部 */
+  deviceIds?: number[]
+  /** 参数范围，不传由服务端选择 */
+  paramDefIds?: number[]
+  /** 本次使用的模板，不传用默认模板 */
+  promptId?: number
+  title?: string
+}
+
+export interface AiImageGenerateResult {
+  jobId?: number
+  imageUrl: string
+  promptId: number
+  promptName: string
+  promptText: string
+  model: string
+  durationMs?: number
+}
+
 /** 采集搜索源配置（Key 只回是否已配置） */
 export interface SearchConfig {
   /** 启用的引擎（tavily/searxng/serper，按尝试顺序），空表示系统默认链 */

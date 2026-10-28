@@ -5,6 +5,13 @@ import type {
   AgentTaskLog,
   AdminBadges,
   AiConfig,
+  AiImageGenerateRequest,
+  AiImageGenerateResult,
+  AiImageJob,
+  AiImagePrompt,
+  AiImagePromptOption,
+  AiImageProvider,
+  AiImageStatus,
   AiModel,
   ApproveRequest,
   AuthMe,
@@ -109,6 +116,12 @@ export const publicApi = {
   ) => request.post<unknown, SocialCopyResult>(`/public/series/${seriesId}/social-copy`, body),
   submitFeedback: (data: FeedbackSubmitRequest) => request.post<unknown, number>('/public/feedback', data),
   feedbackStatus: (id: number) => request.get<unknown, FeedbackStatus>(`/public/feedback/${id}`),
+  // AI 绘图（社媒海报）：入口可用性与模板列表都可公开读，生成受服务端限流
+  aiImageStatus: () => request.get<unknown, AiImageStatus>('/public/ai-image/status'),
+  aiImagePrompts: () => request.get<unknown, AiImagePromptOption[]>('/public/ai-image/prompts'),
+  // 绘图是长请求（单张图常需 30-120 秒），单独放宽超时，默认 30 秒会先被前端掐断
+  generateAiImage: (data: AiImageGenerateRequest) =>
+    request.post<unknown, AiImageGenerateResult>('/public/ai-image/generate', data, { timeout: 180_000 }),
 }
 
 // ---------- 鉴权 ----------
@@ -241,6 +254,27 @@ export const adminApi = {
   updateAiModel: (id: number, params: { temperature?: number; enabled?: number }) =>
     request.put<unknown, void>(`/admin/ai-models/${id}`, null, { params }),
   deleteAiModel: (id: number) => request.delete<unknown, void>(`/admin/ai-models/${id}`),
+
+  // AI 绘图供应商（OpenAI 兼容 /images/generations）
+  aiImageProviders: () => request.get<unknown, AiImageProvider[]>('/admin/ai-image/providers'),
+  saveAiImageProvider: (data: Omit<Partial<AiImageProvider>, 'id' | 'apiKey'> & { id?: number | null; apiKey?: string }) =>
+    data.id
+      ? request.put<unknown, AiImageProvider>(`/admin/ai-image/providers/${data.id}`, data)
+      : request.post<unknown, AiImageProvider>('/admin/ai-image/providers', data),
+  deleteAiImageProvider: (id: number) => request.delete<unknown, void>(`/admin/ai-image/providers/${id}`),
+  setDefaultAiImageProvider: (id: number) => request.post<unknown, void>(`/admin/ai-image/providers/${id}/default`),
+  // 提示词模板：内置模板不可删，默认模板全局唯一
+  aiImagePrompts: () => request.get<unknown, AiImagePrompt[]>('/admin/ai-image/prompts'),
+  saveAiImagePrompt: (data: Omit<Partial<AiImagePrompt>, 'id'> & { id?: number | null }) =>
+    data.id
+      ? request.put<unknown, AiImagePrompt>(`/admin/ai-image/prompts/${data.id}`, data)
+      : request.post<unknown, AiImagePrompt>('/admin/ai-image/prompts', data),
+  deleteAiImagePrompt: (id: number) => request.delete<unknown, void>(`/admin/ai-image/prompts/${id}`),
+  setDefaultAiImagePrompt: (id: number) => request.post<unknown, void>(`/admin/ai-image/prompts/${id}/default`),
+  // 绘制历史（成功与失败都记录）
+  aiImageJobs: (params: Record<string, unknown>) =>
+    request.get<unknown, PageResult<AiImageJob>>('/admin/ai-image/jobs', { params }),
+  deleteAiImageJobs: (ids: number[]) => request.post<unknown, number>('/admin/ai-image/jobs/batch-delete', { ids }),
 
   pendingData: (params: Record<string, unknown>) =>
     request.get<unknown, PageResult<PendingData>>('/admin/pending-data', { params }),

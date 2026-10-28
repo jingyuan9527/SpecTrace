@@ -1,5 +1,17 @@
 import type { Page, Route } from '@playwright/test'
-import type { AdminUser, Brand, Device, DeviceSeries, Feedback, ParamDef, ParamGroup, PendingData } from '../src/types/api'
+import type {
+  AdminUser,
+  AiImageJob,
+  AiImagePrompt,
+  AiImageProvider,
+  Brand,
+  Device,
+  DeviceSeries,
+  Feedback,
+  ParamDef,
+  ParamGroup,
+  PendingData,
+} from '../src/types/api'
 
 /**
  * E2E 用的内存版后端：拦截 /api/** 请求，让前端主链路可以脱离真实服务与数据库运行。
@@ -70,6 +82,30 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         createdAt: '2026-10-22T09:00:00',
       },
     ] as Feedback[],
+    aiImageProviders: [
+      {
+        id: 1,
+        name: 'OpenAI',
+        baseUrl: 'https://api.openai.com/v1',
+        apiKeySet: true,
+        model: 'gpt-image-1',
+        size: '1024x1536',
+        quality: null,
+        enabled: 1,
+        isDefault: 1,
+      },
+    ] as AiImageProvider[],
+    aiImagePrompts: [
+      {
+        id: 1,
+        name: '通用社媒海报（内置）',
+        content: '一张{{series}}历代参数对比海报，标题：{{title}}\n机型：\n{{devices}}\n参数：\n{{paramLines}}',
+        builtin: 1,
+        isDefault: 1,
+        enabled: 1,
+      },
+    ] as AiImagePrompt[],
+    aiImageJobs: [] as AiImageJob[],
   }
   let nextBrandId = 10
   let nextDeviceId = 100
@@ -78,6 +114,9 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
   let nextGroupId = 10
   let nextDefId = 10
   let nextSubscriptionId = 10
+  let nextAiImageProviderId = 10
+  let nextAiImagePromptId = 10
+  let nextAiImageJobId = 10
 
   const pageResult = (records: unknown[]) => ({
     total: records.length,
@@ -349,6 +388,43 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         summary: '屏幕由 6.1 增至 6.3 英寸，电池容量小幅提升 39mAh。',
         points: ['屏幕尺寸提升明显，增幅约 3.3%', '电池容量提升有限，仅增加 39mAh'],
         generatedAt: '2026-10-23T10:00:00',
+      })
+    }
+    // AI 绘图：可用性 + 模板 + 生成（e2e 用占位图代替真实出图）
+    if (path === '/public/ai-image/status') return ok({ available: true, enabled: true })
+    if (path === '/public/ai-image/prompts') {
+      return ok(
+        state.aiImagePrompts
+          .filter((prompt) => prompt.enabled === 1)
+          .map((prompt) => ({ id: prompt.id, name: prompt.name, content: prompt.content, isDefault: prompt.isDefault })),
+      )
+    }
+    if (path === '/public/ai-image/generate' && method === 'POST') {
+      const body = request.postDataJSON() as { promptId?: number }
+      const prompt = state.aiImagePrompts.find((item) => item.id === body.promptId) ?? state.aiImagePrompts[0]
+      const job: AiImageJob = {
+        id: nextAiImageJobId++,
+        providerName: 'OpenAI',
+        model: 'gpt-image-1',
+        promptId: prompt.id,
+        promptName: prompt.name,
+        promptText: '渲染后的提示词：iPhone 数字系列 2 代参数对比',
+        deviceNames: 'iPhone 17、iPhone 16',
+        paramNames: '屏幕尺寸、电池容量',
+        status: 'SUCCESS',
+        imageUrl: '/devices/placeholder.svg',
+        durationMs: 1200,
+        createdAt: '2026-10-23T10:00:00',
+      }
+      state.aiImageJobs.unshift(job)
+      return ok({
+        jobId: job.id,
+        imageUrl: job.imageUrl,
+        promptId: prompt.id,
+        promptName: prompt.name,
+        promptText: job.promptText,
+        model: job.model,
+        durationMs: job.durationMs,
       })
     }
     if (path === '/public/devices/hot') return ok(state.devices.slice(0, 4))
@@ -654,6 +730,76 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
       return ok({ device, brand: state.brands[0], params: PARAMS[device.id] ?? {}, variants: [] })
     }
     if (path === '/admin/ai-models') return ok([])
+
+    // ---------- 后台：AI 绘图 ----------
+    if (path === '/admin/ai-image/providers') {
+      if (method === 'GET') return ok(state.aiImageProviders)
+      const body = request.postDataJSON() as Partial<AiImageProvider>
+      const row: AiImageProvider = {
+        id: nextAiImageProviderId++,
+        name: body.name ?? '',
+        baseUrl: body.baseUrl ?? '',
+        apiKeySet: !!body.apiKey,
+        model: body.model ?? '',
+        size: body.size ?? '1024x1536',
+        quality: body.quality ?? null,
+        enabled: body.enabled ?? 1,
+        isDefault: state.aiImageProviders.length ? 0 : 1,
+      }
+      state.aiImageProviders.push(row)
+      return ok(row)
+    }
+    if (/^\/admin\/ai-image\/providers\/\d+\/default$/.test(path)) {
+      const id = Number(path.split('/')[4])
+      state.aiImageProviders.forEach((item) => (item.isDefault = item.id === id ? 1 : 0))
+      return ok(true)
+    }
+    if (/^\/admin\/ai-image\/providers\/\d+$/.test(path)) {
+      const id = Number(path.split('/')[4])
+      if (method === 'DELETE') {
+        state.aiImageProviders = state.aiImageProviders.filter((item) => item.id !== id)
+        return ok(true)
+      }
+      const row = state.aiImageProviders.find((item) => item.id === id)
+      if (row) Object.assign(row, request.postDataJSON() as Partial<AiImageProvider>, { id, apiKey: null })
+      return ok(row)
+    }
+    if (path === '/admin/ai-image/prompts') {
+      if (method === 'GET') return ok(state.aiImagePrompts)
+      const body = request.postDataJSON() as Partial<AiImagePrompt>
+      const row: AiImagePrompt = {
+        id: nextAiImagePromptId++,
+        name: body.name ?? '',
+        content: body.content ?? '',
+        builtin: 0,
+        isDefault: state.aiImagePrompts.length ? 0 : 1,
+        enabled: body.enabled ?? 1,
+      }
+      state.aiImagePrompts.push(row)
+      return ok(row)
+    }
+    if (/^\/admin\/ai-image\/prompts\/\d+\/default$/.test(path)) {
+      const id = Number(path.split('/')[4])
+      state.aiImagePrompts.forEach((item) => (item.isDefault = item.id === id ? 1 : 0))
+      return ok(true)
+    }
+    if (/^\/admin\/ai-image\/prompts\/\d+$/.test(path)) {
+      const id = Number(path.split('/')[4])
+      if (method === 'DELETE') {
+        state.aiImagePrompts = state.aiImagePrompts.filter((item) => item.id !== id)
+        return ok(true)
+      }
+      const row = state.aiImagePrompts.find((item) => item.id === id)
+      if (row) Object.assign(row, request.postDataJSON() as Partial<AiImagePrompt>, { id, builtin: row.builtin })
+      return ok(row)
+    }
+    if (path === '/admin/ai-image/jobs') return ok(pageResult(state.aiImageJobs))
+    if (path === '/admin/ai-image/jobs/batch-delete' && method === 'POST') {
+      const body = request.postDataJSON() as { ids?: number[] }
+      const ids = body.ids ?? []
+      state.aiImageJobs = state.aiImageJobs.filter((job) => !ids.includes(job.id))
+      return ok(ids.length)
+    }
     if (path === '/admin/agent-tasks') {
       if (method === 'POST') {
         const body = request.postDataJSON()

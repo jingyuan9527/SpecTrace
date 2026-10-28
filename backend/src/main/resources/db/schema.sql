@@ -248,6 +248,53 @@ CREATE TABLE IF NOT EXISTS device_view_daily (
     UNIQUE (device_id, view_date)
 );
 
+-- AI 绘图供应商：独立于对话模型配置，对接 OpenAI 兼容 /images/generations
+CREATE TABLE IF NOT EXISTS ai_image_provider (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         VARCHAR(64)  NOT NULL,
+    base_url     VARCHAR(255) NOT NULL,
+    api_key      VARCHAR(255) DEFAULT NULL,
+    model        VARCHAR(128) NOT NULL,
+    size         VARCHAR(32)  NOT NULL DEFAULT '1024x1536',
+    quality      VARCHAR(16)  DEFAULT NULL,
+    enabled      TINYINT      NOT NULL DEFAULT 1,
+    is_default   TINYINT      NOT NULL DEFAULT 0,
+    created_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    updated_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    deleted      TINYINT      NOT NULL DEFAULT 0
+);
+
+-- AI 绘图提示词模板：内置模板只读不可删，用户可复制后改；默认模板全局唯一
+CREATE TABLE IF NOT EXISTS ai_image_prompt (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         VARCHAR(64)  NOT NULL,
+    content      TEXT         NOT NULL,
+    builtin      TINYINT      NOT NULL DEFAULT 0,
+    is_default   TINYINT      NOT NULL DEFAULT 0,
+    enabled      TINYINT      NOT NULL DEFAULT 1,
+    created_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    updated_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    deleted      TINYINT      NOT NULL DEFAULT 0
+);
+
+-- AI 绘图历史：落库每次生成的提示词快照与产物地址，供后台追溯与清理文件
+CREATE TABLE IF NOT EXISTS ai_image_job (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_id   BIGINT       DEFAULT NULL,
+    provider_name VARCHAR(64)  DEFAULT NULL,
+    model         VARCHAR(128) DEFAULT NULL,
+    prompt_id     BIGINT       DEFAULT NULL,
+    prompt_name   VARCHAR(64)  DEFAULT NULL,
+    prompt_text   TEXT         DEFAULT NULL,
+    device_names  VARCHAR(512) DEFAULT NULL,
+    param_names   VARCHAR(512) DEFAULT NULL,
+    status        VARCHAR(24)  NOT NULL DEFAULT 'SUCCESS',
+    image_url     VARCHAR(512) DEFAULT NULL,
+    error_msg     TEXT         DEFAULT NULL,
+    duration_ms   BIGINT       DEFAULT NULL,
+    created_at    DATETIME     DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 逻辑删除的软删行不参与唯一约束，删除后允许重建同名记录（SQLite 部分索引）
 CREATE UNIQUE INDEX IF NOT EXISTS uk_param_key ON param_def (param_key) WHERE deleted = 0;
 CREATE UNIQUE INDEX IF NOT EXISTS uk_username ON admin_user (username) WHERE deleted = 0;
@@ -275,3 +322,6 @@ CREATE INDEX IF NOT EXISTS idx_ai_model_default ON ai_model (is_default);
 CREATE INDEX IF NOT EXISTS idx_log_target ON operation_log (target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_log_created ON operation_log (created_at);
 CREATE INDEX IF NOT EXISTS idx_view_date ON device_view_daily (view_date);
+CREATE INDEX IF NOT EXISTS idx_ai_image_provider_default ON ai_image_provider (is_default);
+CREATE INDEX IF NOT EXISTS idx_ai_image_prompt_default ON ai_image_prompt (is_default);
+CREATE INDEX IF NOT EXISTS idx_ai_image_job_created ON ai_image_job (created_at);

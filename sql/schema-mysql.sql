@@ -172,6 +172,62 @@ CREATE TABLE ai_model (
     KEY idx_ai_model_default (is_default)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'AI 模型表';
 
+-- 7.7 AI 绘图供应商表（OpenAI 兼容 /images/generations，默认供应商全局唯一）
+DROP TABLE IF EXISTS ai_image_provider;
+CREATE TABLE ai_image_provider (
+    id           BIGINT       NOT NULL AUTO_INCREMENT,
+    name         VARCHAR(64)  NOT NULL COMMENT '供应商名称',
+    base_url     VARCHAR(255) NOT NULL COMMENT 'OpenAI 兼容 base_url',
+    api_key      VARCHAR(255) DEFAULT NULL COMMENT 'API Key(建议加密存储)',
+    model        VARCHAR(128) NOT NULL COMMENT '绘图模型，如 gpt-image-1 / dall-e-3',
+    size         VARCHAR(32)  NOT NULL DEFAULT '1024x1536' COMMENT '出图尺寸',
+    quality      VARCHAR(16)  DEFAULT NULL COMMENT '画质参数，留空则不传',
+    enabled      TINYINT      NOT NULL DEFAULT 1,
+    is_default   TINYINT      NOT NULL DEFAULT 0 COMMENT '是否默认供应商',
+    created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted      TINYINT      NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    KEY idx_ai_image_provider_default (is_default)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'AI 绘图供应商表';
+
+-- 7.8 AI 绘图提示词模板表（内置模板不可删，正文用 {{变量}} 占位）
+DROP TABLE IF EXISTS ai_image_prompt;
+CREATE TABLE ai_image_prompt (
+    id           BIGINT       NOT NULL AUTO_INCREMENT,
+    name         VARCHAR(64)  NOT NULL COMMENT '模板名称',
+    content      TEXT         NOT NULL COMMENT '提示词正文，含 {{变量}}',
+    builtin      TINYINT      NOT NULL DEFAULT 0 COMMENT '1 系统内置，不可删除',
+    is_default   TINYINT      NOT NULL DEFAULT 0 COMMENT '是否默认模板',
+    enabled      TINYINT      NOT NULL DEFAULT 1,
+    created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted      TINYINT      NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    KEY idx_ai_image_prompt_default (is_default)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'AI 绘图提示词模板表';
+
+-- 7.9 AI 绘图历史表（成功与失败都记录，保存渲染后的提示词快照）
+DROP TABLE IF EXISTS ai_image_job;
+CREATE TABLE ai_image_job (
+    id            BIGINT       NOT NULL AUTO_INCREMENT,
+    provider_id   BIGINT       DEFAULT NULL COMMENT '绘图供应商',
+    provider_name VARCHAR(64)  DEFAULT NULL COMMENT '供应商名称快照',
+    model         VARCHAR(128) DEFAULT NULL COMMENT '模型快照',
+    prompt_id     BIGINT       DEFAULT NULL COMMENT '提示词模板',
+    prompt_name   VARCHAR(64)  DEFAULT NULL COMMENT '模板名称快照',
+    prompt_text   TEXT         DEFAULT NULL COMMENT '渲染后的完整提示词',
+    device_names  VARCHAR(512) DEFAULT NULL COMMENT '机型范围快照',
+    param_names   VARCHAR(512) DEFAULT NULL COMMENT '参数名快照',
+    status        VARCHAR(24)  NOT NULL DEFAULT 'SUCCESS' COMMENT 'SUCCESS/FAILED',
+    image_url     VARCHAR(512) DEFAULT NULL COMMENT '成品图地址',
+    error_msg     TEXT         DEFAULT NULL COMMENT '失败原因',
+    duration_ms   BIGINT       DEFAULT NULL,
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_ai_image_job_created (created_at)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'AI 绘图历史表';
+
 -- 初始化一条默认连接与模型，API Key 请在后台填写
 INSERT INTO ai_config (name, provider, base_url, api_key, enabled)
 VALUES ('阿里云百炼', 'dashscope',
