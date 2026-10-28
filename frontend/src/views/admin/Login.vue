@@ -24,6 +24,14 @@ async function submit() {
     toast.success('登录成功')
     // 初始密码或被重置的密码，先进改密页；守卫也会兜底拦截其它后台路由
     router.push(res.mustChangePassword ? '/admin/change-password' : '/admin/devices')
+  } catch (error) {
+    // 401 在登录页被请求层有意静默（它只清本地凭证，不弹提示），这里补明确原因；
+    // 其余状态码（锁定 429 / 禁用 403）请求层已统一提示，再弹一次会重复。
+    // 少了这段 catch，登录失败会变成未处理 rejection，被 AppErrorBoundary 整页替换成「页面加载出错」。
+    const response = (error as { response?: { status?: number; data?: { message?: string } } }).response
+    if (response?.status === 401) {
+      toast.error(response.data?.message || '用户名或密码错误')
+    }
   } finally {
     loading.value = false
   }

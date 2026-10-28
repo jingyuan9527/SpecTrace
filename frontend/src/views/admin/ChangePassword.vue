@@ -43,6 +43,9 @@ async function submit() {
     forced.value = false
     toast.success('密码已更新')
     router.replace('/admin/devices')
+  } catch {
+    // 原密码错误等业务失败由请求层统一 toast；这里只吞掉 rejection，
+    // 否则未处理 rejection 会被 AppErrorBoundary 整页替换成「页面加载出错」
   } finally {
     loading.value = false
   }
