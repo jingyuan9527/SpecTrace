@@ -25,6 +25,11 @@ public class SecurityConfig {
             "/",
             "/index.html",
             "/assets/**",
+            // PWA 与浏览器自动抓取的根目录静态资源：白名单是精确匹配，漏一个就是 401（部署后 console 满屏红）
+            "/manifest.webmanifest",
+            "/sw.js",
+            "/pwa-icon.svg",
+            "/favicon.ico",
             "/api/auth/login",
             "/api/public/**",
             "/uploads/**",

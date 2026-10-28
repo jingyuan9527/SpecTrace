@@ -20,12 +20,14 @@ class SecurityConfigTest {
             // 旧路由保留放行：分享链接直访时由 SPA 壳完成到 /trends 的重定向
             "/history", "/evolution");
 
+    /** 浏览器 / PWA 在页面加载时自动请求的根目录文件，漏配同样只会得到 401。 */
+    private static final List<String> STATIC_ASSETS = List.of(
+            "/manifest.webmanifest", "/sw.js", "/pwa-icon.svg", "/favicon.ico");
+
     @Test
     @DisplayName("PUBLIC_PATHS 覆盖全部访客前端路由")
     void coversAllVisitorRoutes() throws Exception {
-        Field field = SecurityConfig.class.getDeclaredField("PUBLIC_PATHS");
-        field.setAccessible(true);
-        List<String> publicPaths = Arrays.asList((String[]) field.get(null));
+        List<String> publicPaths = publicPaths();
 
         for (String route : VISITOR_ROUTES) {
             boolean covered = publicPaths.stream().anyMatch(pattern ->
@@ -33,5 +35,22 @@ class SecurityConfigTest {
                             || (pattern.endsWith("/**") && route.startsWith(pattern.substring(0, pattern.length() - 3))));
             assertThat(covered).as("访客路由 %s 必须在 PUBLIC_PATHS 白名单内", route).isTrue();
         }
+    }
+
+    @Test
+    @DisplayName("PUBLIC_PATHS 覆盖 PWA 与浏览器自动请求的静态资源")
+    void coversPwaStaticAssets() throws Exception {
+        List<String> publicPaths = publicPaths();
+
+        for (String asset : STATIC_ASSETS) {
+            assertThat(publicPaths).as("静态资源 %s 必须在 PUBLIC_PATHS 白名单内，否则部署后请求被鉴权拦截成 401", asset)
+                    .contains(asset);
+        }
+    }
+
+    private static List<String> publicPaths() throws Exception {
+        Field field = SecurityConfig.class.getDeclaredField("PUBLIC_PATHS");
+        field.setAccessible(true);
+        return Arrays.asList((String[]) field.get(null));
     }
 }
