@@ -108,6 +108,8 @@ public class PublicController {
     @GetMapping("/devices/{id}")
     public R<DeviceDetailVO> detail(@PathVariable Long id, HttpServletRequest request) {
         DeviceDetailVO data = deviceService.detail(id);
+        // 草稿/下架机型对外表现为不存在：未发布参数不该被直达链接读到，也不该被搜索引擎收录
+        deviceService.requirePublished(data.getDevice());
         // 浏览统计只进内存缓冲：统计失败不该影响详情返回，也不该占用 SQLite 写锁
         deviceViewService.recordViews(clientKey(request), List.of(id));
         return R.ok(data);

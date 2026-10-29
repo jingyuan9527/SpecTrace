@@ -1,5 +1,7 @@
 package com.spectrace.service;
 
+import com.spectrace.common.NotFoundException;
+import com.spectrace.entity.Device;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -9,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 详情页「N 人待核实」的聚合行转换。
@@ -48,6 +52,32 @@ class DeviceServiceTest {
     @DisplayName("无反馈时返回空表，详情接口不多出空键")
     void toFeedbackCountsIsEmptyWithoutRows() {
         assertThat(DeviceService.toFeedbackCounts(List.of())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("公开详情：草稿与下架一律按不存在处理")
+    void requirePublishedRejectsUnpublished() {
+        DeviceService service = new DeviceService(null, null, null, null, null, null, null, null, null);
+
+        assertThatThrownBy(() -> service.requirePublished(device(0)))
+                .isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.requirePublished(device(null)))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("公开详情：已上架机型正常放行")
+    void requirePublishedAcceptsPublished() {
+        DeviceService service = new DeviceService(null, null, null, null, null, null, null, null, null);
+
+        assertThatCode(() -> service.requirePublished(device(1))).doesNotThrowAnyException();
+    }
+
+    private static Device device(Integer status) {
+        Device device = new Device();
+        device.setId(1L);
+        device.setStatus(status);
+        return device;
     }
 
     /** Map.of 不接受 null value，脏数据行只能手工拼。 */

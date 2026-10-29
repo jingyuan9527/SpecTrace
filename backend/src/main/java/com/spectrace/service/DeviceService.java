@@ -54,8 +54,9 @@ public class DeviceService {
     private final OperationLogService logService;
     private final FeedbackMapper feedbackMapper;
 
+    /** 公开端机型分页：只出已上架机型，草稿与下架不对访客展示 */
     public IPage<Device> page(long current, long size, Long brandId, Integer year, String keyword) {
-        return page(current, size, brandId, null, year, keyword, null);
+        return page(current, size, brandId, null, year, keyword, 1);
     }
 
     public IPage<Device> page(long current, long size, Long brandId, Long seriesId, Integer year, String keyword) {
@@ -652,6 +653,22 @@ public class DeviceService {
         log.info("机型删除: deviceId={} admin={}", id, adminName);
     }
 
+    /** 公开端可见口径：只有 status=1 的机型对外存在，草稿与下架一律按不存在处理。 */
+    static boolean isPublished(Device device) {
+        return device != null && device.getStatus() != null && device.getStatus() == 1;
+    }
+
+    /**
+     * 公开详情的前置校验：非上架机型对外表现为 404。
+     *
+     * <p>管理端编辑草稿要走同一个 detail，因此校验放在公开控制器而不是 detail 内部。</p>
+     */
+    public void requirePublished(Device device) {
+        if (!isPublished(device)) {
+            throw new NotFoundException("机型不存在");
+        }
+    }
+
     /**
      * 多机型横向对比：返回对齐到 device 顺序的参数矩阵，按参数分组归类。
      */
@@ -659,9 +676,12 @@ public class DeviceService {
         if (deviceIds == null || deviceIds.size() < 2) {
             throw new BizException("至少选择 2 台机型进行对比");
         }
-        List<Device> devices = deviceMapper.selectBatchIds(deviceIds);
+        // 公开接口：草稿/下架机型不参与对比，按不存在处理，避免用 id 绕过列表口径
+        List<Device> devices = deviceMapper.selectBatchIds(deviceIds).stream()
+                .filter(DeviceService::isPublished)
+                .toList();
         if (devices.size() != deviceIds.size()) {
-            throw new BizException("部分机型不存在");
+            throw new BizException("部分机型不存在或已下架");
         }
         // 按传入顺序排列
         Map<Long, Device> deviceMap = devices.stream().collect(Collectors.toMap(Device::getId, d -> d));
@@ -686,7 +706,7 @@ public class DeviceService {
         // deviceId -> 存储版本列表，并回填最低发布价
         Map<Long, List<DeviceVariantDTO>> variantsByDevice = new LinkedHashMap<>();
         variantMapper.selectList(Wrappers.<DeviceVariant>lambdaQuery()
-                        .in(DeviceVariant::getDeviceId, deviceIds)
+                        .in(DeviceVariant::getDeviceId, devices.stream().map(Device::getId).toList())
                         .orderByAsc(DeviceVariant::getSortOrder)
                         .orderByAsc(DeviceVariant::getId))
                 .forEach(v -> variantsByDevice
