@@ -567,23 +567,41 @@ public class DeviceService {
                 .eq(DeviceVariant::getDeviceId, deviceId));
         Map<Long, DeviceVariant> existingById = existing.stream()
                 .collect(Collectors.toMap(DeviceVariant::getId, Function.identity(), (a, b) -> a));
+        Map<String, DeviceVariant> existingBySpec = existing.stream()
+                .collect(Collectors.toMap(this::variantKey, Function.identity(), (a, b) -> a));
 
-        List<Long> keepIds = new ArrayList<>();
-        int index = 0;
+        // (device_id, storage, ram) 是库上的唯一约束，而模型抽取的 _variants 常出现重复版本
+        // （同容量同内存列两次，或「12GB+256GB」与「12+256」这类写法归并后撞键）。
+        // 先按键去重（后出现者覆盖先出现者），否则第二次 INSERT 必然触发 SQLITE_CONSTRAINT_UNIQUE。
+        Map<String, DeviceVariantDTO> deduped = new LinkedHashMap<>();
         for (DeviceVariantDTO dto : variants) {
             if (dto == null || !StringUtils.hasText(dto.getStorage())) {
                 continue;
             }
+            String storage = dto.getStorage().trim();
+            String ram = dto.getRam() == null ? "" : dto.getRam().trim();
+            deduped.put(variantKey(storage, ram), dto);
+        }
+        if (deduped.size() < variants.size()) {
+            log.warn("版本列表存在重复或无效项，已合并: deviceId={} 原始 {} 条 -> 有效 {} 条",
+                    deviceId, variants.size(), deduped.size());
+        }
+
+        List<Long> keepIds = new ArrayList<>();
+        int index = 0;
+        for (DeviceVariantDTO dto : deduped.values()) {
             index++;
             String storage = dto.getStorage().trim();
             String ram = dto.getRam() == null ? "" : dto.getRam().trim();
+            String specKey = variantKey(storage, ram);
 
             DeviceVariant target = dto.getId() == null ? null : existingById.get(dto.getId());
+            DeviceVariant specRow = existingBySpec.get(specKey);
             if (target == null) {
-                target = existing.stream()
-                        .filter(v -> storage.equals(v.getStorage())
-                                && ram.equals(v.getRam() == null ? "" : v.getRam()))
-                        .findFirst().orElse(null);
+                target = specRow;
+            } else if (specRow != null && !specRow.getId().equals(target.getId())) {
+                // 按 id 命中的行改键后会撞上另一行已占用的键，改为复用该键所在的行
+                target = specRow;
             }
 
             if (target == null) {
@@ -597,6 +615,8 @@ public class DeviceService {
                 variant.setSortOrder(dto.getSortOrder() == null ? index : dto.getSortOrder());
                 variantMapper.insert(variant);
                 keepIds.add(variant.getId());
+                existingById.put(variant.getId(), variant);
+                existingBySpec.put(specKey, variant);
             } else {
                 target.setStorage(storage);
                 target.setRam(ram);
@@ -606,6 +626,7 @@ public class DeviceService {
                 target.setSortOrder(dto.getSortOrder() == null ? index : dto.getSortOrder());
                 variantMapper.updateById(target);
                 keepIds.add(target.getId());
+                existingBySpec.put(specKey, target);
             }
         }
 
@@ -616,6 +637,15 @@ public class DeviceService {
         if (!removeIds.isEmpty()) {
             variantMapper.deleteByIds(removeIds);
         }
+    }
+
+    /** 版本唯一键：库表约束是 (device_id, storage, ram)，这里只拼后两列供内存去重。 */
+    private String variantKey(DeviceVariant variant) {
+        return variantKey(variant.getStorage(), variant.getRam() == null ? "" : variant.getRam());
+    }
+
+    private String variantKey(String storage, String ram) {
+        return storage + "\u0000" + ram;
     }
 
     /**
