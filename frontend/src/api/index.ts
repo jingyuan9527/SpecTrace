@@ -9,7 +9,6 @@ import type {
   AiImageGenerateResult,
   AiImageJob,
   AiImagePrompt,
-  AiImagePromptOption,
   AiImageProvider,
   AiImageStatus,
   AiModel,
@@ -116,12 +115,6 @@ export const publicApi = {
   ) => request.post<unknown, SocialCopyResult>(`/public/series/${seriesId}/social-copy`, body),
   submitFeedback: (data: FeedbackSubmitRequest) => request.post<unknown, number>('/public/feedback', data),
   feedbackStatus: (id: number) => request.get<unknown, FeedbackStatus>(`/public/feedback/${id}`),
-  // AI 绘图（社媒海报）：入口可用性与模板列表都可公开读，生成受服务端限流
-  aiImageStatus: () => request.get<unknown, AiImageStatus>('/public/ai-image/status'),
-  aiImagePrompts: () => request.get<unknown, AiImagePromptOption[]>('/public/ai-image/prompts'),
-  // 绘图是长请求（单张图常需 30-120 秒），单独放宽超时，默认 30 秒会先被前端掐断
-  generateAiImage: (data: AiImageGenerateRequest) =>
-    request.post<unknown, AiImageGenerateResult>('/public/ai-image/generate', data, { timeout: 180_000 }),
 }
 
 // ---------- 鉴权 ----------
@@ -275,6 +268,10 @@ export const adminApi = {
   aiImageJobs: (params: Record<string, unknown>) =>
     request.get<unknown, PageResult<AiImageJob>>('/admin/ai-image/jobs', { params }),
   deleteAiImageJobs: (ids: number[]) => request.post<unknown, number>('/admin/ai-image/jobs/batch-delete', { ids }),
+  // 海报生成：仅后台内部使用；单张图常需 30-120 秒，单独放宽超时，默认 30 秒会先被前端掐断
+  aiImageStatus: () => request.get<unknown, AiImageStatus>('/admin/ai-image/status'),
+  generateAiImage: (data: AiImageGenerateRequest) =>
+    request.post<unknown, AiImageGenerateResult>('/admin/ai-image/generate', data, { timeout: 180_000 }),
 
   pendingData: (params: Record<string, unknown>) =>
     request.get<unknown, PageResult<PendingData>>('/admin/pending-data', { params }),

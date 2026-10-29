@@ -2,6 +2,9 @@ package com.spectrace.controller;
 
 import com.spectrace.common.PageResult;
 import com.spectrace.common.R;
+import com.spectrace.dto.AiImageGenerateRequest;
+import com.spectrace.dto.AiImageGenerateVO;
+import com.spectrace.dto.AiImageStatusVO;
 import com.spectrace.dto.BatchIdsRequest;
 import com.spectrace.entity.AiImageJob;
 import com.spectrace.entity.AiImagePrompt;
@@ -30,6 +33,25 @@ public class AdminAiImageController {
     private final AiImagePromptService promptService;
     private final AiImageGenerationService generationService;
     private final OperationLogService logService;
+
+    // ---------------- 生成（内部工具，不对访客开放） ----------------
+
+    @Operation(summary = "AI 绘图可用性（供后台提示供应商/模板缺口）")
+    @GetMapping("/status")
+    public R<AiImageStatusVO> status() {
+        return R.ok(generationService.status());
+    }
+
+    @Operation(summary = "按系列与模板生成社媒海报（内部使用，按账号分钟级限流）")
+    @PostMapping("/generate")
+    public R<AiImageGenerateVO> generate(@RequestBody AiImageGenerateRequest request,
+                                         @RequestAttribute Long adminId, @RequestAttribute String adminName) {
+        // 限流键用工号而不是 IP：绘图成本高，同一出口 IP 下的多个管理员不应互相挤占额度
+        AiImageGenerateVO vo = generationService.generate(request, "admin:" + adminId);
+        logService.record(adminId, adminName, "GENERATE_AI_IMAGE", "ai_image_job", vo.getJobId(),
+                vo.getPromptName() + " / " + vo.getModel());
+        return R.ok(vo);
+    }
 
     // ---------------- 供应商 ----------------
 

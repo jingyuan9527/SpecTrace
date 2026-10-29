@@ -157,6 +157,8 @@ test('访客：社媒导出弹窗与文案生成', async ({ page }) => {
 
   const dialog = page.getByRole('dialog', { name: '社媒导出' })
   await expect(dialog).toBeVisible()
+  // AI 生图成本高且不对访客开放：C 端只有图片与文案两个 Tab
+  await expect(dialog.getByRole('tab', { name: 'AI 海报' })).toHaveCount(0)
   // 图片 Tab：默认标题 + 模板卡 + 下载按钮
   await expect(dialog.getByText('iPhone 数字系列 历代参数进化')).toBeVisible()
   await expect(dialog.getByRole('button', { name: '下载图片' })).toBeEnabled()

@@ -5,10 +5,10 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * 访客端 AI 绘图请求。
+ * 后台 AI 绘图请求（内部工具）。
  *
  * <p>只接收「选择项」而不是提示词正文：机型与参数由服务端按 ID 回库取数、模板按 ID 取库内正文，
- * 公开接口因此无法被用来提交任意提示词。</p>
+ * 调用方因此无法把接口当成任意提示词的出图通道。</p>
  */
 @Data
 public class AiImageGenerateRequest {

@@ -54,7 +54,7 @@ onMounted(loadBadges)
 watch(() => route.path, loadBadges)
 
 // 按使用频率排序：核心工作流（机型 → 抓取 → 审核 → 数据口径）在前，配置居中，管理/运维垫底
-const menus = [
+const baseMenus = [
   { path: '/admin/devices', label: '机型管理', icon: Smartphone },
   { path: '/admin/agent-tasks', label: '抓取任务', icon: Bot },
   { path: '/admin/pending', label: '抓取审核', icon: ClipboardCheck },
@@ -71,14 +71,20 @@ const menus = [
   { path: '/admin/maintenance', label: '系统运维', icon: Database },
 ]
 
-const currentLabel = computed(() => menus.find((m) => route.path.startsWith(m.path))?.label ?? '管理后台')
-const user = computed<{ nickname?: string; username?: string }>(() => {
+/** 系统运维只有超管有接口权限：ADMIN 菜单直接不展示，避免点进去只剩 403 */
+const SUPER_ADMIN_ONLY = new Set(['/admin/maintenance'])
+
+function readStoredUser(): { nickname?: string; username?: string; role?: string } {
   try {
     return JSON.parse(localStorage.getItem('spectrace-user') || '{}')
   } catch {
     return {}
   }
-})
+}
+
+const user = readStoredUser()
+const menus = baseMenus.filter((item) => user.role === 'SUPER_ADMIN' || !SUPER_ADMIN_ONLY.has(item.path))
+const currentLabel = computed(() => menus.find((m) => route.path.startsWith(m.path))?.label ?? '管理后台')
 
 const userMenu: MenuItem[] = [
   {

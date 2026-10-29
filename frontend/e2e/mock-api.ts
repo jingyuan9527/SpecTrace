@@ -390,43 +390,6 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         generatedAt: '2026-10-23T10:00:00',
       })
     }
-    // AI 绘图：可用性 + 模板 + 生成（e2e 用占位图代替真实出图）
-    if (path === '/public/ai-image/status') return ok({ available: true, enabled: true })
-    if (path === '/public/ai-image/prompts') {
-      return ok(
-        state.aiImagePrompts
-          .filter((prompt) => prompt.enabled === 1)
-          .map((prompt) => ({ id: prompt.id, name: prompt.name, content: prompt.content, isDefault: prompt.isDefault })),
-      )
-    }
-    if (path === '/public/ai-image/generate' && method === 'POST') {
-      const body = request.postDataJSON() as { promptId?: number }
-      const prompt = state.aiImagePrompts.find((item) => item.id === body.promptId) ?? state.aiImagePrompts[0]
-      const job: AiImageJob = {
-        id: nextAiImageJobId++,
-        providerName: 'OpenAI',
-        model: 'gpt-image-1',
-        promptId: prompt.id,
-        promptName: prompt.name,
-        promptText: '渲染后的提示词：iPhone 数字系列 2 代参数对比',
-        deviceNames: 'iPhone 17、iPhone 16',
-        paramNames: '屏幕尺寸、电池容量',
-        status: 'SUCCESS',
-        imageUrl: '/devices/placeholder.svg',
-        durationMs: 1200,
-        createdAt: '2026-10-23T10:00:00',
-      }
-      state.aiImageJobs.unshift(job)
-      return ok({
-        jobId: job.id,
-        imageUrl: job.imageUrl,
-        promptId: prompt.id,
-        promptName: prompt.name,
-        promptText: job.promptText,
-        model: job.model,
-        durationMs: job.durationMs,
-      })
-    }
     if (path === '/public/devices/hot') return ok(state.devices.slice(0, 4))
     if (path === '/public/devices/suggest') {
       const matched = state.devices.filter((device) => device.name.toLowerCase().includes(keyword))
@@ -732,6 +695,35 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
     if (path === '/admin/ai-models') return ok([])
 
     // ---------- 后台：AI 绘图 ----------
+    if (path === '/admin/ai-image/status') return ok({ available: true, enabled: true })
+    if (path === '/admin/ai-image/generate' && method === 'POST') {
+      const body = request.postDataJSON() as { promptId?: number }
+      const prompt = state.aiImagePrompts.find((item) => item.id === body.promptId) ?? state.aiImagePrompts[0]
+      const job: AiImageJob = {
+        id: nextAiImageJobId++,
+        providerName: 'OpenAI',
+        model: 'gpt-image-1',
+        promptId: prompt.id,
+        promptName: prompt.name,
+        promptText: '渲染后的提示词：iPhone 数字系列 2 代参数对比',
+        deviceNames: 'iPhone 17、iPhone 16',
+        paramNames: '屏幕尺寸、电池容量',
+        status: 'SUCCESS',
+        imageUrl: '/devices/placeholder.svg',
+        durationMs: 1200,
+        createdAt: '2026-10-23T10:00:00',
+      }
+      state.aiImageJobs.unshift(job)
+      return ok({
+        jobId: job.id,
+        imageUrl: job.imageUrl,
+        promptId: prompt.id,
+        promptName: prompt.name,
+        promptText: job.promptText,
+        model: job.model,
+        durationMs: job.durationMs,
+      })
+    }
     if (path === '/admin/ai-image/providers') {
       if (method === 'GET') return ok(state.aiImageProviders)
       const body = request.postDataJSON() as Partial<AiImageProvider>

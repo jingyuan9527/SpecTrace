@@ -35,11 +35,6 @@ function go(name: string) {
   mobileOpen.value = false
   router.push({ name })
 }
-
-function goAdmin() {
-  mobileOpen.value = false
-  router.push('/admin/login')
-}
 </script>
 
 <template>
@@ -80,7 +75,6 @@ function goAdmin() {
             <Sun v-if="theme.dark" />
             <Moon v-else />
           </Button>
-          <Button variant="ghost" size="sm" class="hidden sm:inline-flex" @click="router.push('/admin/login')">后台</Button>
           <Button variant="ghost" size="icon" class="md:hidden" aria-label="打开菜单" @click="mobileOpen = true">
             <Menu />
           </Button>
@@ -95,7 +89,11 @@ function goAdmin() {
     <footer class="border-t py-6">
       <div class="container flex flex-col items-center justify-between gap-2 text-xs text-muted-foreground sm:flex-row">
         <span>SpecTrace · 手机参数对比平台</span>
-        <span>参数以品牌官方公布为准，冲突处以官网来源优先</span>
+        <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+          <span>参数以品牌官方公布为准，冲突处以官网来源优先</span>
+          <!-- 后台入口只放页脚弱链接：访客点进去也只会看到登录页，不该占据主导航 -->
+          <router-link to="/admin/login" class="transition-colors hover:text-foreground">管理入口</router-link>
+        </div>
       </div>
     </footer>
 
@@ -114,9 +112,6 @@ function goAdmin() {
           <Badge v-if="tab.name === 'compare' && compare.count" class="ml-auto">{{ compare.count }}</Badge>
         </button>
       </nav>
-      <div class="mt-auto border-t pt-4">
-        <Button variant="outline" size="sm" class="w-full" @click="goAdmin">进入管理后台</Button>
-      </div>
     </Sheet>
   </div>
 </template>

@@ -1,13 +1,21 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Laptop, Loader2, Lock, User } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { authApi } from '@/api'
 import { Button, Card, CardContent, Input, Label } from '@/components/ui'
 
+const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
+
+/** 只接受后台内部路径：既避免开放重定向，也避免把访客页当成登录后落点 */
+function resolveRedirect(): string {
+  const raw = route.query.redirect
+  const target = typeof raw === 'string' ? raw : ''
+  return target.startsWith('/admin/') && !target.startsWith('/admin/login') ? target : '/admin/devices'
+}
 // 不预填任何账号：默认凭据写在代码里会被登录页直接暴露给访客（生产验证发现）
 const form = reactive({ username: '', password: '' })
 
@@ -23,7 +31,7 @@ async function submit() {
     localStorage.setItem('spectrace-user', JSON.stringify(res))
     toast.success('登录成功')
     // 初始密码或被重置的密码，先进改密页；守卫也会兜底拦截其它后台路由
-    router.push(res.mustChangePassword ? '/admin/change-password' : '/admin/devices')
+    router.push(res.mustChangePassword ? '/admin/change-password' : resolveRedirect())
   } catch (error) {
     // 401 在登录页被请求层有意静默（它只清本地凭证，不弹提示），这里补明确原因；
     // 其余状态码（锁定 429 / 禁用 403）请求层已统一提示，再弹一次会重复。

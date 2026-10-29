@@ -77,10 +77,10 @@ spectrace:
     insight:
       enabled: ${SPECTRACE_AI_INSIGHT_ENABLED:true}
       cache-hours: ${SPECTRACE_AI_INSIGHT_CACHE_HOURS:24}
-    # AI 绘图（社媒海报）：供应商与提示词在后台维护；未配置时前端隐藏入口
+    # AI 绘图（社媒海报）：仅后台内部使用，不对访客开放；供应商与提示词在后台维护
     image:
       enabled: ${SPECTRACE_AI_IMAGE_ENABLED:true}
-      # 单 IP 每分钟生成次数上限：绘图成本高于文案，默认比 AI 摘要更严
+      # 单个管理员每分钟生成次数上限：绘图成本高于文案，默认比 AI 摘要更严
       rate-limit-per-minute: ${SPECTRACE_AI_IMAGE_QPM:3}
       timeout-seconds: ${SPECTRACE_AI_IMAGE_TIMEOUT_SECONDS:120}
   # SQLite 每日备份：VACUUM INTO 生成快照并只保留最近 N 份

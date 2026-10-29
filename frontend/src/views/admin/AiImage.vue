@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { Copy, Pencil, Plus, RefreshCw, Trash2 } from '@lucide/vue'
+import { Copy, Download, Loader2, Pencil, Plus, RefreshCw, Sparkles, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
 import { usePagedList } from '@/composables/usePagedList'
 import { formatTime } from '@/lib/utils'
-import type { AiImagePrompt, AiImageProvider } from '@/types/api'
+import type { AiImageGenerateResult, AiImagePrompt, AiImageProvider, AiImageStatus } from '@/types/api'
 import {
   Alert,
   Badge,
@@ -35,18 +35,19 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
 
 /**
- * AI 绘图：供应商接入、提示词模板、绘制历史三块。
+ * AI 绘图：供应商接入、提示词模板、海报生成、绘制历史四块。
  *
- * 供应商与模板都遵循「启用 + 全局唯一默认」两个开关：访客端入口是否出现，
- * 取决于这里是否同时存在启用的供应商与模板，页面顶部会直接提示缺口。
+ * 绘图成本高，只作为后台内部出图工具使用，访客端没有任何入口。
+ * 供应商与模板都遵循「启用 + 全局唯一默认」两个开关，缺任一项时生成页直接提示缺口。
  */
 
 const tabs: TabItem[] = [
   { value: 'providers', label: '供应商' },
   { value: 'prompts', label: '提示词模板' },
+  { value: 'generate', label: '生成海报' },
   { value: 'jobs', label: '绘制历史' },
 ]
-const tab = ref<'providers' | 'prompts' | 'jobs'>('providers')
+const tab = ref<'providers' | 'prompts' | 'generate' | 'jobs'>('providers')
 
 // ---------- 供应商 ----------
 const providers = ref<AiImageProvider[]>([])
@@ -297,16 +298,95 @@ async function confirmDeleteJobs() {
   }
 }
 
-// ---------- 入口可用性 ----------
+// ---------- 可用性 ----------
 const providerReady = computed(() => providers.value.some((item) => item.enabled === 1))
 const promptReady = computed(() => prompts.value.some((item) => item.enabled === 1))
 const entryReady = computed(() => providerReady.value && promptReady.value)
 const entryHint = computed(() =>
-  providerReady.value ? '还没有启用的提示词模板，访客端不会出现 AI 海报入口。' : '还没有启用的绘图供应商，访客端不会出现 AI 海报入口。',
+  providerReady.value ? '还没有启用的提示词模板，无法生成海报。' : '还没有启用的绘图供应商，无法生成海报。',
 )
+
+// ---------- 生成海报（内部工具） ----------
+const generateForm = reactive({
+  seriesId: undefined as number | undefined,
+  promptId: undefined as number | undefined,
+  title: '',
+})
+const seriesOptions = ref<{ label: string; value: number }[]>([])
+const seriesLoading = ref(false)
+const generateStatus = ref<AiImageStatus | null>(null)
+const generating = ref(false)
+const generateResult = ref<AiImageGenerateResult | null>(null)
+const generateError = ref('')
+
+const promptOptions = computed(() =>
+  prompts.value
+    .filter((prompt) => prompt.enabled === 1)
+    .map((prompt) => ({
+      label: prompt.isDefault === 1 ? `${prompt.name}（默认）` : prompt.name,
+      value: prompt.id,
+    })),
+)
+
+/** 选项按需加载：进页面就拉系列列表会让「看历史」这种轻操作多一次请求 */
+async function loadGenerateOptions() {
+  if (!generateStatus.value) {
+    try {
+      generateStatus.value = await adminApi.aiImageStatus()
+    } catch {
+      // 可用性只用于提示，失败时按「未知」处理，真正生成仍会给出明确错误
+      generateStatus.value = null
+    }
+  }
+  if (seriesOptions.value.length || seriesLoading.value) return
+  seriesLoading.value = true
+  try {
+    const rows = await adminApi.series()
+    seriesOptions.value = rows.map((row) => ({
+      label: row.brandName ? `${row.brandName} · ${row.name}` : row.name,
+      value: row.id,
+    }))
+  } finally {
+    seriesLoading.value = false
+  }
+  if (!generateForm.promptId) {
+    const enabled = prompts.value.filter((prompt) => prompt.enabled === 1)
+    generateForm.promptId = (enabled.find((prompt) => prompt.isDefault === 1) ?? enabled[0])?.id
+  }
+}
+
+async function generateImage() {
+  if (!generateForm.seriesId || generating.value) return
+  generating.value = true
+  generateError.value = ''
+  generateResult.value = null
+  try {
+    generateResult.value = await adminApi.generateAiImage({
+      seriesId: generateForm.seriesId,
+      promptId: generateForm.promptId,
+      title: generateForm.title.trim() || undefined,
+    })
+    toast.success('海报已生成')
+    if (jobsLoaded.value) loadJobs()
+  } catch (error) {
+    // 请求层已弹过 toast，这里留一条可回看的错误文案
+    generateError.value = error instanceof Error ? error.message : '生成失败，请稍后再试'
+  } finally {
+    generating.value = false
+  }
+}
+
+function downloadGenerated() {
+  if (!generateResult.value) return
+  const link = document.createElement('a')
+  link.href = generateResult.value.imageUrl
+  link.download = `spectrace-ai-${generateForm.seriesId ?? 'series'}-${Date.now()}.png`
+  link.click()
+}
 
 function switchTab(value: string | number) {
   tab.value = value as typeof tab.value
+  if (value === 'generate') loadGenerateOptions()
   if (value === 'jobs' && !jobsLoaded.value) {
     jobsLoaded.value = true
     loadJobs()
@@ -321,7 +401,7 @@ onMounted(() => {
 
 <template>
   <div class="space-y-4">
-    <PageHeader title="AI 绘图" description="接入第三方绘图服务并为社媒海报维护提示词模板，生成记录可追溯可清理">
+    <PageHeader title="AI 绘图" description="内部出图工具：接入绘图服务、维护提示词模板并生成社媒海报（不对访客开放）">
       <template #actions>
         <Button v-if="tab === 'providers'" size="sm" @click="openProviderCreate">
           <Plus />
@@ -331,7 +411,7 @@ onMounted(() => {
           <Plus />
           新增模板
         </Button>
-        <Button v-else variant="outline" size="sm" @click="refreshJobs">
+        <Button v-else-if="tab === 'jobs'" variant="outline" size="sm" @click="refreshJobs">
           <RefreshCw />
           刷新
         </Button>
@@ -343,9 +423,71 @@ onMounted(() => {
     <Alert
       v-if="!providersLoading && !promptsLoading && !entryReady"
       variant="warning"
-      title="访客端 AI 海报入口未开放"
+      title="AI 绘图尚不可用"
       :description="entryHint"
     />
+
+    <!-- 生成海报：仅后台内部使用，访客端没有任何入口 -->
+    <Card v-if="tab === 'generate'">
+      <CardContent class="space-y-4 p-4">
+        <!-- 服务端开关关闭（或供应商/模板未就绪）时先给结论，不让管理员点了才报错 -->
+        <Alert
+          v-if="generateStatus && !generateStatus.available"
+          variant="warning"
+          title="暂时无法生成"
+          :description="generateStatus.reason ?? '尚未配置可用的绘图供应商或提示词模板'"
+        />
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div class="space-y-1.5">
+            <Label for="ai-gen-series">系列</Label>
+            <Select
+              id="ai-gen-series"
+              v-model="generateForm.seriesId"
+              :options="seriesOptions"
+              :placeholder="seriesLoading ? '加载中…' : '选择系列'"
+            />
+          </div>
+          <div class="space-y-1.5">
+            <Label for="ai-gen-prompt">提示词模板</Label>
+            <Select id="ai-gen-prompt" v-model="generateForm.promptId" :options="promptOptions" placeholder="选择模板" />
+          </div>
+          <div class="space-y-1.5 sm:col-span-2">
+            <Label for="ai-gen-title">海报标题（可选）</Label>
+            <Input id="ai-gen-title" v-model="generateForm.title" maxlength="60" placeholder="如 小米数字系列 历代参数进化" />
+          </div>
+        </div>
+
+        <p class="text-xs text-muted-foreground">
+          机型范围取该系列全部已上架机型，参数由服务端选数值型默认项；绘图按管理员账号分钟级限流，单张约需 30–120 秒。
+        </p>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <Button :disabled="generating || !generateForm.seriesId || !entryReady" @click="generateImage">
+            <Loader2 v-if="generating" class="animate-spin" />
+            <Sparkles v-else />
+            {{ generating ? '生成中，约需 30-120 秒…' : '生成海报' }}
+          </Button>
+          <Button v-if="generateResult" variant="outline" @click="downloadGenerated">
+            <Download />
+            下载图片
+          </Button>
+          <p v-if="generateError" class="text-xs text-destructive">{{ generateError }}</p>
+        </div>
+
+        <div v-if="generateResult" class="space-y-2">
+          <img :src="generateResult.imageUrl" alt="AI 生成海报" class="mx-auto max-h-[52vh] rounded-lg border" />
+          <details class="rounded-md border px-3 py-2">
+            <summary class="cursor-pointer text-xs text-muted-foreground">
+              查看本次提示词（模板：{{ generateResult.promptName }} / 模型：{{ generateResult.model }}）
+            </summary>
+            <pre class="mt-2 whitespace-pre-wrap break-words text-xs text-muted-foreground">{{ generateResult.promptText }}</pre>
+          </details>
+        </div>
+        <p v-else-if="!generating" class="rounded-md bg-muted/60 px-3 py-6 text-center text-sm text-muted-foreground">
+          选择系列与模板后点「生成海报」，产物落在 uploads，可在「绘制历史」里清理
+        </p>
+      </CardContent>
+    </Card>
 
     <!-- 供应商 -->
     <Card v-if="tab === 'providers'">
@@ -414,7 +556,7 @@ onMounted(() => {
         <Empty
           v-else
           title="还没有绘图供应商"
-          description="新增一个 OpenAI 兼容 /images/generations 的服务后，即可在社媒导出弹窗中生成 AI 海报。"
+          description="新增一个 OpenAI 兼容 /images/generations 的服务后，即可在「生成海报」页出图。"
         />
       </CardContent>
     </Card>
@@ -557,7 +699,7 @@ onMounted(() => {
             </TableBody>
           </Table>
 
-          <Empty v-else title="暂无绘图记录" description="访客在社媒导出弹窗生成 AI 海报后，这里会记录每次结果与失败原因。" />
+          <Empty v-else title="暂无绘图记录" description="在「生成海报」页出图后，这里会记录每次结果与失败原因。" />
         </CardContent>
       </Card>
 
@@ -604,7 +746,7 @@ onMounted(() => {
         <div class="flex items-center justify-between rounded-md border p-3 sm:col-span-2">
           <div>
             <div class="text-sm font-medium">启用供应商</div>
-            <div class="text-xs text-muted-foreground">停用后不会被访客端选中</div>
+            <div class="text-xs text-muted-foreground">停用后不会被生成页选中</div>
           </div>
           <Switch :model-value="providerForm.enabled === 1" @update:model-value="providerForm.enabled = $event ? 1 : 0" />
         </div>
@@ -647,7 +789,7 @@ onMounted(() => {
         <div class="flex items-center justify-between rounded-md border p-3">
           <div>
             <div class="text-sm font-medium">启用模板</div>
-            <div class="text-xs text-muted-foreground">停用后访客端无法选择该模板</div>
+            <div class="text-xs text-muted-foreground">停用后生成页无法选择该模板</div>
           </div>
           <Switch :model-value="promptForm.enabled === 1" @update:model-value="promptForm.enabled = $event ? 1 : 0" />
         </div>

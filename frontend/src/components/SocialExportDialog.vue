@@ -3,15 +3,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { Copy, Download, Loader2, Sparkles } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { publicApi } from '@/api'
-import type {
-  AiImageGenerateResult,
-  AiImagePromptOption,
-  AiImageStatus,
-  EvolutionPoint,
-  EvolutionResult,
-  SocialCopyResult,
-} from '@/types/api'
-import { Alert, Button, Dialog, Input, Label, Select, Tabs, type TabItem } from '@/components/ui'
+import type { EvolutionPoint, EvolutionResult, SocialCopyResult } from '@/types/api'
+import { Button, Dialog, Input, Label, Select, Tabs, type TabItem } from '@/components/ui'
 import { useECharts } from '@/composables/useECharts'
 
 /**
@@ -47,22 +40,12 @@ const open = computed({
   set: (value) => emit('update:open', value),
 })
 
-// ---------- AI 海报 ----------
-/** 可用性由后端判定：未配置供应商或模板时连入口一起隐藏 */
-const imageStatus = ref<AiImageStatus | null>(null)
-const imagePrompts = ref<AiImagePromptOption[]>([])
-const imagePromptId = ref<number>()
-const imageLoading = ref(false)
-const imageGenerating = ref(false)
-const imageResult = ref<AiImageGenerateResult | null>(null)
-const imageError = ref('')
-
-const tabs = computed<TabItem[]>(() => [
+/** AI 生图成本高，仅后台内部使用，访客端不提供入口 */
+const tabs: TabItem[] = [
   { value: 'image', label: '图片' },
   { value: 'copy', label: '文案' },
-  ...(imageStatus.value?.available ? [{ value: 'ai', label: 'AI 海报' }] : []),
-])
-const tab = ref<'image' | 'copy' | 'ai'>('image')
+]
+const tab = ref<'image' | 'copy'>('image')
 
 // ---------- 图片模板 ----------
 const CANVAS = {
@@ -120,22 +103,11 @@ watch([open, canvasStyle, () => props.params, focusDefId], async ([isOpen]) => {
 })
 
 watch(tab, async (value) => {
-  if (value === 'ai' && !imageStatus.value) loadImageOptions()
   if (value === 'image' && open.value) {
     await nextTick()
     await nextTick()
     renderCharts()
   }
-})
-
-// 每次打开重新探测可用性：后台刚配置好供应商时不必刷新整页
-watch(open, (isOpen) => {
-  if (!isOpen) {
-    imageResult.value = null
-    imageError.value = ''
-    return
-  }
-  loadImageOptions()
 })
 
 function rateText(rate: number | null, trend: SocialParamView['viewTrend']) {
@@ -302,75 +274,6 @@ async function copyToClipboard() {
   toast.success('文案已复制，可直接粘贴发布')
 }
 
-// ---------- AI 海报 ----------
-const imagePromptOptions = computed(() =>
-  imagePrompts.value.map((prompt) => ({
-    label: prompt.isDefault === 1 ? `${prompt.name}（默认）` : prompt.name,
-    value: prompt.id,
-  })),
-)
-
-/** 只有数值参数进提示词：文本参数在海报里既占版面又难以视觉化 */
-const aiParamIds = computed(() =>
-  props.params.filter((param) => param.numeric).map((param) => param.paramDefId),
-)
-
-/** 本次会带给绘图模型的数据范围：让访客清楚「选了什么就传什么」 */
-const aiScopeText = computed(() => `${props.devices.length} 台机型 · ${aiParamIds.value.length} 个数值参数`)
-
-async function loadImageOptions() {
-  if (imageLoading.value) return
-  imageLoading.value = true
-  try {
-    imageStatus.value = await publicApi.aiImageStatus()
-    if (!imageStatus.value.available) {
-      imagePrompts.value = []
-      // 上次停在 AI 页时后台可能已关闭能力，退回图片页避免停在一个没有对应 Tab 的状态
-      if (tab.value === 'ai') tab.value = 'image'
-      return
-    }
-    imagePrompts.value = await publicApi.aiImagePrompts()
-    if (!imagePrompts.value.some((prompt) => prompt.id === imagePromptId.value)) {
-      imagePromptId.value =
-        imagePrompts.value.find((prompt) => prompt.isDefault === 1)?.id ?? imagePrompts.value[0]?.id
-    }
-  } catch {
-    // 探测失败按不可用处理：与其展示一个点了就报错的入口，不如不展示
-    imageStatus.value = null
-  } finally {
-    imageLoading.value = false
-  }
-}
-
-async function generateImage() {
-  if (!props.data || imageGenerating.value) return
-  imageGenerating.value = true
-  imageError.value = ''
-  imageResult.value = null
-  try {
-    imageResult.value = await publicApi.generateAiImage({
-      seriesId: props.data.seriesId,
-      deviceIds: props.devices.map((device) => device.id).filter((id): id is number => typeof id === 'number'),
-      paramDefIds: aiParamIds.value,
-      promptId: imagePromptId.value,
-      title: cardTitle.value,
-    })
-    toast.success('AI 海报已生成')
-  } catch (error) {
-    // 请求层已弹过 toast，这里只留一条可回看的错误文案
-    imageError.value = error instanceof Error ? error.message : '生成失败，请稍后再试'
-  } finally {
-    imageGenerating.value = false
-  }
-}
-
-function downloadAiImage() {
-  if (!imageResult.value) return
-  const link = document.createElement('a')
-  link.href = imageResult.value.imageUrl
-  link.download = `spectrace-ai-${props.data?.seriesId ?? 'series'}-${Date.now()}.png`
-  link.click()
-}
 </script>
 
 <template>
@@ -515,73 +418,5 @@ function downloadAiImage() {
       </p>
     </div>
 
-    <!-- AI 海报：整张图交给绘图模型，数据仅用于拼提示词 -->
-    <div v-else class="space-y-3">
-      <div v-if="imageLoading" class="space-y-2">
-        <div v-for="i in 3" :key="i" class="h-9 animate-pulse rounded-md bg-muted" />
-      </div>
-
-      <Alert
-        v-else-if="!imageStatus?.available"
-        variant="warning"
-        title="AI 海报暂不可用"
-        :description="imageStatus?.reason ?? '后台尚未完成绘图供应商与提示词配置'"
-      />
-
-      <template v-else>
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div class="space-y-1.5">
-            <Label for="social-ai-prompt">提示词模板</Label>
-            <Select id="social-ai-prompt" v-model="imagePromptId" :options="imagePromptOptions" placeholder="选择模板" />
-          </div>
-          <div class="space-y-1.5">
-            <Label>本次带入的数据</Label>
-            <p class="flex h-9 items-center rounded-md border bg-muted/40 px-3 text-sm text-muted-foreground">
-              {{ aiScopeText }}
-            </p>
-          </div>
-        </div>
-
-        <p class="text-xs text-muted-foreground">
-          AI 直接绘制整张海报：机型名与参数数值由模型绘制，可能与库内数据存在偏差，发布前请核对。
-        </p>
-
-        <p v-if="!aiParamIds.length" class="text-xs text-destructive">
-          当前没有可用的数值参数，先在趋势页勾选屏幕尺寸、电池容量等参数再生成。
-        </p>
-
-        <div class="flex flex-wrap items-center gap-2">
-          <Button
-            :disabled="imageGenerating || !imagePromptId || !aiParamIds.length"
-            @click="generateImage"
-          >
-            <Loader2 v-if="imageGenerating" class="animate-spin" />
-            <Sparkles v-else />
-            {{ imageGenerating ? '生成中，约需 30-120 秒…' : '生成 AI 海报' }}
-          </Button>
-          <Button v-if="imageResult" variant="outline" @click="downloadAiImage">
-            <Download />
-            下载图片
-          </Button>
-          <p v-if="imageError" class="text-xs text-destructive">{{ imageError }}</p>
-        </div>
-
-        <div v-if="imageResult" class="space-y-2">
-          <img :src="imageResult.imageUrl" alt="AI 生成海报" class="mx-auto max-h-[52vh] rounded-lg border" />
-          <details class="rounded-md border px-3 py-2">
-            <summary class="cursor-pointer text-xs text-muted-foreground">
-              查看本次提示词（模板：{{ imageResult.promptName }} / 模型：{{ imageResult.model }}）
-            </summary>
-            <pre class="mt-2 whitespace-pre-wrap break-words text-xs text-muted-foreground">{{ imageResult.promptText }}</pre>
-          </details>
-        </div>
-        <p
-          v-else-if="!imageGenerating"
-          class="rounded-md bg-muted/60 px-3 py-6 text-center text-sm text-muted-foreground"
-        >
-          选择模板后点「生成 AI 海报」，当前机型范围与参数会拼进提示词交给绘图模型
-        </p>
-      </template>
-    </div>
   </Dialog>
 </template>

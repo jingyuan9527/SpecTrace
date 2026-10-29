@@ -51,8 +51,10 @@ import java.util.stream.Collectors;
  * AI 绘图：把「系列 + 机型范围 + 参数」渲染进提示词模板，调用 OpenAI 兼容的
  * {@code /images/generations}，成品图落盘并记录一次绘图历史。
  *
- * <p>刻意不接收前端传来的提示词正文：公开接口如果允许任意 prompt，等于把绘图额度直接交给匿名访客。
- * 访客只能选择模板与数据范围，正文与变量值都在服务端生成。</p>
+ * <p>刻意不接收调用方传来的提示词正文：只接收模板 ID 与数据范围，正文与变量值都在服务端生成，
+ * 避免任意 prompt 把绘图额度当成通用出图接口来刷。</p>
+ *
+ * <p>仅通过后台管理端调用（{@code /api/admin/ai-image/**}）：绘图成本高，不对访客开放。</p>
  */
 @Slf4j
 @Service
@@ -93,10 +95,10 @@ public class AiImageGenerationService {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
-    /** key = 来源 IP，value = 请求时间窗口；绘图成本高于文案，限流也比 AI 摘要更严 */
+    /** key = 调用方标识（后台按管理员账号），value = 请求时间窗口；绘图成本高于文案 */
     private final Map<String, Deque<Long>> rateBuckets = new ConcurrentHashMap<>();
 
-    /** 前端据此决定是否展示「AI 海报」入口，未配置时不给访客点了才失败的机会。 */
+    /** 后台据此提示配置缺口，避免管理员点了生成才失败。 */
     public AiImageStatusVO status() {
         AiImageStatusVO vo = new AiImageStatusVO();
         vo.setEnabled(enabled);
@@ -127,7 +129,7 @@ public class AiImageGenerationService {
         if (request == null || request.getSeriesId() == null) {
             throw new BizException("缺少系列参数");
         }
-        // 先限流再取数：即便后续数据校验失败，也不能让匿名请求无成本地反复打进来
+        // 先限流再取数：即便后续数据校验失败，也不能让请求无成本地反复打进来
         checkRate(clientKey);
 
         AiImageProvider provider = providerService.resolve();

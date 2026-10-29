@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { KeyRound, Loader2, Plus, Power, Shield, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
@@ -47,6 +47,16 @@ const roles = [
   { label: '超级管理员', value: 'SUPER_ADMIN' },
   { label: '普通管理员', value: 'ADMIN' },
 ]
+
+const roleLabel = (role: string) => (role === 'SUPER_ADMIN' ? '超级管理员' : '普通管理员')
+/** 账号写操作仅超管可用：ADMIN 保留只读列表，避免页面展示一堆点了就 403 的按钮 */
+const isSuperAdmin = computed(() => {
+  try {
+    return JSON.parse(localStorage.getItem('spectrace-user') || '{}').role === 'SUPER_ADMIN'
+  } catch {
+    return false
+  }
+})
 
 function openCreate() {
   Object.assign(form, { username: '', password: '', nickname: '', role: 'ADMIN' })
@@ -120,7 +130,7 @@ async function confirmDelete() {
   <div class="space-y-4">
     <PageHeader title="账号权限" description="管理后台账号、角色与启用状态">
       <template #actions>
-        <Button size="sm" @click="openCreate">
+        <Button v-if="isSuperAdmin" size="sm" @click="openCreate">
           <Plus />
           新增管理员
         </Button>
@@ -151,11 +161,13 @@ async function confirmDelete() {
               <TableCell class="text-muted-foreground">{{ row.nickname || '—' }}</TableCell>
               <TableCell>
                 <Select
+                  v-if="isSuperAdmin"
                   :model-value="row.role"
                   :options="roles"
                   class="h-8 w-36"
                   @update:model-value="changeRole(row, $event as string)"
                 />
+                <Badge v-else variant="secondary">{{ roleLabel(row.role) }}</Badge>
               </TableCell>
               <TableCell>
                 <Badge :variant="row.status === 1 ? 'success' : 'secondary'">
@@ -163,7 +175,7 @@ async function confirmDelete() {
                 </Badge>
               </TableCell>
               <TableCell class="text-right">
-                <div class="flex justify-end gap-1">
+                <div v-if="isSuperAdmin" class="flex justify-end gap-1">
                   <Button variant="ghost" size="sm" @click="toggleStatus(row)">
                     <Power />
                     {{ row.status === 1 ? '禁用' : '启用' }}
@@ -182,6 +194,7 @@ async function confirmDelete() {
                     <Trash2 />
                   </Button>
                 </div>
+                <span v-else class="text-xs text-muted-foreground">仅超管可操作</span>
               </TableCell>
             </TableRow>
           </TableBody>

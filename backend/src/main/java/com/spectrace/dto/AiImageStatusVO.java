@@ -3,7 +3,7 @@ package com.spectrace.dto;
 import lombok.Data;
 
 /**
- * AI 绘图可用性：前端据此决定是否展示入口，不给访客点开后才失败的体验。
+ * AI 绘图可用性：后台据此提示配置缺口，不给管理员点开后才失败的体验。
  */
 @Data
 public class AiImageStatusVO {
