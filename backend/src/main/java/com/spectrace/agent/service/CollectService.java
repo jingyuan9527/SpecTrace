@@ -341,6 +341,8 @@ public class CollectService {
         result.setModelName(textOrFallback(data, "modelName", modelName));
         result.setBrandName(textOrFallback(data, "brandName", brandName.isEmpty() ? null : brandName));
         result.setSourceUrl(nullableText(data, "sourceUrl"));
+        // persona 要求模型在 JSON 顶层给出官方产品图直链，此前漏接该字段，导致 T90 下载链路永远拿不到图
+        result.setImageUrl(nullableText(data, "imageUrl"));
         result.setStatus("SUCCESS");
         result.setParams(params);
         result.setParamConfidence(parseParamConfidence(data, allowed));

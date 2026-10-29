@@ -1321,7 +1321,7 @@
 | 任务 | 名称 | 类型 | 状态 | 一句话 |
 | --- | --- | --- | --- | --- |
 | T91 | 订阅发现关键词效果验证 | 观察 | ⬜ | 实跑一条订阅，清单质量差则给系列加「发现关键词」字段 |
-| T92 | 产品图采集命中率观察 | 观察 | ⬜ | 统计真实抓取的 imageUrl 产出率与下载成功率 |
+| T92 | 产品图采集命中率观察 | 观察 | 🔧 | 已定位解析端漏接 imageUrl 并修复，待部署复验
 | T93 | AI 预审阈值校准 | 观察 | ⬜ | 看待审队列 HIGH/PASS 占比，必要时调 0.6/0.9 阈值 |
 | T94 | 热门口径稳定性观察 | 观察 | ⬜ | 上线两周后核对 hot 排序是否符合直觉、回落逻辑是否频繁触发 |
 | T95 | 采集搜索源真实验证（T63 遗留） | 验证 | ✅ | 生产 Tavily 实跑通过（5 条 / 2375ms） |
@@ -1340,6 +1340,10 @@
 **背景**：T90 上线前只有 mock 与自托管图验证，真实外网图的产出率（Agent 愿不愿意给、URL 是否直链）与下载成功率（防盗链 / 403 比例）未知。
 **动作**：跑 10~20 次真实抓取，统计：返回 imageUrl 的任务占比、下载成功占比、失败原因分布（日志关键字 `产品图下载失败`）。
 **结论出口**：产出率 > 50% 且成功 > 70% → 维持；产出率低 → 优化 persona 第 10 条措辞或把 imageUrl 提到输出 schema 更显眼处；403 比例高 → 评估加 Referer 白名单或退回纯手动上传。
+
+**根因（2026-10-29 复验定位）**：不是模型不配合，而是**解析端漏接字段**。persona 已要求模型在输出 JSON 顶层给出 `imageUrl`，`AgentCallbackService` 也已具备「收 `_imageUrl` → 审核通过后异步下载」的完整消费链路，但 `CollectService.buildCollectResult()` 只解析了 modelName / brandName / sourceUrl / params / paramConfidence / variants / confidence / notes，**从未读取 `data.path("imageUrl")`，从未调用 `setImageUrl()`**。模型即使返回了直链也会在解析阶段被静默丢弃，这是 163 台机型 0 张网络图的直接原因。
+**修复**：`buildCollectResult` 增加 `result.setImageUrl(nullableText(data, "imageUrl"))`（正常路径与抢救路径共用该方法，一处生效两处覆盖）；空串由下游 `StringUtils.hasText` 拦截，不会污染 `_imageUrl`。本地 `mvn clean package` 68 例全绿。
+**待复验**：部署后新跑 1~2 台曾无图的机型，确认待审核记录带 `_imageUrl`、审核通过后异步下载落到 `/uploads/...`。
 
 ### T93 AI 预审阈值校准（观察）
 
@@ -1390,7 +1394,11 @@
 - 顺带把正常路径与抢救路径的结果收敛逻辑抽为 `buildCollectResult()`，避免两套口径
 - `TASK_TIMEOUT_SECONDS` 300 → 420（[AgentProperties.java](file:///d:/IdeaProject/ai/SpecTrace/backend/src/main/java/com/spectrace/agent/config/AgentProperties.java) 与 [application.yml](file:///d:/IdeaProject/ai/SpecTrace/backend/src/main/resources/application.yml)），储备仍为 60s，闸门在 360s 触发
 
-**验证（第二轮）**：`mvn test` 68 例全绿。**待生产复验**：部署后重跑 iPhone 17 Pro 等曾撞墙机型，确认超时后能走抢救路径而不是整条作废。
+**验证（第二轮）**：`mvn test` 68 例全绿。
+
+**验证（第三轮，生产复跑 2026-10-29）**：iPhone 17 Pro 此前连续 300s 撞墙，本次 **219s 正常收敛**，39 项参数、置信度 high、来源 `support.apple.com/zh-cn/125090`，直接转待审核 #63，**未触发抢救路径**——420s 预算本身已足够。
+连续三台机型（SE 3 238s / 14 Pro Max 151s / 17 Pro 219s）全部成功，近期 `nearTimeout` 归零。
+**遗留**：抢救分支（超时后用已抓正文二次抽取）在生产上尚未被真实触发过，仅有编译与本地用例保障。若要验证，可临时把 `TASK_TIMEOUT_SECONDS` 调到 90s 制造一次超时，观察「超时抢救启动 / 抢救成功或失败」日志后再调回。
 
 ### T97 详情页参数行「N 条待核实」（开发，T83 遗留）✅
 
