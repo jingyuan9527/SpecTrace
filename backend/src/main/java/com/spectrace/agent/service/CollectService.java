@@ -280,20 +280,19 @@ public class CollectService {
                     ? "抓取超时（>" + props.getTaskTimeoutSeconds() + "s），" + timeoutHint(payload.getTaskId())
                     : e.getClass().getSimpleName() + ": " + message;
             taskLogService.error(payload.getTaskId(), "采集异常：" + error);
-            // 超时不等于白干：已抓正文还在会话缓存里，先抢救再决定是否判失败
-            if (error.startsWith("抓取超时")) {
-                try {
-                    AgentCallbackRequest salvaged = salvageAfterTimeout(payload, schemaDefs, aiConfig, error);
-                    if (salvaged != null) {
-                        return salvaged;
-                    }
-                } catch (Exception salvageError) {
-                    // 抢救自身出错（例如结果序列化失败）时退回普通失败分支，不能把异常抛给消费线程
-                    log.warn("超时抢救流程异常 taskId={}：{}", payload.getTaskId(), salvageError.getMessage());
-                    taskLogService.warn(payload.getTaskId(),
-                            "超时抢救流程异常：" + salvageError.getClass().getSimpleName()
-                                    + ": " + salvageError.getMessage());
+            // 失败不等于白干：已抓正文还在会话缓存里，先抢救再决定是否判失败。
+            // 覆盖所有失败类型（超时、模型未输出 JSON、解析异常等），由抢救方法自身在无正文时跳过。
+            try {
+                AgentCallbackRequest salvaged = salvageFromFetchedPages(payload, schemaDefs, aiConfig, error);
+                if (salvaged != null) {
+                    return salvaged;
                 }
+            } catch (Exception salvageError) {
+                // 抢救自身出错（例如结果序列化失败）时退回普通失败分支，不能把异常抛给消费线程
+                log.warn("采集抢救流程异常 taskId={}：{}", payload.getTaskId(), salvageError.getMessage());
+                taskLogService.warn(payload.getTaskId(),
+                        "采集抢救流程异常：" + salvageError.getClass().getSimpleName()
+                                + ": " + salvageError.getMessage());
             }
             AgentCallbackRequest result = new AgentCallbackRequest();
             result.setTaskId(payload.getTaskId());
@@ -365,23 +364,24 @@ public class CollectService {
     }
 
     /**
-     * 超时抢救：用本任务已抓取的网页正文再发一次「只输出 JSON」的短请求。
+     * 采集抢救：用本任务已抓取的网页正文再发一次「只输出 JSON」的短请求。
      *
      * <p>只抢救一次、不再联网，目的是把已经付出的抓取成本转成可审核的结果；
+     * 不论失败原因是超时、模型未输出 JSON 还是解析异常，只要抓到了正文就值得复用。
      * 二次抽取也失败时不再重试，转待审核并保留来源清单，由人工补齐参数。
      *
      * @return 有可复用正文时返回结果（成功或空参数待人工），无可复用正文时返回 null 交回失败分支
      */
-    private AgentCallbackRequest salvageAfterTimeout(AgentTaskPayload payload, List<ParamDef> schemaDefs,
-                                                     ResolvedModel aiConfig, String timeoutError) throws Exception {
+    private AgentCallbackRequest salvageFromFetchedPages(AgentTaskPayload payload, List<ParamDef> schemaDefs,
+                                                         ResolvedModel aiConfig, String failureReason) throws Exception {
         Map<String, String> pages = CrawlSession.fetchedPages();
         if (pages.isEmpty()) {
-            taskLogService.warn(payload.getTaskId(), "超时抢救跳过：本次任务没有成功抓取任何网页正文，无可复用素材");
+            taskLogService.warn(payload.getTaskId(), "采集抢救跳过：本次任务没有成功抓取任何网页正文，无可复用素材");
             return null;
         }
         String corpus = buildSalvageCorpus(pages);
         List<String> sources = List.copyOf(pages.keySet());
-        taskLogService.warn(payload.getTaskId(), "超时抢救启动：复用已抓取的 " + pages.size()
+        taskLogService.warn(payload.getTaskId(), "采集抢救启动：复用已抓取的 " + pages.size()
                 + " 篇正文（" + corpus.length() + " 字）二次抽取，不再联网");
 
         String modelName = payload.getModelName() == null ? "" : payload.getModelName();
@@ -393,7 +393,7 @@ public class CollectService {
             Model model = new RecordingChatModel(buildModel(aiConfig),
                     AiCallTarget.chat(aiConfig, props.getDashscopeModel()), aiCallRecorder,
                     AiCallScene.AGENT_SCRAPE, String.valueOf(payload.getTaskId()));
-            String prompt = "原采集任务因超时中断，现在只能基于下面已抓取的网页正文抽取参数。\n"
+            String prompt = "原采集任务因异常中断（" + failureReason + "），现在只能基于下面已抓取的网页正文抽取参数。\n"
                     + "不要联网、不要解释过程，直接输出 JSON 对象；查不到的参数置 null，不要编造。\n\n"
                     + "【已抓取网页正文】\n" + corpus;
             String identity = "task-" + payload.getTaskId() + "-salvage";
@@ -425,15 +425,15 @@ public class CollectService {
                 text = msg == null ? "" : msg.getTextContent();
             }
             JsonNode data = parseJson(text);
-            String note = "任务超时后改为仅基于已抓取的 " + pages.size()
-                    + " 篇网页正文二次抽取，未做多来源交叉核验，请重点复核；原始失败原因：" + timeoutError;
+            String note = "任务失败后改为仅基于已抓取的 " + pages.size()
+                    + " 篇网页正文二次抽取，未做多来源交叉核验，请重点复核；原始失败原因：" + failureReason;
             AgentCallbackRequest result = buildCollectResult(payload, data, schemaDefs, query, note);
-            taskLogService.info(payload.getTaskId(), "超时抢救成功：从已抓正文中抽取到参数 "
+            taskLogService.info(payload.getTaskId(), "采集抢救成功：从已抓正文中抽取到参数 "
                     + result.getParams().size() + " 项");
             return result;
         } catch (Exception e) {
-            log.warn("超时抢救失败 taskId={}：{}", payload.getTaskId(), e.getMessage());
-            taskLogService.warn(payload.getTaskId(), "超时抢救失败（" + e.getClass().getSimpleName() + ": "
+            log.warn("采集抢救失败 taskId={}：{}", payload.getTaskId(), e.getMessage());
+            taskLogService.warn(payload.getTaskId(), "采集抢救失败（" + e.getClass().getSimpleName() + ": "
                     + e.getMessage() + "），转待审核并保留已抓取来源，需人工补齐参数");
             AgentCallbackRequest result = new AgentCallbackRequest();
             result.setTaskId(payload.getTaskId());
@@ -445,7 +445,7 @@ public class CollectService {
             result.setVariants(new ArrayList<>());
             Map<String, Object> summary = new LinkedHashMap<>();
             summary.put("queries", List.of(query));
-            summary.put("notes", "任务超时且二次抽取失败（" + timeoutError
+            summary.put("notes", "任务失败且二次抽取失败（" + failureReason
                     + "），此处仅保留已抓取来源，参数需人工补齐");
             summary.put("sources", sources);
             appendFailedSources(summary);
