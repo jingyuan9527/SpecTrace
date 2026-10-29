@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Laptop, Loader2, Lock, User } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { authApi } from '@/api'
+import { useAuthStore } from '@/stores/auth'
 import { Button, Card, CardContent, Input, Label } from '@/components/ui'
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
 const loading = ref(false)
 
 /** 只接受后台内部路径：既避免开放重定向，也避免把访客页当成登录后落点 */
@@ -16,6 +18,11 @@ function resolveRedirect(): string {
   const target = typeof raw === 'string' ? raw : ''
   return target.startsWith('/admin/') && !target.startsWith('/admin/login') ? target : '/admin/devices'
 }
+
+// 已有会话时不让用户重复登录：token 是否有效交给守卫校验，失效会带着 redirect 回到本页
+onMounted(() => {
+  if (auth.isLoggedIn) router.replace(resolveRedirect())
+})
 // 不预填任何账号：默认凭据写在代码里会被登录页直接暴露给访客（生产验证发现）
 const form = reactive({ username: '', password: '' })
 
@@ -27,8 +34,7 @@ async function submit() {
   loading.value = true
   try {
     const res = await authApi.login(form)
-    localStorage.setItem('spectrace-token', res.token)
-    localStorage.setItem('spectrace-user', JSON.stringify(res))
+    auth.setSession(res)
     toast.success('登录成功')
     // 初始密码或被重置的密码，先进改密页；守卫也会兜底拦截其它后台路由
     router.push(res.mustChangePassword ? '/admin/change-password' : resolveRedirect())

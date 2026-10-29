@@ -4,23 +4,17 @@ import { useRouter } from 'vue-router'
 import { ArrowLeft, KeyRound, Loader2, LogOut } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { authApi } from '@/api'
+import { useAuthStore } from '@/stores/auth'
 import { Button, Card, CardContent, Input, Label } from '@/components/ui'
 
 const router = useRouter()
+const auth = useAuthStore()
 const loading = ref(false)
 const form = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
 
 /** 初始密码 / 被重置的密码：此时其它后台页面会被守卫拦回来 */
-const forced = ref(readUser().mustChangePassword === true)
-const username = readUser().username as string | undefined
-
-function readUser(): Record<string, any> {
-  try {
-    return JSON.parse(localStorage.getItem('spectrace-user') || '{}')
-  } catch {
-    return {}
-  }
-}
+const forced = ref(auth.user.mustChangePassword === true)
+const username = auth.user.username
 
 async function submit() {
   if (!form.oldPassword || !form.newPassword) {
@@ -39,7 +33,7 @@ async function submit() {
   try {
     await authApi.changePassword({ oldPassword: form.oldPassword, newPassword: form.newPassword })
     // token 与密码无关，改完无需重新登录，只要把本地的强制改密标记摘掉
-    localStorage.setItem('spectrace-user', JSON.stringify({ ...readUser(), mustChangePassword: false }))
+    auth.updateUser({ mustChangePassword: false })
     forced.value = false
     toast.success('密码已更新')
     router.replace('/admin/devices')
@@ -52,8 +46,7 @@ async function submit() {
 }
 
 function logout() {
-  localStorage.removeItem('spectrace-token')
-  localStorage.removeItem('spectrace-user')
+  auth.clear()
   router.replace('/admin/login')
 }
 </script>

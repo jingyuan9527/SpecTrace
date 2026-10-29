@@ -26,6 +26,7 @@ import {
   Users,
 } from '@lucide/vue'
 import { useThemeStore } from '@/stores/theme'
+import { useAuthStore } from '@/stores/auth'
 import { adminApi } from '@/api'
 import type { AdminBadges } from '@/types/api'
 import { Badge, Button, DropdownMenu, Sheet, type MenuItem } from '@/components/ui'
@@ -34,6 +35,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 const route = useRoute()
 const router = useRouter()
 const theme = useThemeStore()
+const auth = useAuthStore()
 
 const mobileOpen = ref(false)
 const logoutOpen = ref(false)
@@ -74,17 +76,8 @@ const baseMenus = [
 /** 系统运维只有超管有接口权限：ADMIN 菜单直接不展示，避免点进去只剩 403 */
 const SUPER_ADMIN_ONLY = new Set(['/admin/maintenance'])
 
-function readStoredUser(): { nickname?: string; username?: string; role?: string } {
-  try {
-    return JSON.parse(localStorage.getItem('spectrace-user') || '{}')
-  } catch {
-    return {}
-  }
-}
-
-const user = readStoredUser()
-const menus = baseMenus.filter((item) => user.role === 'SUPER_ADMIN' || !SUPER_ADMIN_ONLY.has(item.path))
-const currentLabel = computed(() => menus.find((m) => route.path.startsWith(m.path))?.label ?? '管理后台')
+const menus = computed(() => baseMenus.filter((item) => auth.isSuperAdmin || !SUPER_ADMIN_ONLY.has(item.path)))
+const currentLabel = computed(() => menus.value.find((m) => route.path.startsWith(m.path))?.label ?? '管理后台')
 
 const userMenu: MenuItem[] = [
   {
@@ -113,8 +106,7 @@ const userMenu: MenuItem[] = [
 ]
 
 function doLogout() {
-  localStorage.removeItem('spectrace-token')
-  localStorage.removeItem('spectrace-user')
+  auth.clear()
   logoutOpen.value = false
   router.push('/admin/login')
 }
@@ -188,7 +180,7 @@ function doLogout() {
           <DropdownMenu :items="userMenu">
             <template #trigger>
               <Button variant="ghost" size="sm" class="gap-1.5">
-                <span class="hidden max-w-24 truncate sm:inline">{{ user.nickname || user.username || '管理员' }}</span>
+                <span class="hidden max-w-24 truncate sm:inline">{{ auth.user.nickname || auth.user.username || '管理员' }}</span>
                 <ChevronDown class="h-3.5 w-3.5 opacity-60" />
               </Button>
             </template>

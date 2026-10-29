@@ -57,7 +57,7 @@
 | 后台：系统运维 | 不可见不可用 | 仅 SUPER_ADMIN |
 | **AI 生图（社媒海报）** | **不提供入口** | **仅后台「AI 绘图 → 生成海报」内部使用** |
 
-> 草稿 / 下架机型、待审核数据、AI Key 与内部指标始终只在后台可见；后台入口放在页脚「管理入口」，不占访客主导航。
+> 草稿 / 下架机型对外按不存在处理：列表不返回、详情 404、对比直接拒绝；待审核数据、AI Key 与内部指标只在后台可见。后台入口放在页脚「管理入口」，不占访客主导航。
 
 ## 界面预览
 
@@ -315,11 +315,11 @@ docker run -d --name spectrace-app -p 80:8080 \
 - **SEO**：history 路由 + 详情页动态 title/description/OG 与 **JSON-LD Product 结构化数据**（品牌/型号/起售价/参数摘要，T89）；`/sitemap.xml` 输出首页、机型库、系列趋势与全部在售机型（带 `lastmod`），`/rss.xml` 输出近 30 天新收录机型（T89），`/robots.txt` 屏蔽后台、接口与上传目录；对外域名取 `SPECTRACE_PUBLIC_BASE_URL`，未配置时回退请求域名。
 - **PWA 与 HTTP 缓存**（T89）：`manifest.webmanifest` + 保守 `sw.js`（静态资产 cache-first、页面导航 network-first，**/api 一律不缓存**，仅生产构建注册）；公开 GET 接口带 `Cache-Control: max-age=300` 与 ETag（feedback 查询豁免，保证处理结果实时可见），二次请求命中 304。
 - **AI 世代回顾**：与对比摘要共用 `AiInsightSupport` 的护栏（同来源每分钟 5 次、结果缓存默认 24 小时、失败降级、非法 JSON 退化为纯文本）；按当前所选参数与可见世代生成一段带趋势判断的回顾，缓存 key 含可见机型与取值，换区间或改参数自然失效。只允许引用给定数值支撑的「升级明显 / 提升有限 / 略有退步」，不写购买建议。
-- **AI 绘图海报**：后台独立维护**绘图供应商**（OpenAI 兼容 `/images/generations`，默认供应商全局唯一，接口地址可直接粘贴完整端点）与**提示词模板**（`{{brand}}` / `{{series}}` / `{{count}}` / `{{devices}}` / `{{yearRange}}` / `{{paramLines}}` / `{{title}}` 变量，服务端按系列与所选机型/参数渲染，未定义变量清空并记日志）。后台生成页只提交 `seriesId / deviceIds / paramDefIds / promptId / title`，提示词正文与数据全部由服务端取库生成——接口不接收任意 prompt，避免把额度当成通用出图通道；每次生成按管理员账号限流（默认 3 次/分钟），成功与失败都写 `ai_image_job`（含渲染后的提示词快照），成品图落 `uploads` 并在历史里可单条/批量删除（同时删文件）。供应商或模板缺失时 `/api/admin/ai-image/status` 返回不可用，生成页直接提示缺口。**该能力仅后台内部使用，访客端与公开接口均不提供**（生图成本高），社媒导出弹窗只保留模板卡与文案。不发送 `response_format`，兼容同时返回 `b64_json` 与 `url` 的各类端点。
-- **后台会话校验**：进入后台路由前调用 `/api/auth/me` 确认 token 仍有效（每次整页加载校验一次，SPA 内跳转不重复请求），失效即清本地凭证回到登录页；该校验失败时静默处理，不弹全局错误。
+- **AI 绘图海报**：后台独立维护**绘图供应商**（OpenAI 兼容 `/images/generations`，默认供应商全局唯一，接口地址可直接粘贴完整端点）与**提示词模板**（`{{brand}}` / `{{series}}` / `{{count}}` / `{{devices}}` / `{{yearRange}}` / `{{paramLines}}` / `{{title}}` 变量，服务端按系列与所选机型/参数渲染，未定义变量清空并记日志）。后台生成页只提交 `seriesId / deviceIds / paramDefIds / promptId / title`，提示词正文与数据全部由服务端取库生成——接口不接收任意 prompt，避免把额度当成通用出图通道；每次生成按管理员账号限流（默认 3 次/分钟），成功与失败都写 `ai_image_job`（含渲染后的提示词快照），成品图落 `uploads` 并在历史里可单条/批量删除（同时删文件）。供应商或模板缺失时 `/api/admin/ai-image/status` 返回不可用，生成页直接提示缺口。**该能力仅后台内部使用，访客端与公开接口均不提供**（生图成本高），社媒导出弹窗只保留模板卡与文案。成品图以 UUID 文件名落在 `/uploads`，作为能力 URL 公开访问（后台直链预览需要，与机型图同目录，不提供列表接口；链接外泄即可访问，属于已知取舍）。不发送 `response_format`，兼容同时返回 `b64_json` 与 `url` 的各类端点。
+- **后台会话校验**：进入后台路由前调用 `/api/auth/me` 确认 token 仍有效（每次整页加载校验一次，SPA 内跳转不重复请求），失效即清本地凭证回到登录页；该校验失败时静默处理，不弹全局错误。登录态统一由 `stores/auth.ts` 维护（`token` / `user` / `isLoggedIn` / `isSuperAdmin` + `setSession` / `updateUser` / `clear`），路由、拦截器与页面不再直接读写 `spectrace-token` / `spectrace-user`。
 - **账号安全**：`admin_user.must_change_password` 标记「初始密码」与「被管理员重置的密码」，登录响应与 `/auth/me` 都返回该标记，路由守卫据此把用户锁在改密页；自助改密 `PUT /api/auth/password` 必须校验原密码（JWT 只证明持有 token，不能证明是本人），改完清除标记。老库升级由 `SqliteSchemaMigration` 补列，并只对仍能匹配初始口令的账号打标记，已改密的账号不受打扰。启动日志不再打印明文口令。
 - **后端会话防线**：JWT 密钥必须经 `SPECTRACE_JWT_SECRET` 注入（未配置拒绝启动）；过滤器每请求回查 `admin_user`——禁用 / 删除的账号 token 立即失效、角色与「待改密」标记以库内最新为准（未改密的 token 只放行 `/api/auth/**`）；登录同账号连续失败 5 次锁定 10 分钟并写入操作日志，可追溯爆破。
-- **公开接口护栏**：`PublicRateLimitFilter` 对 `/api/public/**` 做单 IP 每分钟基础限流（`SPECTRACE_PUBLIC_QPM`，默认 120，feedback / insight 各自更严格的限流叠加生效）；`/devices` 分页 size 收敛上限 100，防止匿名一次拉全库。
+- **公开接口护栏**：`PublicRateLimitFilter` 对 `/api/public/**` 做单 IP 每分钟基础限流（`SPECTRACE_PUBLIC_QPM`，默认 120，feedback / insight 各自更严格的限流叠加生效）；`/devices` 分页 size 收敛上限 100，防止匿名一次拉全库。公开读取统一只出 `status=1` 的机型——列表、详情、对比、联想、热门、趋势、sitemap 同一口径，草稿与下架对外 404 或按不存在处理。
 - **公开读缓存**：品牌、参数元信息、系列列表、机型详情走 Caffeine 进程内缓存（TTL 5 分钟兜底 + 管理端写路径 `@CacheEvict` 主动失效），机型发布年份改为 SQL 聚合，SQLite 读压力与机型库规模解耦。
 - **数据保留策略**：终态抓取任务（含过程日志）、已处理待审核、操作日志、机型浏览量按天聚合按保留天数定时清理（默认每天 04:00，排在 03:30 备份之后），防止 SQLite 无界膨胀拖慢查询与备份；「系统运维」页展示各表行数、保留配置并支持手动清理（仅超级管理员）。
 - **数据健康度看板**：`GET /api/admin/data-health` 汇总全库带参率（含草稿口径）、各启用参数的覆盖机型数排行（升序，覆盖最少的排最前）、缺参机型排行（缺参 = 有值参数数 < 启用参数数；按近 30 天 PV 倒序、无 PV 按发布时间，品牌/系列可筛）与近 30 天审核通过数、待处理反馈数；后台「数据健康度」页对缺参机型支持行级与批量补抓（复用选模型弹窗）。

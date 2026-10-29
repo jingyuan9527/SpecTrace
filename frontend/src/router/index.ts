@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { authApi } from '@/api'
 import { resetPageMeta } from '@/lib/meta'
+import { useAuthStore } from '@/stores/auth'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -79,47 +80,35 @@ const router = createRouter({
  */
 let sessionChecked = false
 
-function readUser(): Record<string, any> {
-  try {
-    return JSON.parse(localStorage.getItem('spectrace-user') || '{}')
-  } catch {
-    return {}
-  }
-}
-
 router.beforeEach(async (to) => {
   if (!to.meta.requiresAuth) return true
+  const auth = useAuthStore()
   // 带上原目标：从收藏或外部链接直达后台某页时，登录后不该把人丢到默认页
-  if (!localStorage.getItem('spectrace-token')) return { name: 'admin-login', query: { redirect: to.fullPath } }
+  if (!auth.isLoggedIn) return { name: 'admin-login', query: { redirect: to.fullPath } }
   if (!sessionChecked) {
     try {
-      // localStorage 里的 token 可能已过期或被吊销，仅凭它存在就放行会让后台先渲染再逐个请求报错
+      // 本地 token 可能已过期或被吊销，仅凭它存在就放行会让后台先渲染再逐个请求报错
       const me = await authApi.me()
       sessionChecked = true
       // 昵称 / 角色 / 强制改密标记可能在后台被改过，以服务端返回为准刷新本地缓存
-      localStorage.setItem(
-        'spectrace-user',
-        JSON.stringify({
-          ...readUser(),
-          username: me.username ?? readUser().username,
-          userId: me.adminId ?? readUser().userId,
-          role: me.role ?? readUser().role,
-          mustChangePassword: me.mustChangePassword === true,
-        }),
-      )
+      auth.updateUser({
+        username: me.username ?? auth.user.username,
+        userId: me.adminId ?? auth.user.userId,
+        role: me.role ?? auth.user.role,
+        mustChangePassword: me.mustChangePassword === true,
+      })
     } catch {
-      localStorage.removeItem('spectrace-token')
-      localStorage.removeItem('spectrace-user')
+      auth.clear()
       toast.error('登录已失效，请重新登录')
       return { name: 'admin-login', query: { redirect: to.fullPath } }
     }
   }
   // 初始密码或被管理员重置过：只放行改密页，避免没改密就先逛后台
-  if (readUser().mustChangePassword === true && to.name !== 'admin-change-password') {
+  if (auth.user.mustChangePassword === true && to.name !== 'admin-change-password') {
     return { name: 'admin-change-password' }
   }
   // 超管专属页面：ADMIN 直达 URL 时在路由层拦住，避免渲染后靠 403 逐个报错
-  if (to.meta.requiresSuperAdmin && readUser().role !== 'SUPER_ADMIN') {
+  if (to.meta.requiresSuperAdmin && !auth.isSuperAdmin) {
     toast.error('仅超级管理员可访问该页面')
     return { name: 'admin-devices' }
   }

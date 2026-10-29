@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { toast } from 'vue-sonner'
+import { useAuthStore } from '@/stores/auth'
 
 declare module 'axios' {
   export interface AxiosRequestConfig {
@@ -14,7 +15,8 @@ const request = axios.create({
 })
 
 request.interceptors.request.use((config) => {
-  const token = localStorage.getItem('spectrace-token')
+  // 只在请求时取 store：模块加载期 pinia 还没安装，提前取会拿不到实例
+  const { token } = useAuthStore()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -37,8 +39,8 @@ request.interceptors.response.use(
     // 静默校验（如路由守卫里的 /auth/me）由调用方决定如何提示与跳转
     const silent = (error.config as { skipAuthRedirect?: boolean } | undefined)?.skipAuthRedirect
     if (error.response?.status === 401) {
-      localStorage.removeItem('spectrace-token')
-      localStorage.removeItem('spectrace-user')
+      // 统一走 store：访客页上的管理员入口也会随状态清空即时隐藏
+      useAuthStore().clear()
       if (!silent && location.pathname.startsWith('/admin') && !location.pathname.startsWith('/admin/login')) {
         toast.error('登录已过期，请重新登录')
         location.href = '/admin/login'

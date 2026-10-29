@@ -1531,6 +1531,43 @@
 
 ---
 
+## P21 · 公开可见性口径收口（2026-10-29 完成）
+
+> 来源：列表、详情、对比都不过滤 `device.status`，与联想/热门/趋势/sitemap 的「只统计上架」口径不一致，草稿与下架机型可被游客直达读取。
+
+**决策**
+- 草稿 / 下架机型对访客一律不可见（与 README「草稿前台不可见」对齐）；后台仍可见可编辑。
+- 后台 AI 海报继续以 UUID 文件名在 `/uploads` 公开访问（后台直链预览需要，不额外加鉴权）。
+
+| 任务 | 状态 | 落地要点 |
+| --- | --- | --- |
+| T125 列表口径 | ✅ | 公开分页重载默认 `status=1`；管理端仍走 7 参重载按筛选传值 |
+| T126 详情口径 | ✅ | `PublicController.detail` 调 `requirePublished`，非上架机型 404，且不计入 PV |
+| T127 对比口径 | ✅ | `compare` 先过滤非上架再判缺失，包含草稿时整单拒绝；变体查询改用可见 id |
+| T128 验证 | ✅ | 新增 `DeviceCompareVisibilityTest` 2 例、`DeviceServiceTest` +2 例；`mvn test` 59 例全绿 |
+| T129 重复登录 | ✅ | 登录页检测到本地会话时直接跳 `redirect` 或后台首页，token 失效由守卫清凭证后带回本页 |
+
+**验证**：公开列表不再出现草稿；`GET /api/public/devices/{draftId}` 返回 404；`GET /api/public/compare?ids=published,draft` 返回 400「部分机型不存在或已下架」；后台机型管理仍能看到并编辑草稿。
+
+---
+
+## P22 · 登录态单一入口（2026-10-29 完成）
+
+> 来源：token / 角色在路由、拦截器、布局与页面里各自读 localStorage，判定口径分散；401 清理后页面状态不会即时同步。
+
+**决策**：后台登录态收敛到 `frontend/src/stores/auth.ts`，其它模块只消费 store，不再直接读写 `spectrace-token` / `spectrace-user`。
+
+| 任务 | 状态 | 落地要点 |
+| --- | --- | --- |
+| T130 store | ✅ | 响应式 `token` / `user` + `isLoggedIn` / `isSuperAdmin`，`setSession` / `updateUser` / `clear` 统一落盘 |
+| T131 调用方替换 | ✅ | 路由守卫、axios 拦截器、`AdminLayout`、`Trends`、`Users`、`Login`、`ChangePassword` 全部改为读 store |
+| T132 401 即时生效 | ✅ | 拦截器清 store 后，访客页的管理员入口随响应式状态立即隐藏，无需刷新 |
+| T133 验证 | ✅ | `npm run typecheck` 通过；`admin` / `admin-quality` / `series-trends` 共 19 例 e2e 全绿 |
+
+**未做**：跨标签页登录态同步（`storage` 事件）；反馈编号随机化仍待拍板。
+
+---
+
 ## 依赖与并行建议
 
 - T1 独立，最先做，当天可完成

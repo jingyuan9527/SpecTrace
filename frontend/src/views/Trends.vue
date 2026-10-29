@@ -15,6 +15,7 @@ import { cssVar } from '@/lib/utils'
 import type { Brand, EvolutionParam, EvolutionResult, GenerationMatrix, ParamDef, SeriesItem } from '@/types/api'
 import { useThemeStore } from '@/stores/theme'
 import { useCompareStore } from '@/stores/compare'
+import { useAuthStore } from '@/stores/auth'
 import { Alert, Badge, Button, Card, CardContent, Empty, Select, Skeleton, Tabs, type TabItem } from '@/components/ui'
 
 /** 卡片视图：visiblePoints/viewTrend 与 SocialExportDialog 的入参契约同构，免去逐字段映射 */
@@ -29,6 +30,7 @@ const MAX_PARAMS = 8
 const DEFAULT_PARAM_KEYS = ['screen_size', 'battery_capacity', 'weight', 'launch_price']
 
 const theme = useThemeStore()
+const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const compare = useCompareStore()
@@ -67,8 +69,8 @@ const socialOpen = ref(false)
 /** 首屏装载完成前不回写 URL，避免把默认值当成用户选择 */
 const ready = ref(false)
 
-// 访客页不引入整套鉴权状态：与路由守卫同口径，本地有 token 即视为管理员，决定「去补抓」按钮显隐
-const isAdmin = computed(() => !!localStorage.getItem('spectrace-token'))
+/** 访客页只读登录态：管理员登录后多一个「去后台补抓」快捷入口，token 失效时会随 store 自动隐藏 */
+const isAdmin = computed(() => auth.isLoggedIn)
 
 const modeTabs: TabItem[] = [
   { value: 'cross', label: '跨代趋势' },

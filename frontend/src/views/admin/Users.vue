@@ -4,6 +4,7 @@ import { KeyRound, Loader2, Plus, Power, Shield, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { adminApi } from '@/api'
 import { usePagedList } from '@/composables/usePagedList'
+import { useAuthStore } from '@/stores/auth'
 import {
   Badge,
   Button,
@@ -49,14 +50,9 @@ const roles = [
 ]
 
 const roleLabel = (role: string) => (role === 'SUPER_ADMIN' ? '超级管理员' : '普通管理员')
+const auth = useAuthStore()
 /** 账号写操作仅超管可用：ADMIN 保留只读列表，避免页面展示一堆点了就 403 的按钮 */
-const isSuperAdmin = computed(() => {
-  try {
-    return JSON.parse(localStorage.getItem('spectrace-user') || '{}').role === 'SUPER_ADMIN'
-  } catch {
-    return false
-  }
-})
+const isSuperAdmin = computed(() => auth.isSuperAdmin)
 
 function openCreate() {
   Object.assign(form, { username: '', password: '', nickname: '', role: 'ADMIN' })
