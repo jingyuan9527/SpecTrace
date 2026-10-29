@@ -44,8 +44,11 @@ public class AgentProperties {
      */
     private int taskTimeoutSeconds = 300;
 
-    /** 单次模型请求超时（秒）：模型 API 挂死时快速失败，避免拖到任务整体超时 */
-    private int modelTimeoutSeconds = 90;
+    /**
+     * 单次模型请求超时（秒）：模型 API 挂死时快速失败，避免拖到任务整体超时。
+     * 取值与工具层预算储备联动（储备 = 本值 + 15s 余量），调大会同步压缩可用采集时间。
+     */
+    private int modelTimeoutSeconds = 45;
 
     /** 连续失败达到该次数时告警，0 表示关闭 */
     private int alertThreshold = 3;

@@ -36,10 +36,11 @@ public class CollectTools {
     private static final int MAX_CHARS = 8000;
 
     /**
-     * 预算安全储备：剩余时间低于该值时工具拒绝执行，逼模型立即交卷。
-     * 取值需覆盖一次慢模型往返（约 10~15s）加余量，否则模型收到「交卷」指令后还没输出完就被外层超时杀掉。
+     * 预算储备的余量：实际储备 = 单次模型超时 + 该余量。
+     * 必须覆盖一次完整模型往返，否则模型收到「交卷」指令后还没输出完就被外层 300s 硬墙杀掉，
+     * 已抓取的内容连同结果一起作废。
      */
-    private static final long BUDGET_RESERVE_MS = 25_000;
+    private static final long RESERVE_MARGIN_MS = 15_000;
 
     private final AgentProperties props;
     private final ObjectMapper objectMapper;
@@ -156,7 +157,8 @@ public class CollectTools {
      */
     private String budgetGuard() {
         long remainMs = props.getTaskTimeoutSeconds() * 1000L - CrawlSession.elapsedMs();
-        if (remainMs >= BUDGET_RESERVE_MS) {
+        long reserveMs = props.getModelTimeoutSeconds() * 1000L + RESERVE_MARGIN_MS;
+        if (remainMs >= reserveMs) {
             return null;
         }
         long remainSec = Math.max(0, remainMs / 1000);
