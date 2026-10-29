@@ -74,6 +74,8 @@ public class CollectService {
             2. 结果不全或存疑时，用 fetch_page 打开列表页核对。
             3. 宁可少列不要编造；尚未发布或只有传闻的机型不要列入。
             4. 同一机型的运营商 / 地区专属小改款不单列，并入同名机型。
+            5. 若任务提示中给出「已收录机型」，本次为增量发现：只输出比其中最新机型发布更晚、且未收录的机型，
+               已收录的不要重复列出；确认无新增时 models 输出空数组。增量发现请勿为补齐历史机型反复搜索。
 
             输出要求（极其重要）：
             - 只输出一个 JSON 对象，不要任何解释文字、不要 Markdown 代码块。
@@ -130,9 +132,18 @@ public class CollectService {
             Toolkit toolkit = new Toolkit();
             toolkit.registerTool(collectTools);
 
-            String query = (brandName + " " + seriesName + " 系列 全部机型 型号 列表").trim();
-            String prompt = "请检索品牌「" + brandName + "」的「" + seriesName
-                    + "」系列包含的全部机型清单，按系统提示的 JSON 结构输出。";
+            List<String> knownModels = payload.getKnownModels() == null ? List.of() : payload.getKnownModels();
+            // 已收录机型时走增量：只找比最新已知机型更新的，避免为补齐历史机型反复搜索把 10 轮迭代耗尽
+            String query = knownModels.isEmpty()
+                    ? (brandName + " " + seriesName + " 系列 全部机型 型号 列表").trim()
+                    : (brandName + " " + seriesName + " 系列 最新机型 发布").trim();
+            String prompt = knownModels.isEmpty()
+                    ? "请检索品牌「" + brandName + "」的「" + seriesName
+                            + "」系列包含的全部机型清单，按系统提示的 JSON 结构输出。"
+                    : "请检索品牌「" + brandName + "」的「" + seriesName + "」系列是否发布了新机型。"
+                            + "该系列已收录以下机型（从新到旧）：" + String.join("、", knownModels) + "。"
+                            + "只输出比其中最新机型发布更晚、且未收录的机型；确认没有新增时 models 输出空数组，"
+                            + "不要为了补齐历史机型反复搜索。";
 
             // 每个任务独立的会话身份，任务之间互不共享上下文 / 记忆
             String identity = "task-" + payload.getTaskId();
@@ -179,7 +190,8 @@ public class CollectService {
                 dto.setReleaseDate(item.isTextual() ? null : nullableText(item, "releaseDate"));
                 models.add(dto);
             }
-            if (models.isEmpty()) {
+            // 增量发现时「无新增」是正常结果；只有全量枚举返回空才是模型输出失败
+            if (models.isEmpty() && knownModels.isEmpty()) {
                 throw new IllegalArgumentException("模型未返回任何机型");
             }
 
@@ -196,7 +208,9 @@ public class CollectService {
             summary.put("notes", nullableText(data, "notes"));
             appendFailedSources(summary);
             result.setLogs(objectMapper.writeValueAsString(summary));
-            taskLogService.info(payload.getTaskId(), "发现完成：共 " + models.size() + " 个机型");
+            taskLogService.info(payload.getTaskId(), knownModels.isEmpty()
+                    ? "发现完成：共 " + models.size() + " 个机型"
+                    : "增量发现完成：新增 " + models.size() + " 个机型（已收录基线 " + knownModels.size() + " 个）");
             return result;
         } catch (Exception e) {
             log.error("系列发现失败 taskId={}", payload.getTaskId(), e);

@@ -63,10 +63,14 @@ public class CollectorWorker implements ApplicationRunner {
             return;
         }
         boolean once = args.containsOption("once");
-        Thread worker = new Thread(() -> loop(once), "collector-worker");
-        worker.setDaemon(true);
-        worker.start();
-        log.info("内嵌采集 Agent 已启动，任务消费线程就绪（once={}）", once);
+        // once 模式只用于联调，保持单线程；正式运行按配置并发，避免慢任务把队列拖成长队
+        int concurrency = once ? 1 : Math.max(1, props.getWorkerConcurrency());
+        for (int i = 1; i <= concurrency; i++) {
+            Thread worker = new Thread(() -> loop(once), "collector-worker-" + i);
+            worker.setDaemon(true);
+            worker.start();
+        }
+        log.info("内嵌采集 Agent 已启动，任务消费线程 {} 个（once={}）", concurrency, once);
     }
 
     private void loop(boolean once) {
@@ -124,19 +128,14 @@ public class CollectorWorker implements ApplicationRunner {
             log.warn("解析 AI 配置失败 taskId={}：{}", payload.getTaskId(), e.getMessage());
         }
 
-        AgentCallbackRequest result;
-        try {
-            result = collectService.collect(payload, schemaDefs, aiConfig);
-        } catch (Exception e) {
-            log.error("采集异常 taskId={}", payload.getTaskId(), e);
-            taskLogService.error(payload.getTaskId(),
-                    "采集线程异常：" + e.getClass().getSimpleName() + ": " + e.getMessage());
-            result = new AgentCallbackRequest();
-            result.setTaskId(payload.getTaskId());
-            result.setModelName(payload.getModelName());
-            result.setBrandName(payload.getBrandName());
-            result.setStatus("FAILED");
-            result.setError(e.getClass().getSimpleName() + ": " + e.getMessage());
+        AgentCallbackRequest result = collectOnce(payload, schemaDefs, aiConfig);
+        // 模型偶发不守 JSON 输出格式，属于可重试失败：同任务同模型再跑一次，
+        // 仍失败才落 FAILED，避免把一次坏输出直接算成任务失败
+        if (isRetryableModelOutputFailure(result)) {
+            taskLogService.warn(payload.getTaskId(),
+                    "模型未输出 JSON，自动重试一次（同一任务、同一模型）");
+            log.warn("模型输出不可解析，自动重试 taskId={} model={}", payload.getTaskId(), payload.getModelName());
+            result = collectOnce(payload, schemaDefs, aiConfig);
         }
         result.setDurationMs(System.currentTimeMillis() - start);
 
@@ -147,6 +146,31 @@ public class CollectorWorker implements ApplicationRunner {
             log.error("写回采集结果失败 taskId={}，任务保持中间态，等待下次启动恢复", payload.getTaskId(), e);
         }
         trackFailure(payload, result);
+    }
+
+    /** 执行一次采集；异常在本方法内收敛为失败结果，重试路径复用同一套兜底逻辑。 */
+    private AgentCallbackRequest collectOnce(AgentTaskPayload payload, List<ParamDef> schemaDefs,
+                                             ResolvedModel aiConfig) {
+        try {
+            return collectService.collect(payload, schemaDefs, aiConfig);
+        } catch (Exception e) {
+            log.error("采集异常 taskId={}", payload.getTaskId(), e);
+            taskLogService.error(payload.getTaskId(),
+                    "采集线程异常：" + e.getClass().getSimpleName() + ": " + e.getMessage());
+            AgentCallbackRequest result = new AgentCallbackRequest();
+            result.setTaskId(payload.getTaskId());
+            result.setModelName(payload.getModelName());
+            result.setBrandName(payload.getBrandName());
+            result.setStatus("FAILED");
+            result.setError(e.getClass().getSimpleName() + ": " + e.getMessage());
+            return result;
+        }
+    }
+
+    /** 仅「模型输出无法解析」可重试：超时、配置错误重跑只会再白等一轮。 */
+    private boolean isRetryableModelOutputFailure(AgentCallbackRequest result) {
+        return result != null && "FAILED".equalsIgnoreCase(result.getStatus())
+                && result.getError() != null && result.getError().contains("模型未输出");
     }
 
     /** handle 抛异常时的兜底落库；落库再失败则留待下次启动的恢复逻辑处理，消费线程本身绝不退出。 */

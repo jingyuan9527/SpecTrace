@@ -22,6 +22,13 @@ public class AgentProperties {
     /** 阻塞等待任务的超时（秒），超时无任务则空转一轮 */
     private int pollIntervalSeconds = 5;
 
+    /**
+     * 采集消费线程数。
+     * 单线程时慢任务（单任务上限 420s）会让后续任务长时间排队；2 线程可在 SQLite 单写者
+     * （WAL + busy_timeout 10s，连接池 4）下并行，再高收益递减且加剧写锁竞争。
+     */
+    private int workerConcurrency = 2;
+
     /** 回退用 DashScope API Key（后台未配置 AI 连接时生效） */
     private String dashscopeApiKey = "";
 

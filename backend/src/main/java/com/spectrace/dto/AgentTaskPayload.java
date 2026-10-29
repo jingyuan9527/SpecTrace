@@ -15,4 +15,10 @@ public class AgentTaskPayload {
 
     /** TaskType 枚举名，消费端按类型分流到参数抓取 / 系列发现 */
     private String taskType;
+
+    /**
+     * 系列发现任务已收录的机型名（按发布时间从新到旧）。
+     * 让模型只补「比最新已知机型更新」的机型，避免每次从零枚举整个系列导致迭代与时间耗尽。
+     */
+    private java.util.List<String> knownModels;
 }

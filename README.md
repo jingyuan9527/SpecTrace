@@ -165,6 +165,7 @@ npm run dev
 | `SPECTRACE_AGENT_QUEUE` | `memory` | 任务队列：`memory` / `redis` |
 | `AGENTSCOPE_WORKSPACE` | `.agentscope/workspace` | Harness 工作区目录 |
 | `POLL_INTERVAL_SECONDS` | `5` | 阻塞等待任务的超时（秒） |
+| `AGENT_WORKER_CONCURRENCY` | `2` | 采集消费线程数；SQLite 单写者场景 2 并发收益最高，再大只加剧写锁竞争（`--once` 联调固定单线程） |
 | `TASK_TIMEOUT_SECONDS` | `420` | 单任务最长耗时（秒）；剩余时间低于「单次模型超时 + 15s」时工具停止执行并要求模型基于已有信息交卷；真超时后还会用已抓取正文做一次二次抽取，仍不行才转待审核交人工 |
 | `MODEL_TIMEOUT_SECONDS` | `45` | 单次模型请求超时（秒），模型 API 挂死时快速失败；该值同时决定上面的交卷储备，调大需同步确认 `TASK_TIMEOUT_SECONDS` 留足采集时间 |
 | `CRAWL_INTERVAL_SECONDS` | `2` | 每次外网请求间隔（秒），抓取风控 |

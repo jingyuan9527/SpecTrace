@@ -19,9 +19,12 @@ import com.spectrace.entity.AgentPendingData;
 import com.spectrace.entity.AgentTask;
 import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
+import com.spectrace.entity.DeviceSeries;
 import com.spectrace.mapper.AgentPendingDataMapper;
 import com.spectrace.mapper.AgentTaskMapper;
 import com.spectrace.mapper.BrandMapper;
+import com.spectrace.mapper.DeviceMapper;
+import com.spectrace.mapper.DeviceSeriesMapper;
 import com.spectrace.task.TaskQueue;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -55,6 +58,8 @@ public class AgentTaskService {
     private final AgentTaskMapper taskMapper;
     private final AgentPendingDataMapper pendingMapper;
     private final BrandMapper brandMapper;
+    private final DeviceMapper deviceMapper;
+    private final DeviceSeriesMapper seriesMapper;
     private final TaskQueue taskQueue;
     private final DeviceService deviceService;
     private final OperationLogService logService;
@@ -78,12 +83,7 @@ public class AgentTaskService {
         task.setStatus(TaskStatus.QUEUED.name());
         taskMapper.insert(task);
 
-        AgentTaskPayload payload = new AgentTaskPayload();
-        payload.setTaskId(task.getId());
-        payload.setModelName(task.getModelName());
-        payload.setBrandName(task.getBrandName());
-        payload.setAiModelId(task.getAiModelId());
-        payload.setTaskType(task.getTaskType());
+        AgentTaskPayload payload = buildPayload(task);
         try {
             taskQueue.push(payload);
         } catch (Exception e) {
@@ -100,6 +100,49 @@ public class AgentTaskService {
         log.info("提交抓取任务: taskId={} type={} brand={} model={} admin={}",
                 task.getId(), task.getTaskType(), task.getBrandName(), task.getModelName(), adminName);
         return task;
+    }
+
+    /**
+     * 组装入队载荷。系列发现任务额外带上系列已收录机型，供 Agent 做增量发现。
+     */
+    private AgentTaskPayload buildPayload(AgentTask task) {
+        AgentTaskPayload payload = new AgentTaskPayload();
+        payload.setTaskId(task.getId());
+        payload.setModelName(task.getModelName());
+        payload.setBrandName(task.getBrandName());
+        payload.setAiModelId(task.getAiModelId());
+        payload.setTaskType(task.getTaskType());
+        if (TaskType.SERIES_DISCOVERY.name().equals(task.getTaskType())) {
+            payload.setKnownModels(resolveKnownModels(task.getBrandName(), task.getModelName()));
+        }
+        return payload;
+    }
+
+    /**
+     * 系列已收录机型（按发布时间从新到旧，最多 12 条）。
+     *
+     * <p>任务 modelName 就是系列名（订阅与手工发现都这么传），据此定位系列；
+     * 查不到系列时返回空列表，Agent 退回全量枚举，不会因为增量改造反而漏发现。
+     */
+    private List<String> resolveKnownModels(String brandName, String seriesName) {
+        if (!StringUtils.hasText(brandName) || !StringUtils.hasText(seriesName)) {
+            return List.of();
+        }
+        Brand brand = brandMapper.selectOne(Wrappers.<Brand>lambdaQuery().eq(Brand::getName, brandName));
+        if (brand == null) {
+            return List.of();
+        }
+        DeviceSeries series = seriesMapper.selectOne(Wrappers.<DeviceSeries>lambdaQuery()
+                .eq(DeviceSeries::getBrandId, brand.getId())
+                .eq(DeviceSeries::getName, seriesName));
+        if (series == null) {
+            return List.of();
+        }
+        List<Device> devices = deviceMapper.selectList(Wrappers.<Device>lambdaQuery()
+                .eq(Device::getSeriesId, series.getId())
+                .orderByDesc(Device::getReleaseDate)
+                .last("LIMIT 12"));
+        return devices.stream().map(Device::getName).filter(StringUtils::hasText).toList();
     }
 
     /**
@@ -120,13 +163,7 @@ public class AgentTaskService {
         List<AgentTask> queued = taskMapper.selectList(Wrappers.<AgentTask>lambdaQuery()
                 .eq(AgentTask::getStatus, TaskStatus.QUEUED.name()));
         for (AgentTask task : queued) {
-            AgentTaskPayload payload = new AgentTaskPayload();
-            payload.setTaskId(task.getId());
-            payload.setModelName(task.getModelName());
-            payload.setBrandName(task.getBrandName());
-            payload.setAiModelId(task.getAiModelId());
-            payload.setTaskType(task.getTaskType());
-            taskQueue.push(payload);
+            taskQueue.push(buildPayload(task));
             log.info("重启恢复：内存队列丢失，任务重新入队 taskId={} model={}", task.getId(), task.getModelName());
         }
     }
