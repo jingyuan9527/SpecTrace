@@ -305,6 +305,8 @@ public class AiConfigService {
             throw new BizException("模型所属连接不存在");
         }
         ResolvedModel resolved = new ResolvedModel();
+        resolved.setConfigId(config.getId());
+        resolved.setConfigName(config.getName());
         resolved.setModelId(model.getId());
         resolved.setProvider(config.getProvider());
         resolved.setBaseUrl(config.getBaseUrl());

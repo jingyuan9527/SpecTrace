@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui'
+import ModelCallPanel from './monitor/ModelCallPanel.vue'
 
 const theme = useThemeStore()
 const { bind, render } = useECharts()
@@ -241,6 +242,9 @@ watch([collect, traffic, () => theme.dark], () => {
         </CardContent>
 
       </Card>
+
+      <!-- 模型调用统计：逐次模型请求的趋势、延迟、成功率与失败原因 -->
+      <ModelCallPanel />
 
       <!-- T106 数据质量：陈旧度、反馈时效与报错参数薄弱点 -->
       <Card v-if="quality">

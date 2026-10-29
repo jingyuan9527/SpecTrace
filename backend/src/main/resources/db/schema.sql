@@ -295,6 +295,26 @@ CREATE TABLE IF NOT EXISTS ai_image_job (
     created_at    DATETIME     DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 模型调用明细：逐次记录采集 Agent / AI 摘要 / AI 绘图的请求，供后台统计与排障
+CREATE TABLE IF NOT EXISTS ai_call_log (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    scene             VARCHAR(24)  NOT NULL,
+    provider_kind     VARCHAR(16)  NOT NULL,
+    provider_id       BIGINT       DEFAULT NULL,
+    provider_name     VARCHAR(128) DEFAULT NULL,
+    model_id          BIGINT       DEFAULT NULL,
+    model_name        VARCHAR(128) NOT NULL,
+    success           TINYINT      NOT NULL DEFAULT 0,
+    status_code       INT          DEFAULT NULL,
+    latency_ms        BIGINT       NOT NULL DEFAULT 0,
+    error_type        VARCHAR(32)  DEFAULT NULL,
+    error_msg         VARCHAR(512) DEFAULT NULL,
+    prompt_tokens     INT          DEFAULT NULL,
+    completion_tokens INT          DEFAULT NULL,
+    biz_id            VARCHAR(64)  DEFAULT NULL,
+    created_at        DATETIME     DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 逻辑删除的软删行不参与唯一约束，删除后允许重建同名记录（SQLite 部分索引）
 CREATE UNIQUE INDEX IF NOT EXISTS uk_param_key ON param_def (param_key) WHERE deleted = 0;
 CREATE UNIQUE INDEX IF NOT EXISTS uk_username ON admin_user (username) WHERE deleted = 0;
@@ -325,3 +345,6 @@ CREATE INDEX IF NOT EXISTS idx_view_date ON device_view_daily (view_date);
 CREATE INDEX IF NOT EXISTS idx_ai_image_provider_default ON ai_image_provider (is_default);
 CREATE INDEX IF NOT EXISTS idx_ai_image_prompt_default ON ai_image_prompt (is_default);
 CREATE INDEX IF NOT EXISTS idx_ai_image_job_created ON ai_image_job (created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_call_log_created ON ai_call_log (created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_call_log_dim ON ai_call_log (provider_kind, provider_id, model_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_call_log_scene_biz ON ai_call_log (scene, biz_id, id);

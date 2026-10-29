@@ -7,6 +7,8 @@ import lombok.Data;
  */
 @Data
 public class ResolvedModel {
+    private Long configId;
+    private String configName;
     private Long modelId;
     private String provider;
     private String baseUrl;

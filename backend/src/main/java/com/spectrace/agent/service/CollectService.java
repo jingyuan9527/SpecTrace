@@ -5,7 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.spectrace.agent.CrawlSession;
 import com.spectrace.agent.TaskLogContext;
 import com.spectrace.agent.config.AgentProperties;
+import com.spectrace.agent.model.RecordingChatModel;
 import com.spectrace.agent.tool.CollectTools;
+import com.spectrace.common.AiCallFailure;
+import com.spectrace.common.AiCallScene;
 import com.spectrace.common.TaskType;
 import com.spectrace.dto.AgentCallbackRequest;
 import com.spectrace.dto.AgentTaskPayload;
@@ -14,6 +17,8 @@ import com.spectrace.dto.ResolvedModel;
 import com.spectrace.dto.SeriesModelDTO;
 import com.spectrace.entity.ParamDef;
 import com.spectrace.service.AgentTaskLogService;
+import com.spectrace.service.AiCallRecorder;
+import com.spectrace.service.AiCallTarget;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
@@ -54,6 +59,7 @@ public class CollectService {
     private final CollectTools collectTools;
     private final AgentProperties props;
     private final AgentTaskLogService taskLogService;
+    private final AiCallRecorder aiCallRecorder;
     private final ObjectMapper objectMapper;
 
     /**
@@ -116,7 +122,10 @@ public class CollectService {
         String seriesName = payload.getModelName() == null ? "" : payload.getModelName();
         String brandName = payload.getBrandName() == null ? "" : payload.getBrandName();
         try {
-            Model model = buildModel(aiConfig);
+            // 每次模型请求都落一条调用记录；scene 与 taskId 让统计能回溯到具体任务
+            Model model = new RecordingChatModel(buildModel(aiConfig),
+                    AiCallTarget.chat(aiConfig, props.getDashscopeModel()), aiCallRecorder,
+                    AiCallScene.AGENT_DISCOVERY, String.valueOf(payload.getTaskId()));
 
             Toolkit toolkit = new Toolkit();
             toolkit.registerTool(collectTools);
@@ -192,6 +201,7 @@ public class CollectService {
         } catch (Exception e) {
             log.error("系列发现失败 taskId={}", payload.getTaskId(), e);
             String message = e.getMessage() == null ? "" : e.getMessage();
+            markModelOutputFailure(AiCallScene.AGENT_DISCOVERY, payload.getTaskId(), message);
             String error = message.contains("Timeout") || message.contains("timeout")
                     ? "发现超时（>" + props.getTaskTimeoutSeconds() + "s），" + timeoutHint(payload.getTaskId())
                     : e.getClass().getSimpleName() + ": " + message;
@@ -212,7 +222,9 @@ public class CollectService {
         String brandName = payload.getBrandName() == null ? "" : payload.getBrandName();
 
         try {
-            Model model = buildModel(aiConfig);
+            Model model = new RecordingChatModel(buildModel(aiConfig),
+                    AiCallTarget.chat(aiConfig, props.getDashscopeModel()), aiCallRecorder,
+                    AiCallScene.AGENT_SCRAPE, String.valueOf(payload.getTaskId()));
 
             Toolkit toolkit = new Toolkit();
             toolkit.registerTool(collectTools);
@@ -299,6 +311,7 @@ public class CollectService {
         } catch (Exception e) {
             log.error("采集失败 taskId={}", payload.getTaskId(), e);
             String message = e.getMessage() == null ? "" : e.getMessage();
+            markModelOutputFailure(AiCallScene.AGENT_SCRAPE, payload.getTaskId(), message);
             String error = message.contains("Timeout") || message.contains("timeout")
                     ? "抓取超时（>" + props.getTaskTimeoutSeconds() + "s），" + timeoutHint(payload.getTaskId())
                     : e.getClass().getSimpleName() + ": " + message;
@@ -532,7 +545,23 @@ public class CollectService {
         if (start < 0 || end <= start) {
             throw new IllegalArgumentException("模型未输出 JSON");
         }
-        return objectMapper.readTree(cleaned.substring(start, end + 1));
+        try {
+            return objectMapper.readTree(cleaned.substring(start, end + 1));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalArgumentException("模型未输出合法 JSON：" + e.getOriginalMessage(), e);
+        }
+    }
+
+    /**
+     * 传输层成功但输出无法解析属于业务失败：把该任务最近一次调用标记为失败，
+     * 而不是新增一条记录，保证成功率的分母仍是真实调用次数。
+     */
+    private void markModelOutputFailure(AiCallScene scene, Long taskId, String message) {
+        if (message == null || !message.contains("模型未输出")) {
+            return;
+        }
+        aiCallRecorder.markBusinessFailure(scene, String.valueOf(taskId),
+                AiCallFailure.INVALID_RESPONSE.name(), message);
     }
 
     private String nullToEmpty(String value) {

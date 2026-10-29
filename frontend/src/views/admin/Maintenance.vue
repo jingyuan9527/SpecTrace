@@ -53,6 +53,7 @@ interface RetentionOverview {
   operationLogDays: number
   viewDailyDays: number
   searchLogDays: number
+  aiCallDays: number
   nextRunAt?: string | null
   counts: Record<string, number>
 }
@@ -62,6 +63,7 @@ const RETENTION_TABLE_NAMES: Record<string, string> = {
   agent_task_log: '抓取过程日志',
   agent_pending_data: '待审核数据',
   operation_log: '操作日志',
+  ai_call_log: '模型调用明细',
 }
 
 const overview = ref<BackupOverview | null>(null)
@@ -219,7 +221,8 @@ onMounted(() => {
               每日定时清理终态数据，防止数据库无界膨胀：抓取任务及过程日志保留 {{ retention?.taskDays ?? '—' }} 天、
               已处理待审核保留 {{ retention?.pendingDays ?? '—' }} 天、操作日志保留 {{ retention?.operationLogDays ?? '—' }} 天、
               浏览量聚合保留 {{ retention?.viewDailyDays ?? '—' }} 天、
-              搜索词聚合保留 {{ retention?.searchLogDays ?? '—' }} 天。
+              搜索词聚合保留 {{ retention?.searchLogDays ?? '—' }} 天、
+              模型调用明细保留 {{ retention?.aiCallDays ?? '—' }} 天。
             </p>
           </div>
           <div class="flex gap-2">

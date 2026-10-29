@@ -329,6 +329,56 @@ export interface CollectMetrics {
   modelStats: ModelStat[]
 }
 
+/** 模型调用统计的供应商筛选项：对话连接或绘图供应商 */
+export interface ModelCallProvider {
+  kind: 'CHAT' | 'IMAGE'
+  id: number
+  name: string
+  /** 绘图供应商只有一个模型且没有 ai_model.id */
+  models: Array<{ id?: number | null; name: string }>
+}
+
+export interface ModelCallDimensions {
+  providers: ModelCallProvider[]
+}
+
+/** 模型调用趋势的单个时间桶 */
+export interface ModelCallPoint {
+  bucket: string
+  total: number
+  success: number
+  failed: number
+  avgMs: number
+  p95Ms: number
+  maxMs: number
+}
+
+export interface ModelCallFailure {
+  reason: string
+  label: string
+  count: number
+  /** count / failed，无失败时后端不返回 */
+  share?: number | null
+}
+
+/** 模型调用统计读数（延迟口径包含失败调用） */
+export interface ModelCallMetrics {
+  start: string
+  end: string
+  bucketUnit: 'MINUTE' | 'HOUR' | 'DAY'
+  total: number
+  success: number
+  failed: number
+  successRate?: number | null
+  avgMs: number
+  p50Ms: number
+  p95Ms: number
+  p99Ms: number
+  maxMs: number
+  series: ModelCallPoint[]
+  failures: ModelCallFailure[]
+}
+
 /** 数据健康度总览（T85） */
 export interface DataHealth {
   totalDevices: number
@@ -857,6 +907,8 @@ export interface RetentionOverview {
   viewDailyDays: number
   /** 访客搜索词聚合的保留天数 */
   searchLogDays: number
+  /** 模型调用明细的保留天数 */
+  aiCallDays: number
   nextRunAt?: string | null
   counts: Record<string, number>
 }

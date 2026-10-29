@@ -39,6 +39,8 @@ import type {
   SocialCopyResult,
   LoginRequest,
   LoginResponse,
+  ModelCallDimensions,
+  ModelCallMetrics,
   OperationLog,
   PageResult,
   ParamDef,
@@ -141,6 +143,11 @@ export const adminApi = {
     request.get<unknown, TrafficMetrics>('/admin/metrics/traffic', { params: { windowDays } }),
   runtimeMetrics: () => request.get<unknown, RuntimeMetrics>('/admin/metrics/runtime'),
   qualityMetrics: () => request.get<unknown, QualityMetrics>('/admin/metrics/quality'),
+  // 模型调用统计：筛选项与按供应商/模型/时间范围聚合的读数
+  modelCallDimensions: () =>
+    request.get<unknown, ModelCallDimensions>('/admin/metrics/model-call-dimensions'),
+  modelCallMetrics: (params: Record<string, unknown>) =>
+    request.get<unknown, ModelCallMetrics>('/admin/metrics/model-calls', { params }),
 
   brands: () => request.get<unknown, Brand[]>('/admin/brands'),
   saveBrand: (data: BrandSaveRequest) =>

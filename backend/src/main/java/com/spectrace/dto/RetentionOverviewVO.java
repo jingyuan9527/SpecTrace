@@ -30,6 +30,9 @@ public class RetentionOverviewVO {
     /** 访客搜索词聚合的保留天数 */
     private int searchLogDays;
 
+    /** 模型调用明细的保留天数 */
+    private int aiCallDays;
+
     /** 下次定时清理时间，cron 非法或功能关闭时为 null */
     private LocalDateTime nextRunAt;
 

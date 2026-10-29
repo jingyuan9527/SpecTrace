@@ -104,6 +104,8 @@ spectrace:
     view-daily-days: ${SPECTRACE_RETENTION_VIEW_DAILY_DAYS:90}
     # 访客搜索词聚合的保留天数
     search-log-days: ${SPECTRACE_RETENTION_SEARCH_LOG_DAYS:90}
+    # 模型调用明细保留天数（每轮 Agent 调用一条，默认比任务日志更短）
+    ai-call-days: ${SPECTRACE_RETENTION_AI_CALL_DAYS:30}
   # 运行告警（T104）：待审核积压 / 备份失败 / 磁盘水位；webhook 复用 AGENT_ALERT_WEBHOOK，阈值 0 关闭对应规则
   alert:
     cron: ${SPECTRACE_ALERT_CRON:0 0 * * * *}

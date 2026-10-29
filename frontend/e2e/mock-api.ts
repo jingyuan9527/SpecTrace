@@ -875,6 +875,45 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         pendingOldestHours: 2,
       })
     }
+    if (path === '/admin/metrics/model-call-dimensions') {
+      return ok({
+        providers: [
+          { kind: 'CHAT', id: 1, name: 'OpenRouter', models: [{ id: 11, name: 'random' }] },
+          { kind: 'IMAGE', id: 1, name: 'OpenAI 绘图', models: [{ id: null, name: 'gpt-image-1' }] },
+        ],
+      })
+    }
+    if (path === '/admin/metrics/model-calls') {
+      const series = Array.from({ length: 24 }, (_, index) => ({
+        bucket: `2026-10-25 ${String(index).padStart(2, '0')}:00`,
+        total: 3 + (index % 4),
+        success: 2 + (index % 3),
+        failed: index % 3 === 0 ? 1 : 0,
+        avgMs: 800 + index * 20,
+        p95Ms: 1500 + index * 30,
+        maxMs: 2100 + index * 40,
+      }))
+      return ok({
+        start: '2026-10-24T10:00:00',
+        end: '2026-10-25T10:00:00',
+        bucketUnit: 'HOUR',
+        total: 96,
+        success: 84,
+        failed: 12,
+        successRate: 0.875,
+        avgMs: 1020,
+        p50Ms: 900,
+        p95Ms: 2200,
+        p99Ms: 3100,
+        maxMs: 4200,
+        series,
+        failures: [
+          { reason: 'TIMEOUT', label: '请求超时', count: 7, share: 0.583 },
+          { reason: 'SERVER', label: '服务端错误', count: 3, share: 0.25 },
+          { reason: 'EMPTY_RESPONSE', label: '空返回', count: 2, share: 0.167 },
+        ],
+      })
+    }
     if (path === '/admin/metrics/collect') {
       const today = new Date('2026-10-25')
       const daily = Array.from({ length: 30 }, (_, index) => {
@@ -915,6 +954,7 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         operationLogDays: 90,
         viewDailyDays: 90,
         searchLogDays: 90,
+        aiCallDays: 30,
         nextRunAt: '2026-10-26T04:00:00',
         counts: {},
       })

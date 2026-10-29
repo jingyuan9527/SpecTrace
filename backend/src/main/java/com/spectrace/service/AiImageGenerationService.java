@@ -18,6 +18,8 @@ import com.spectrace.dto.EvolutionPointVO;
 import com.spectrace.dto.EvolutionVO;
 import com.spectrace.entity.AiImageJob;
 import com.spectrace.entity.AiImagePrompt;
+import com.spectrace.common.AiCallErrors;
+import com.spectrace.common.AiCallFailure;
 import com.spectrace.entity.AiImageProvider;
 import com.spectrace.mapper.AiImageJobMapper;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -74,6 +77,7 @@ public class AiImageGenerationService {
     private final AiImagePromptService promptService;
     private final EvolutionService evolutionService;
     private final AiImageJobMapper jobMapper;
+    private final AiCallRecorder aiCallRecorder;
     private final ObjectMapper objectMapper;
 
     @Value("${spectrace.ai.image.enabled:true}")
@@ -374,26 +378,83 @@ public class AiImageGenerationService {
             builder.header("Authorization", "Bearer " + provider.getApiKey());
         }
 
-        HttpResponse<String> response = httpClient.send(builder.build(),
-                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (response.statusCode() >= 400) {
-            log.warn("绘图接口返回失败: url={} model={} status={} body={}",
-                    url, provider.getModel(), response.statusCode(), truncate(response.body(), 300));
-            throw new IllegalStateException("HTTP " + response.statusCode() + " " + truncate(response.body(), 200));
-        }
+        LocalDateTime startedAt = LocalDateTime.now();
+        long startedAtMs = System.currentTimeMillis();
+        AiCallTarget target = AiCallTarget.image(provider);
+        boolean recorded = false;
+        try {
+            HttpResponse<String> response = httpClient.send(builder.build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() >= 400) {
+                log.warn("绘图接口返回失败: url={} model={} status={} body={}",
+                        url, provider.getModel(), response.statusCode(), truncate(response.body(), 300));
+                recordImage(target, startedAt, startedAtMs, response.statusCode(),
+                        AiCallErrors.fromStatus(response.statusCode()), response.body());
+                recorded = true;
+                throw new IllegalStateException("HTTP " + response.statusCode() + " " + truncate(response.body(), 200));
+            }
 
-        JsonNode root = objectMapper.readTree(response.body());
-        JsonNode first = root.path("data").path(0);
-        String base64 = first.path("b64_json").asText("");
-        if (StringUtils.hasText(base64)) {
-            return decodeBase64(base64);
+            JsonNode root;
+            try {
+                root = objectMapper.readTree(response.body());
+            } catch (Exception e) {
+                recordImage(target, startedAt, startedAtMs, response.statusCode(),
+                        AiCallFailure.INVALID_RESPONSE.name(), "响应不是合法 JSON：" + e.getMessage());
+                recorded = true;
+                throw e;
+            }
+
+            JsonNode first = root.path("data").path(0);
+            String base64 = first.path("b64_json").asText("");
+            if (StringUtils.hasText(base64)) {
+                byte[] bytes;
+                try {
+                    bytes = decodeBase64(base64);
+                } catch (Exception e) {
+                    recordImage(target, startedAt, startedAtMs, response.statusCode(),
+                            AiCallFailure.INVALID_RESPONSE.name(), "图片 base64 解码失败：" + e.getMessage());
+                    recorded = true;
+                    throw e;
+                }
+                recordImage(target, startedAt, startedAtMs, response.statusCode(), null, null);
+                recorded = true;
+                return bytes;
+            }
+            String imageUrl = first.path("url").asText("");
+            if (StringUtils.hasText(imageUrl)) {
+                byte[] bytes;
+                try {
+                    bytes = downloadImage(imageUrl);
+                } catch (Exception e) {
+                    recordImage(target, startedAt, startedAtMs, null,
+                            AiCallErrors.fromThrowable(e), "图片下载失败：" + e.getMessage());
+                    recorded = true;
+                    throw e;
+                }
+                recordImage(target, startedAt, startedAtMs, response.statusCode(), null, null);
+                recorded = true;
+                return bytes;
+            }
+            String error = root.path("error").path("message").asText("");
+            String message = "绘图接口未返回图片" + (StringUtils.hasText(error) ? "：" + error : "");
+            recordImage(target, startedAt, startedAtMs, response.statusCode(),
+                    AiCallFailure.INVALID_RESPONSE.name(), message);
+            recorded = true;
+            throw new IllegalStateException(message);
+        } catch (Exception e) {
+            if (!recorded) {
+                recordImage(target, startedAt, startedAtMs, null,
+                        AiCallErrors.fromThrowable(e), e.getMessage());
+            }
+            throw e;
         }
-        String imageUrl = first.path("url").asText("");
-        if (StringUtils.hasText(imageUrl)) {
-            return downloadImage(imageUrl);
-        }
-        String error = root.path("error").path("message").asText("");
-        throw new IllegalStateException("绘图接口未返回图片" + (StringUtils.hasText(error) ? "：" + error : ""));
+    }
+
+    /** 绘图调用同样属于模型调用：耗时覆盖生成请求与 URL 图片下载，失败也保留可解释的原因。 */
+    private void recordImage(AiCallTarget target, LocalDateTime startedAt, long startedAtMs,
+                             Integer statusCode, String errorType, String errorMsg) {
+        aiCallRecorder.recordImage(target, null, startedAt,
+                System.currentTimeMillis() - startedAtMs, statusCode, errorType, truncate(errorMsg, 500));
     }
 
     private byte[] decodeBase64(String raw) {

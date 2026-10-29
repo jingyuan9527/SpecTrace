@@ -162,6 +162,10 @@ test('后台：运行监控页采集漏斗', async ({ page }) => {
   // T101：模型排行表
   await expect(page.getByRole('cell', { name: 'OpenRouter / random' })).toBeVisible()
   await expect(page.getByRole('cell', { name: '80%', exact: true })).toBeVisible()
+  // 模型调用统计：默认近 24 小时，趋势图与失败原因分布可见
+  await expect(page.getByRole('heading', { name: '模型调用', exact: true })).toBeVisible()
+  await expect(page.getByText('调用量趋势')).toBeVisible()
+  await expect(page.getByText('请求超时')).toBeVisible()
   // T106：数据质量卡
   await expect(page.getByRole('heading', { name: '数据质量' })).toBeVisible()
   await expect(page.getByText(/未更新\s*3\s*台/)).toBeVisible()
