@@ -282,9 +282,17 @@ public class CollectService {
             taskLogService.error(payload.getTaskId(), "采集异常：" + error);
             // 超时不等于白干：已抓正文还在会话缓存里，先抢救再决定是否判失败
             if (error.startsWith("抓取超时")) {
-                AgentCallbackRequest salvaged = salvageAfterTimeout(payload, schemaDefs, aiConfig, error);
-                if (salvaged != null) {
-                    return salvaged;
+                try {
+                    AgentCallbackRequest salvaged = salvageAfterTimeout(payload, schemaDefs, aiConfig, error);
+                    if (salvaged != null) {
+                        return salvaged;
+                    }
+                } catch (Exception salvageError) {
+                    // 抢救自身出错（例如结果序列化失败）时退回普通失败分支，不能把异常抛给消费线程
+                    log.warn("超时抢救流程异常 taskId={}：{}", payload.getTaskId(), salvageError.getMessage());
+                    taskLogService.warn(payload.getTaskId(),
+                            "超时抢救流程异常：" + salvageError.getClass().getSimpleName()
+                                    + ": " + salvageError.getMessage());
                 }
             }
             AgentCallbackRequest result = new AgentCallbackRequest();
@@ -359,7 +367,7 @@ public class CollectService {
      * @return 有可复用正文时返回结果（成功或空参数待人工），无可复用正文时返回 null 交回失败分支
      */
     private AgentCallbackRequest salvageAfterTimeout(AgentTaskPayload payload, List<ParamDef> schemaDefs,
-                                                     ResolvedModel aiConfig, String timeoutError) {
+                                                     ResolvedModel aiConfig, String timeoutError) throws Exception {
         Map<String, String> pages = CrawlSession.fetchedPages();
         if (pages.isEmpty()) {
             taskLogService.warn(payload.getTaskId(), "超时抢救跳过：本次任务没有成功抓取任何网页正文，无可复用素材");
