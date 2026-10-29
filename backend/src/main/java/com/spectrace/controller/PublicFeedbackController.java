@@ -30,16 +30,16 @@ public class PublicFeedbackController {
 
     private final FeedbackService feedbackService;
 
-    @Operation(summary = "提交参数纠错反馈")
+    @Operation(summary = "提交参数纠错反馈", description = "返回随机公开码，访客凭码查询处理进度")
     @PostMapping
-    public R<Long> submit(@Valid @RequestBody FeedbackRequest req, HttpServletRequest request) {
+    public R<String> submit(@Valid @RequestBody FeedbackRequest req, HttpServletRequest request) {
         return R.ok(feedbackService.submit(req, clientKey(request)));
     }
 
-    @Operation(summary = "按编号查询反馈处理进度")
-    @GetMapping("/{id}")
-    public R<FeedbackStatusVO> status(@PathVariable Long id) {
-        return R.ok(FeedbackStatusVO.from(feedbackService.requireById(id)));
+    @Operation(summary = "按编号查询反馈处理进度", description = "编号为随机公开码；历史纯数字编号仍可查询")
+    @GetMapping("/{code}")
+    public R<FeedbackStatusVO> status(@PathVariable String code) {
+        return R.ok(FeedbackStatusVO.from(feedbackService.requireByCode(code)));
     }
 
     /** 取真实来源 IP 作为限流维度；反向代理下优先读 X-Forwarded-For 首个地址。 */

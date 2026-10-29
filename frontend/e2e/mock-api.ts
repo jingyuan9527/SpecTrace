@@ -79,6 +79,7 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         suggestedValue: '3650',
         description: '官网标注 3650mAh',
         status: 'OPEN',
+        publicCode: 'E2E0001',
         createdAt: '2026-10-22T09:00:00',
       },
     ] as Feedback[],
@@ -478,6 +479,8 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
     if (path === '/public/feedback' && method === 'POST') {
       const body = request.postDataJSON() as Record<string, unknown>
       const id = Math.max(0, ...state.feedback.map((item) => item.id)) + 1
+      // 与真实后端同口径：对外编号为随机公开码；mock 用确定性码便于断言
+      const code = `E2E${String(id).padStart(4, '0')}`
       const device = state.devices.find((item) => item.id === body.deviceId)
       state.feedback.push({
         id,
@@ -488,16 +491,22 @@ export async function mockApi(page: Page, options: { mustChangePassword?: boolea
         suggestedValue: (body.suggestedValue as string) ?? null,
         description: (body.description as string) ?? null,
         status: 'OPEN',
+        publicCode: code,
         createdAt: '2026-10-25T10:00:00',
         updatedAt: '2026-10-25T10:00:00',
       } as Feedback)
-      return ok(id)
+      return ok(code)
     }
-    if (/^\/public\/feedback\/\d+$/.test(path)) {
-      const target = state.feedback.find((item) => item.id === numberId)
+    if (/^\/public\/feedback\/[A-Za-z0-9]+$/.test(path)) {
+      const codeOrId = path.split('/').pop() as string
+      const target =
+        state.feedback.find((item) => item.publicCode === codeOrId) ??
+        (/^\d+$/.test(codeOrId)
+          ? state.feedback.find((item) => item.id === Number(codeOrId))
+          : undefined)
       if (!target) return route.fulfill({ status: 404, json: { code: 404, message: '反馈不存在，请核对编号' } })
-      // 对外只暴露状态与时间，与真实后端的 FeedbackStatusVO 同口径
-      return ok({ id: target.id, status: target.status, createdAt: target.createdAt, updatedAt: target.updatedAt })
+      // 对外只暴露编号、状态与时间，与真实后端的 FeedbackStatusVO 同口径
+      return ok({ code: target.publicCode, status: target.status, createdAt: target.createdAt, updatedAt: target.updatedAt })
     }
 
     // ---------- 后台 ----------

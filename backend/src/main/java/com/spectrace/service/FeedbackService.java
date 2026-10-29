@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.security.SecureRandom;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,18 +39,21 @@ public class FeedbackService {
     private static final int MAX_TRACKED_KEYS = 2_000;
     private static final int MAX_TEXT = 1_000;
     private static final Set<String> ALLOWED_STATUS = Set.of("OPEN", "RESOLVED", "IGNORED");
+    private static final String CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    private static final int CODE_LENGTH = 8;
 
     private final FeedbackMapper feedbackMapper;
     private final DeviceMapper deviceMapper;
     private final ParamService paramService;
     private final OperationLogService logService;
+    private final SecureRandom codeRandom = new SecureRandom();
 
     /** key = 来源标识 + 机型 id，value = 上次提交时间戳 */
     private final Map<String, Long> lastSubmitAt = new ConcurrentHashMap<>();
 
     @Transactional
     @CacheEvict(cacheNames = CacheConfig.DEVICE_DETAIL, key = "#req.deviceId")
-    public Long submit(FeedbackRequest req, String clientKey) {
+    public String submit(FeedbackRequest req, String clientKey) {
         String suggested = trimTo(req.getSuggestedValue(), 512);
         String description = trimTo(req.getDescription(), MAX_TEXT);
         if (!StringUtils.hasText(suggested) && !StringUtils.hasText(description)) {
@@ -88,12 +92,13 @@ public class FeedbackService {
         feedback.setDescription(description);
         feedback.setContact(trimTo(req.getContact(), 128));
         feedback.setStatus("OPEN");
+        feedback.setPublicCode(nextCode());
         feedbackMapper.insert(feedback);
 
-        log.info("收到参数纠错反馈: id={} deviceId={} device={} param={} key={}",
-                feedback.getId(), device.getId(), device.getName(),
+        log.info("收到参数纠错反馈: id={} code={} deviceId={} device={} param={} key={}",
+                feedback.getId(), feedback.getPublicCode(), device.getId(), device.getName(),
                 feedback.getParamName(), feedback.getParamKey());
-        return feedback.getId();
+        return feedback.getPublicCode();
     }
 
     public IPage<Feedback> page(long current, long size, String status) {
@@ -108,13 +113,41 @@ public class FeedbackService {
         return feedbackMapper.selectCount(Wrappers.<Feedback>lambdaQuery().eq(Feedback::getStatus, "OPEN"));
     }
 
-    /** 访客凭编号查询进度用；逻辑删除的记录视为不存在。 */
-    public Feedback requireById(Long id) {
-        Feedback feedback = feedbackMapper.selectById(id);
+    /**
+     * 访客凭公开码查询进度用；逻辑删除的记录视为不存在。
+     * 兼容历史回执：升级前发出的纯数字编号仍可按 id 查到（只回状态与时间，枚举面不变大）。
+     */
+    public Feedback requireByCode(String code) {
+        String normalized = code == null ? "" : code.trim();
+        if (!StringUtils.hasText(normalized)) {
+            throw new BizException("反馈不存在，请核对编号");
+        }
+        Feedback feedback = feedbackMapper.selectOne(
+                Wrappers.<Feedback>lambdaQuery().eq(Feedback::getPublicCode, normalized).last("LIMIT 1"));
+        if (feedback == null && normalized.matches("\\d{1,10}")) {
+            feedback = feedbackMapper.selectById(Long.valueOf(normalized));
+        }
         if (feedback == null) {
             throw new BizException("反馈不存在，请核对编号");
         }
         return feedback;
+    }
+
+    /** 8 位 base62 随机码；唯一索引兜底撞码，重试即可（62^8 空间撞码概率可忽略）。 */
+    private String nextCode() {
+        for (int attempt = 0; attempt < 5; attempt++) {
+            StringBuilder builder = new StringBuilder(CODE_LENGTH);
+            for (int i = 0; i < CODE_LENGTH; i++) {
+                builder.append(CODE_ALPHABET.charAt(codeRandom.nextInt(CODE_ALPHABET.length())));
+            }
+            String code = builder.toString();
+            if (feedbackMapper.selectCount(
+                    Wrappers.<Feedback>lambdaQuery().eq(Feedback::getPublicCode, code)) == 0) {
+                return code;
+            }
+            log.warn("反馈公开码撞码重试: attempt={}", attempt + 1);
+        }
+        throw new BizException("反馈编号生成失败，请重试");
     }
 
     @Transactional

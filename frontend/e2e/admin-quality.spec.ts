@@ -239,7 +239,7 @@ test('纠错反馈闭环：编号回执、进度查询与侧栏徽标', async ({
   await page.getByRole('button', { name: '报告参数错误' }).first().click()
   await page.getByLabel('正确的值').fill('4000')
   await page.getByRole('dialog').getByRole('button', { name: '提交反馈' }).click()
-  await expect(page.getByRole('dialog')).toContainText('#2')
+  await expect(page.getByRole('dialog')).toContainText('E2E0002')
 
   // 直接凭回执查进度：待处理
   await page.getByRole('dialog').getByRole('button', { name: '查询进度' }).click()
@@ -263,7 +263,7 @@ test('纠错反馈闭环：编号回执、进度查询与侧栏徽标', async ({
   await page.goto('/devices/7')
   await page.getByRole('button', { name: '报告参数错误' }).first().click()
   await page.getByRole('button', { name: '已有编号？查询处理进度' }).click()
-  await page.getByLabel('反馈编号').fill('2')
+  await page.getByLabel('反馈编号').fill('E2E0002')
   await page.getByRole('dialog').getByRole('button', { name: '查询' }).click()
   await expect(page.getByRole('dialog').getByText('已处理')).toBeVisible()
   await expect(page.getByRole('dialog')).toContainText('处理于')

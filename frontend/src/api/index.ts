@@ -115,8 +115,8 @@ export const publicApi = {
     seriesId: number,
     body: { deviceIds?: number[]; paramDefIds?: number[]; style?: string },
   ) => request.post<unknown, SocialCopyResult>(`/public/series/${seriesId}/social-copy`, body),
-  submitFeedback: (data: FeedbackSubmitRequest) => request.post<unknown, number>('/public/feedback', data),
-  feedbackStatus: (id: number) => request.get<unknown, FeedbackStatus>(`/public/feedback/${id}`),
+  submitFeedback: (data: FeedbackSubmitRequest) => request.post<unknown, string>('/public/feedback', data),
+  feedbackStatus: (code: string) => request.get<unknown, FeedbackStatus>(`/public/feedback/${encodeURIComponent(code)}`),
 }
 
 // ---------- 鉴权 ----------

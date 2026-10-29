@@ -78,6 +78,23 @@ class AiInsightSupportTest {
     }
 
     @Test
+    @DisplayName("全站日配额：第 quota+1 次真实调用被拦，配额 0 表示不限制")
+    void dailyQuotaBlocksAfterLimit() {
+        ReflectionTestUtils.setField(support, "dailyQuota", 2);
+
+        support.recordDailyUsage();
+        support.recordDailyUsage();
+        assertThatThrownBy(support::checkDailyQuota)
+                .isInstanceOf(RateLimitedException.class)
+                .hasMessageContaining("今日 AI 生成次数已达上限");
+
+        // 0 = 关闭配额护栏
+        ReflectionTestUtils.setField(support, "dailyQuota", 0);
+        support.checkDailyQuota();
+        support.recordDailyUsage();
+    }
+
+    @Test
     @DisplayName("社媒文案：合法 JSON 解析出标题/正文/要点/话题")
     void parsesSocialCopyJson() {
         AiInsightSupport.ParsedCopy parsed = support.parseCopy("""

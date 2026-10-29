@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS feedback (
     contact         VARCHAR(128) DEFAULT NULL,
     status          VARCHAR(24)  NOT NULL DEFAULT 'OPEN',
     handler_note    TEXT         DEFAULT NULL,
+    public_code     VARCHAR(16)  DEFAULT NULL,
     created_at      DATETIME     DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME     DEFAULT CURRENT_TIMESTAMP,
     deleted         TINYINT      NOT NULL DEFAULT 0

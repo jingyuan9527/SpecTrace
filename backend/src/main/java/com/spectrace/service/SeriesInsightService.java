@@ -95,8 +95,11 @@ public class SeriesInsightService {
             return toVO(entry, false);
         }
 
+        // 日配额在 try 外检查：超限要回 429 提示，不能被失败降级吞掉
+        insightSupport.checkDailyQuota();
         try {
             String content = aiChatService.complete(SYSTEM_PROMPT, buildPrompt(evolution, lines), MAX_TOKENS);
+            insightSupport.recordDailyUsage();
             AiInsightSupport.Parsed parsed = insightSupport.parse(content);
             AiInsightSupport.Entry entry = new AiInsightSupport.Entry(
                     parsed.summary(), parsed.points(), LocalDateTime.now());
@@ -260,10 +263,13 @@ public class SeriesInsightService {
             return toCopyVO(normalized, entry, false);
         }
 
+        // 日配额在 try 外检查：超限要回 429 提示，不能被失败降级吞掉
+        insightSupport.checkDailyQuota();
         try {
             String content = aiChatService.complete(
                     "xiaohongshu".equals(normalized) ? XHS_PROMPT : WECHAT_PROMPT,
                     buildPrompt(evolution, lines), 600);
+            insightSupport.recordDailyUsage();
             AiInsightSupport.ParsedCopy parsed = insightSupport.parseCopy(content);
             AiInsightSupport.Entry entry = new AiInsightSupport.Entry(
                     parsed.summary(), parsed.points(), LocalDateTime.now(), parsed.title(), parsed.tags());

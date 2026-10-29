@@ -90,8 +90,11 @@ public class CompareInsightService {
             return toVO(entry, false);
         }
 
+        // 日配额在 try 外检查：超限要回 429 提示，不能被失败降级吞掉
+        insightSupport.checkDailyQuota();
         try {
             String content = aiChatService.complete(SYSTEM_PROMPT, buildPrompt(deviceNames, diffLines), MAX_TOKENS);
+            insightSupport.recordDailyUsage();
             AiInsightSupport.Parsed parsed = insightSupport.parse(content);
             AiInsightSupport.Entry entry = new AiInsightSupport.Entry(
                     parsed.summary(), parsed.points(), LocalDateTime.now());

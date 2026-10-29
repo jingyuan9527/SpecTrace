@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+import java.security.SecureRandom;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -37,13 +38,57 @@ public class SqliteSchemaMigration implements ApplicationRunner {
         ensureColumn("device_param_value", "source_url", "VARCHAR(512) DEFAULT NULL");
         ensureColumn("device_param_value", "confidence", "DECIMAL(3,2) DEFAULT NULL");
         ensureColumn("feedback", "handler_note", "TEXT DEFAULT NULL");
+        ensureColumn("feedback", "public_code", "VARCHAR(16) DEFAULT NULL");
         ensureColumn("admin_user", "must_change_password", "TINYINT DEFAULT 0");
         ensureColumn("agent_task", "task_type", "VARCHAR(24) NOT NULL DEFAULT 'DEVICE_DETAIL'");
         ensureColumn("agent_task", "subscription_id", "BIGINT DEFAULT NULL");
         ensureColumn("device", "thumbnail_pending_url", "VARCHAR(512) DEFAULT NULL");
         // 索引必须在补列之后创建，放在 schema.sql 里会在老库上因缺列直接中断启动
         ensureIndex("CREATE INDEX IF NOT EXISTS idx_device_series ON device (series_id)");
+        backfillFeedbackPublicCode();
+        ensureIndex("CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_public_code ON feedback (public_code)");
         flagDefaultPasswordUsers();
+    }
+
+    /**
+     * 老库回填：已有反馈补随机公开码，否则唯一索引后老记录无法凭编号查询。
+     * SecureRandom 生成 8 位 base62，撞码按唯一索引约束重试；索引在回填之后创建。
+     */
+    private void backfillFeedbackPublicCode() {
+        Integer missing;
+        try {
+            missing = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(1) FROM feedback WHERE public_code IS NULL", Integer.class);
+        } catch (Exception e) {
+            log.warn("反馈公开码回填检查失败，跳过（不影响启动）", e);
+            return;
+        }
+        if (missing == null || missing == 0) {
+            return;
+        }
+        SecureRandom random = new SecureRandom();
+        var ids = jdbcTemplate.queryForList("SELECT id FROM feedback WHERE public_code IS NULL", Long.class);
+        for (Long id : ids) {
+            for (int attempt = 0; attempt < 5; attempt++) {
+                try {
+                    jdbcTemplate.update("UPDATE feedback SET public_code = ? WHERE id = ? AND public_code IS NULL",
+                            randomCode(random), id);
+                    break;
+                } catch (Exception e) {
+                    log.warn("反馈公开码回填撞码重试: id={} attempt={}", id, attempt + 1);
+                }
+            }
+        }
+        log.info("反馈公开码回填完成: {} 条", ids.size());
+    }
+
+    private String randomCode(SecureRandom random) {
+        String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        StringBuilder builder = new StringBuilder(8);
+        for (int i = 0; i < 8; i++) {
+            builder.append(alphabet.charAt(random.nextInt(alphabet.length())));
+        }
+        return builder.toString();
     }
 
     /**

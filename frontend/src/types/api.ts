@@ -149,13 +149,16 @@ export interface Feedback {
   /** OPEN / RESOLVED / IGNORED */
   status: string
   handlerNote?: string | null
+  /** 对外随机公开码，访客凭它查询进度 */
+  publicCode?: string | null
   createdAt?: string
   updatedAt?: string
 }
 
 /** 访客凭编号查询反馈进度的对外视图，不含提交内容 */
 export interface FeedbackStatus {
-  id: number
+  /** 随机公开码，即提交回执编号 */
+  code: string
   /** OPEN / RESOLVED / IGNORED */
   status: string
   createdAt?: string

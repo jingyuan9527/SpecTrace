@@ -77,6 +77,8 @@ spectrace:
     insight:
       enabled: ${SPECTRACE_AI_INSIGHT_ENABLED:true}
       cache-hours: ${SPECTRACE_AI_INSIGHT_CACHE_HOURS:24}
+      # 全站每日真实模型调用上限（对比摘要/世代回顾/社媒文案共享），0 不限制；缓存命中不计数
+      daily-quota: ${SPECTRACE_AI_INSIGHT_DAILY_QUOTA:100}
     # AI 绘图（社媒海报）：仅后台内部使用，不对访客开放；供应商与提示词在后台维护
     image:
       enabled: ${SPECTRACE_AI_IMAGE_ENABLED:true}

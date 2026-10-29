@@ -65,5 +65,21 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem(USER_KEY)
   }
 
-  return { token, user, isLoggedIn, isSuperAdmin, setSession, updateUser, clear }
+  /** 其它标签页登录 / 登出 / 改资料后，按 localStorage 最新值对齐本地状态 */
+  function syncFromStorage() {
+    token.value = readToken()
+    user.value = readUser()
+  }
+
+  // storage 事件只在「其它」标签页触发，本标签页写入收不到，不会造成回环；
+  // key 为 null 表示 localStorage.clear()，一并按登出处理
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', (event) => {
+      if (event.key === TOKEN_KEY || event.key === USER_KEY || event.key === null) {
+        syncFromStorage()
+      }
+    })
+  }
+
+  return { token, user, isLoggedIn, isSuperAdmin, setSession, updateUser, clear, syncFromStorage }
 })

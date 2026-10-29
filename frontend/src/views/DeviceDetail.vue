@@ -220,7 +220,7 @@ const feedbackView = ref<FeedbackView>('form')
 const feedbackSaving = ref(false)
 const feedbackTarget = ref<{ paramKey: string; paramName: string; value: string } | null>(null)
 const feedbackForm = reactive({ suggestedValue: '', description: '', contact: '' })
-const feedbackSubmittedId = ref<number | null>(null)
+const feedbackSubmittedCode = ref('')
 const queryIdInput = ref('')
 const queryResult = ref<FeedbackStatus | null>(null)
 const queryLoading = ref(false)
@@ -230,7 +230,7 @@ function openFeedback(item: { paramKey: string; paramName: string; value: string
   feedbackTarget.value = item
   Object.assign(feedbackForm, { suggestedValue: '', description: '', contact: '' })
   feedbackView.value = 'form'
-  feedbackSubmittedId.value = null
+  feedbackSubmittedCode.value = ''
   queryIdInput.value = ''
   queryResult.value = null
   queryError.value = ''
@@ -245,7 +245,7 @@ async function submitFeedback() {
   }
   feedbackSaving.value = true
   try {
-    const id = await publicApi.submitFeedback({
+    const code = await publicApi.submitFeedback({
       deviceId: device.value.id,
       paramKey: feedbackTarget.value.paramKey,
       currentValue: feedbackTarget.value.value,
@@ -253,7 +253,7 @@ async function submitFeedback() {
       description: feedbackForm.description.trim() || undefined,
       contact: feedbackForm.contact.trim() || undefined,
     })
-    feedbackSubmittedId.value = id
+    feedbackSubmittedCode.value = code
     feedbackView.value = 'success'
     // 后端已失效详情缓存，这里只把当前参数计数补上：访客立刻看到「自己不是一个人」，
     // 整页重拉会把参数区的滚动位置和展开态一起丢掉，代价大于收益
@@ -265,16 +265,17 @@ async function submitFeedback() {
 }
 
 async function queryFeedback() {
-  const id = Number(queryIdInput.value.trim().replace(/^#/, ''))
-  if (!Number.isInteger(id) || id <= 0) {
-    queryError.value = '请输入提交成功时返回的数字编号'
+  // 历史回执是纯数字编号，新回执是 8 位随机码，两者都交给后端按「先码后旧编号」解析
+  const code = queryIdInput.value.trim().replace(/^#/, '')
+  if (!code) {
+    queryError.value = '请输入提交成功时返回的编号'
     queryResult.value = null
     return
   }
   queryError.value = ''
   queryLoading.value = true
   try {
-    queryResult.value = await publicApi.feedbackStatus(id)
+    queryResult.value = await publicApi.feedbackStatus(code)
   } catch {
     // 接口错误（编号不存在等）由全局拦截器统一 toast
     queryResult.value = null
@@ -289,8 +290,8 @@ function feedbackStatusLabel(status: string) {
 
 /** 编号回执页直达进度查询：回填刚拿到的编号 */
 function queryFromReceipt() {
-  if (!feedbackSubmittedId.value) return
-  queryIdInput.value = String(feedbackSubmittedId.value)
+  if (!feedbackSubmittedCode.value) return
+  queryIdInput.value = feedbackSubmittedCode.value
   feedbackView.value = 'query'
 }
 </script>
@@ -554,13 +555,13 @@ function queryFromReceipt() {
       class="max-w-lg"
     >
       <!-- 编号回执：告知访客查询凭据，闭环「提交后石沉大海」 -->
-      <div v-if="feedbackView === 'success' && feedbackSubmittedId" class="space-y-4 py-2 text-center">
+      <div v-if="feedbackView === 'success' && feedbackSubmittedCode" class="space-y-4 py-2 text-center">
         <div class="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
           <Check class="h-5 w-5" />
         </div>
         <div>
           <p class="text-sm font-medium">反馈已提交，感谢你的帮助</p>
-          <p class="mt-1 text-3xl font-semibold tracking-tight">#{{ feedbackSubmittedId }}</p>
+          <p class="mt-1 font-mono text-2xl font-semibold tracking-wide">{{ feedbackSubmittedCode }}</p>
           <p class="mt-1 text-xs text-muted-foreground">记下这个编号，可随时回来查询处理进度。</p>
         </div>
       </div>
@@ -573,8 +574,7 @@ function queryFromReceipt() {
             <Input
               id="feedback-query-id"
               v-model="queryIdInput"
-              placeholder="如 12"
-              inputmode="numeric"
+              placeholder="如 A1b2C3d4"
               @keyup.enter="queryFeedback"
             />
             <Button variant="outline" :disabled="queryLoading" @click="queryFeedback">
@@ -586,7 +586,7 @@ function queryFromReceipt() {
         </div>
         <div v-if="queryResult" class="rounded-md bg-muted/50 px-3 py-2.5 text-sm">
           <div class="flex items-center justify-between gap-2">
-            <span class="font-medium">反馈 #{{ queryResult.id }}</span>
+            <span class="font-mono font-medium">反馈 {{ queryResult.code }}</span>
             <Badge :variant="queryResult.status === 'OPEN' ? 'warning' : 'success'">
               {{ feedbackStatusLabel(queryResult.status) }}
             </Badge>
@@ -625,7 +625,7 @@ function queryFromReceipt() {
         <template v-if="feedbackView === 'success'">
           <Button
             variant="outline"
-            :disabled="!feedbackSubmittedId"
+            :disabled="!feedbackSubmittedCode"
             @click="queryFromReceipt"
           >
             查询进度

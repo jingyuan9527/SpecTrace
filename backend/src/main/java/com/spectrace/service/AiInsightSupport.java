@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -16,6 +17,7 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * AI 摘要类能力的公共护栏：生成限流、结果缓存与模型输出解析。
@@ -40,11 +42,19 @@ public class AiInsightSupport {
     @Value("${spectrace.ai.insight.cache-hours:24}")
     private long cacheHours;
 
+    /** 全站日配额（对比摘要 / 世代回顾 / 社媒文案共享），0 表示不限制 */
+    @Value("${spectrace.ai.insight.daily-quota:100}")
+    private int dailyQuota;
+
     /** 两类能力共用一张缓存表，靠 key 前缀区分；过期时间统一取配置项。 */
     private final Map<String, Entry> cache = new ConcurrentHashMap<>();
 
     /** key = 来源 IP，value = 生成时间窗口 */
     private final Map<String, Deque<Long>> rateBuckets = new ConcurrentHashMap<>();
+
+    /** 日配额计数只含真实模型调用（成本所在），缓存命中与失败调用不消耗 */
+    private final AtomicInteger dailyUsed = new AtomicInteger();
+    private volatile LocalDate dailyWindow = LocalDate.now();
 
     public record Parsed(String summary, List<String> points) {
     }
@@ -107,6 +117,50 @@ public class AiInsightSupport {
                     return times.isEmpty() || now - times.peekLast() > RATE_WINDOW_MS;
                 }
             });
+        }
+    }
+
+    /**
+     * 全站日配额闸门：只拦真实模型调用，必须在缓存未命中、即将请求模型之前调用，
+     * 且必须放在调用方 try-catch 之外——否则会被「失败降级」吞掉，丢失 429 语义。
+     * 检查与计数之间存在并发窗口，突发流量可能小幅越过上限，对成本护栏而言可接受。
+     */
+    public void checkDailyQuota() {
+        if (dailyQuota <= 0) {
+            return;
+        }
+        rollDailyWindow();
+        if (dailyUsed.get() >= dailyQuota) {
+            log.warn("AI 文本日配额已用尽: quota={} used={}", dailyQuota, dailyUsed.get());
+            throw new RateLimitedException("今日 AI 生成次数已达上限，请明天再来");
+        }
+    }
+
+    /** 模型调用成功产生实际成本后计数。 */
+    public void recordDailyUsage() {
+        if (dailyQuota <= 0) {
+            return;
+        }
+        rollDailyWindow();
+        int used = dailyUsed.incrementAndGet();
+        if (used >= dailyQuota) {
+            log.warn("AI 文本日配额已用尽: {}/{}", used, dailyQuota);
+        } else {
+            log.info("AI 文本日配额消耗: {}/{}", used, dailyQuota);
+        }
+    }
+
+    /** 按自然日翻窗（服务器时区），跨天后计数清零。 */
+    private void rollDailyWindow() {
+        LocalDate today = LocalDate.now();
+        if (dailyWindow.equals(today)) {
+            return;
+        }
+        synchronized (this) {
+            if (!dailyWindow.equals(today)) {
+                dailyWindow = today;
+                dailyUsed.set(0);
+            }
         }
     }
 

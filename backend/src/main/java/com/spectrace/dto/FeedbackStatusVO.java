@@ -12,7 +12,8 @@ import java.time.LocalDateTime;
 @Data
 public class FeedbackStatusVO {
 
-    private Long id;
+    /** 随机公开码，访客回执与查询凭据 */
+    private String code;
 
     /** OPEN / RESOLVED / IGNORED */
     private String status;
@@ -24,7 +25,7 @@ public class FeedbackStatusVO {
 
     public static FeedbackStatusVO from(Feedback feedback) {
         FeedbackStatusVO vo = new FeedbackStatusVO();
-        vo.setId(feedback.getId());
+        vo.setCode(feedback.getPublicCode());
         vo.setStatus(feedback.getStatus());
         vo.setCreatedAt(feedback.getCreatedAt());
         vo.setUpdatedAt(feedback.getUpdatedAt());

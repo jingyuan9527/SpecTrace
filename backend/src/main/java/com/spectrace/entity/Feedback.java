@@ -45,6 +45,9 @@ public class Feedback {
 
     private String handlerNote;
 
+    /** 对外随机公开码（8 位 base62）：访客凭它查进度，防自增 id 被枚举 */
+    private String publicCode;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 
