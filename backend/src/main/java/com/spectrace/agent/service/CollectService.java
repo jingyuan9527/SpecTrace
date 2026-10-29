@@ -342,7 +342,11 @@ public class CollectService {
         result.setBrandName(textOrFallback(data, "brandName", brandName.isEmpty() ? null : brandName));
         result.setSourceUrl(nullableText(data, "sourceUrl"));
         // persona 要求模型在 JSON 顶层给出官方产品图直链，此前漏接该字段，导致 T90 下载链路永远拿不到图
-        result.setImageUrl(nullableText(data, "imageUrl"));
+        String imageUrl = nullableText(data, "imageUrl");
+        result.setImageUrl(imageUrl);
+        // 产品图是可选字段，缺省时必须留痕，否则线上无法区分「模型没给」与「解析丢了」
+        taskLogService.info(payload.getTaskId(),
+                imageUrl == null ? "模型未返回产品图直链" : "产品图直链：" + imageUrl);
         result.setStatus("SUCCESS");
         result.setParams(params);
         result.setParamConfidence(parseParamConfidence(data, allowed));
