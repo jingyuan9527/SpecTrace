@@ -12,7 +12,7 @@
 # ============================================================
 
 # ---- 1. 构建前端 ----
-FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend
+FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend
 WORKDIR /ui
 COPY frontend/package*.json ./
 RUN npm ci
