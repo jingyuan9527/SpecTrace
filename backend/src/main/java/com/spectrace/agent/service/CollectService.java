@@ -271,43 +271,7 @@ public class CollectService {
             }
 
             JsonNode data = parseJson(text);
-
-            Set<String> allowed = schemaDefs.stream()
-                    .map(ParamDef::getParamKey)
-                    .collect(Collectors.toSet());
-            Map<String, Object> params = new LinkedHashMap<>();
-            List<String> dropped = new java.util.ArrayList<>();
-            JsonNode paramsNode = data.path("params");
-            if (paramsNode.isObject()) {
-                paramsNode.fields().forEachRemaining(e -> {
-                    if (allowed.contains(e.getKey()) && !e.getValue().isNull()) {
-                        params.put(e.getKey(), e.getValue().asText());
-                    } else if (!allowed.contains(e.getKey())) {
-                        dropped.add(e.getKey());
-                    }
-                });
-            }
-
-            AgentCallbackRequest result = new AgentCallbackRequest();
-            result.setTaskId(payload.getTaskId());
-            result.setModelName(textOrFallback(data, "modelName", modelName));
-            result.setBrandName(textOrFallback(data, "brandName", brandName.isEmpty() ? null : brandName));
-            result.setSourceUrl(nullableText(data, "sourceUrl"));
-            result.setStatus("SUCCESS");
-            result.setParams(params);
-            result.setParamConfidence(parseParamConfidence(data, allowed));
-            result.setVariants(parseVariants(data.path("variants")));
-            // 用可变 Map 而非 Map.of：模型不返回 confidence / notes 时值为 null，Map.of 会直接抛 NPE
-            Map<String, Object> summary = new LinkedHashMap<>();
-            summary.put("queries", List.of(query));
-            summary.put("confidence", nullableText(data, "confidence"));
-            summary.put("notes", nullableText(data, "notes"));
-            summary.put("droppedUnknownKeys", dropped);
-            appendFailedSources(summary);
-            result.setLogs(objectMapper.writeValueAsString(summary));
-            taskLogService.info(payload.getTaskId(),
-                    "抽取完成：识别参数 " + params.size() + " 项，丢弃未知参数 " + dropped.size() + " 项");
-            return result;
+            return buildCollectResult(payload, data, schemaDefs, query, null);
         } catch (Exception e) {
             log.error("采集失败 taskId={}", payload.getTaskId(), e);
             String message = e.getMessage() == null ? "" : e.getMessage();
@@ -316,6 +280,13 @@ public class CollectService {
                     ? "抓取超时（>" + props.getTaskTimeoutSeconds() + "s），" + timeoutHint(payload.getTaskId())
                     : e.getClass().getSimpleName() + ": " + message;
             taskLogService.error(payload.getTaskId(), "采集异常：" + error);
+            // 超时不等于白干：已抓正文还在会话缓存里，先抢救再决定是否判失败
+            if (error.startsWith("抓取超时")) {
+                AgentCallbackRequest salvaged = salvageAfterTimeout(payload, schemaDefs, aiConfig, error);
+                if (salvaged != null) {
+                    return salvaged;
+                }
+            }
             AgentCallbackRequest result = new AgentCallbackRequest();
             result.setTaskId(payload.getTaskId());
             result.setModelName(modelName);
@@ -324,6 +295,165 @@ public class CollectService {
             result.setError(error);
             return result;
         }
+    }
+
+    /** 抢救语料单页上限：二次请求要快，单页过长只会让抢救本身也超时 */
+    private static final int SALVAGE_MAX_PAGE_CHARS = 6000;
+    /** 抢救语料总上限：控制 prompt 体积 */
+    private static final int SALVAGE_MAX_TOTAL_CHARS = 24000;
+
+    /**
+     * 把模型输出的 JSON 收敛成回调结果：参数白名单过滤、版本与置信度解析、摘要与来源记录。
+     * 正常采集与超时抢救共用同一条收敛逻辑，避免两条路径落库口径不一致。
+     */
+    private AgentCallbackRequest buildCollectResult(AgentTaskPayload payload, JsonNode data,
+                                                    List<ParamDef> schemaDefs, String query,
+                                                    String extraNote) throws Exception {
+        String modelName = payload.getModelName() == null ? "" : payload.getModelName();
+        String brandName = payload.getBrandName() == null ? "" : payload.getBrandName();
+
+        Set<String> allowed = schemaDefs.stream()
+                .map(ParamDef::getParamKey)
+                .collect(Collectors.toSet());
+        Map<String, Object> params = new LinkedHashMap<>();
+        List<String> dropped = new ArrayList<>();
+        JsonNode paramsNode = data.path("params");
+        if (paramsNode.isObject()) {
+            paramsNode.fields().forEachRemaining(e -> {
+                if (allowed.contains(e.getKey()) && !e.getValue().isNull()) {
+                    params.put(e.getKey(), e.getValue().asText());
+                } else if (!allowed.contains(e.getKey())) {
+                    dropped.add(e.getKey());
+                }
+            });
+        }
+
+        AgentCallbackRequest result = new AgentCallbackRequest();
+        result.setTaskId(payload.getTaskId());
+        result.setModelName(textOrFallback(data, "modelName", modelName));
+        result.setBrandName(textOrFallback(data, "brandName", brandName.isEmpty() ? null : brandName));
+        result.setSourceUrl(nullableText(data, "sourceUrl"));
+        result.setStatus("SUCCESS");
+        result.setParams(params);
+        result.setParamConfidence(parseParamConfidence(data, allowed));
+        result.setVariants(parseVariants(data.path("variants")));
+        // 用可变 Map 而非 Map.of：模型不返回 confidence / notes 时值为 null，Map.of 会直接抛 NPE
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("queries", List.of(query));
+        summary.put("confidence", nullableText(data, "confidence"));
+        summary.put("notes", extraNote == null ? nullableText(data, "notes") : extraNote);
+        summary.put("droppedUnknownKeys", dropped);
+        appendFailedSources(summary);
+        result.setLogs(objectMapper.writeValueAsString(summary));
+        taskLogService.info(payload.getTaskId(),
+                "抽取完成：识别参数 " + params.size() + " 项，丢弃未知参数 " + dropped.size() + " 项");
+        return result;
+    }
+
+    /**
+     * 超时抢救：用本任务已抓取的网页正文再发一次「只输出 JSON」的短请求。
+     *
+     * <p>只抢救一次、不再联网，目的是把已经付出的抓取成本转成可审核的结果；
+     * 二次抽取也失败时不再重试，转待审核并保留来源清单，由人工补齐参数。
+     *
+     * @return 有可复用正文时返回结果（成功或空参数待人工），无可复用正文时返回 null 交回失败分支
+     */
+    private AgentCallbackRequest salvageAfterTimeout(AgentTaskPayload payload, List<ParamDef> schemaDefs,
+                                                     ResolvedModel aiConfig, String timeoutError) {
+        Map<String, String> pages = CrawlSession.fetchedPages();
+        if (pages.isEmpty()) {
+            taskLogService.warn(payload.getTaskId(), "超时抢救跳过：本次任务没有成功抓取任何网页正文，无可复用素材");
+            return null;
+        }
+        String corpus = buildSalvageCorpus(pages);
+        List<String> sources = List.copyOf(pages.keySet());
+        taskLogService.warn(payload.getTaskId(), "超时抢救启动：复用已抓取的 " + pages.size()
+                + " 篇正文（" + corpus.length() + " 字）二次抽取，不再联网");
+
+        String modelName = payload.getModelName() == null ? "" : payload.getModelName();
+        String brandName = payload.getBrandName() == null ? "" : payload.getBrandName();
+        String query = (brandName + " " + modelName + " 手机 完整参数 规格 官网").trim();
+        // 抢救是最后一次机会，给足时间但不占用任务预算（任务预算此时已耗尽）
+        long salvageSeconds = Math.max(60, props.getModelTimeoutSeconds() * 2L);
+        try {
+            Model model = new RecordingChatModel(buildModel(aiConfig),
+                    AiCallTarget.chat(aiConfig, props.getDashscopeModel()), aiCallRecorder,
+                    AiCallScene.AGENT_SCRAPE, String.valueOf(payload.getTaskId()));
+            String prompt = "原采集任务因超时中断，现在只能基于下面已抓取的网页正文抽取参数。\n"
+                    + "不要联网、不要解释过程，直接输出 JSON 对象；查不到的参数置 null，不要编造。\n\n"
+                    + "【已抓取网页正文】\n" + corpus;
+            String identity = "task-" + payload.getTaskId() + "-salvage";
+            RuntimeContext ctx = RuntimeContext.builder()
+                    .userId(identity)
+                    .sessionId(identity)
+                    .build();
+            String text;
+            try (HarnessAgent agent = HarnessAgent.builder()
+                    .name("phone_spec_salvage")
+                    .agentId("phone_spec_salvage")
+                    .sysPrompt(schemaPrompt(schemaDefs))
+                    .model(model)
+                    .workspace(Path.of(props.getWorkspace()))
+                    // 全部素材已在 prompt 内，不允许再迭代
+                    .maxIters(2)
+                    .disableShellTool()
+                    .disableFilesystemTools()
+                    .disableWebTools()
+                    .disableSubagents()
+                    .disableDynamicSkills()
+                    .disableDefaultWorkspaceSkills()
+                    .disableToolsConfig()
+                    .disableMemoryHooks()
+                    .disableMemoryTools()
+                    .build()) {
+                Msg msg = agent.call(List.<Msg>of(new UserMessage(prompt)), ctx)
+                        .block(Duration.ofSeconds(salvageSeconds));
+                text = msg == null ? "" : msg.getTextContent();
+            }
+            JsonNode data = parseJson(text);
+            String note = "任务超时后改为仅基于已抓取的 " + pages.size()
+                    + " 篇网页正文二次抽取，未做多来源交叉核验，请重点复核；原始失败原因：" + timeoutError;
+            AgentCallbackRequest result = buildCollectResult(payload, data, schemaDefs, query, note);
+            taskLogService.info(payload.getTaskId(), "超时抢救成功：从已抓正文中抽取到参数 "
+                    + result.getParams().size() + " 项");
+            return result;
+        } catch (Exception e) {
+            log.warn("超时抢救失败 taskId={}：{}", payload.getTaskId(), e.getMessage());
+            taskLogService.warn(payload.getTaskId(), "超时抢救失败（" + e.getClass().getSimpleName() + ": "
+                    + e.getMessage() + "），转待审核并保留已抓取来源，需人工补齐参数");
+            AgentCallbackRequest result = new AgentCallbackRequest();
+            result.setTaskId(payload.getTaskId());
+            result.setModelName(modelName);
+            result.setBrandName(brandName.isEmpty() ? null : brandName);
+            result.setSourceUrl(sources.get(0));
+            result.setStatus("SUCCESS");
+            result.setParams(new LinkedHashMap<>());
+            result.setVariants(new ArrayList<>());
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("queries", List.of(query));
+            summary.put("notes", "任务超时且二次抽取失败（" + timeoutError
+                    + "），此处仅保留已抓取来源，参数需人工补齐");
+            summary.put("sources", sources);
+            appendFailedSources(summary);
+            result.setLogs(objectMapper.writeValueAsString(summary));
+            return result;
+        }
+    }
+
+    /** 拼接抢救语料：按抓取顺序截断并封顶，避免二次请求本身又超时。 */
+    private String buildSalvageCorpus(Map<String, String> pages) {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> page : pages.entrySet()) {
+            if (sb.length() >= SALVAGE_MAX_TOTAL_CHARS) {
+                break;
+            }
+            String body = page.getValue() == null ? "" : page.getValue();
+            if (body.length() > SALVAGE_MAX_PAGE_CHARS) {
+                body = body.substring(0, SALVAGE_MAX_PAGE_CHARS);
+            }
+            sb.append("\n--- 来源：").append(page.getKey()).append(" ---\n").append(body).append('\n');
+        }
+        return sb.toString();
     }
 
     /** 采集期间被熔断的域名写入摘要，审核端能看到「结果未采用这些站点」。 */

@@ -1376,9 +1376,21 @@
 - `MODEL_TIMEOUT_SECONDS` 90 → 45（[AgentProperties.java](file:///d:/IdeaProject/ai/SpecTrace/backend/src/main/java/com/spectrace/agent/config/AgentProperties.java) 与 [application.yml](file:///d:/IdeaProject/ai/SpecTrace/backend/src/main/resources/application.yml)），挂死调用最多吃掉 45s
 - README 环境变量表同步两者联动关系
 
-**验证**：`mvn test` 68 例全绿；参数改动不影响现有用例。**待生产复验**：部署后重跑 3~5 个机型，观察耗时分布是否脱离 300s 墙、失败率是否下降。
+**验证（第一轮）**：`mvn test` 68 例全绿。生产复跑 3 个机型：iPhone SE 3（238s，35 项参数）、iPhone 14 Pro Max（151s）成功转待审核；iPhone 17 Pro 仍 300s 撞墙。
 
-**若复验仍撞墙**：再做 B 方案（超时降级不丢数据：用已缓存正文产出部分结果，状态置 `PENDING_REVIEW` 并标注「采集不完整」），需同步改审核端语义。
+**第一轮暴露的盲区**：闸门已能触发（日志出现「剩余时间不足」），但它只挂在「工具调用」上，模型两轮工具之间的思考时间（实测 27~75s）不受控 —— 最后一次工具调用时剩余 58s，等模型想完要调工具时只剩 30s，交卷窗口被思考吃掉。静态储备无法覆盖这种粒度问题。
+
+**修复 B（超时抢救，2026-10-29）**：
+- [CrawlSession.java](file:///d:/IdeaProject/ai/SpecTrace/backend/src/main/java/com/spectrace/agent/CrawlSession.java) 新增 `fetchedPages()`，暴露本任务已成功抓取的正文
+- [CollectService.java](file:///d:/IdeaProject/ai/SpecTrace/backend/src/main/java/com/spectrace/agent/service/CollectService.java) 新增 `salvageAfterTimeout()`：捕获超时后，用已抓正文（单页 6000 字、总量 24000 字封顶）发一次「只输出 JSON」的短请求，超时取 `max(60s, 2×模型超时)`
+  - 抢救成功 → 正常转待审核，摘要标注「仅基于已抓正文二次抽取，未做交叉核验」
+  - 抢救失败 → 仍转待审核，参数为空并附 `sources` 来源清单，人工补齐
+  - 无任何已抓正文 → 维持 FAILED
+- [AgentCallbackService.java](file:///d:/IdeaProject/ai/SpecTrace/backend/src/main/java/com/spectrace/service/AgentCallbackService.java) 加护栏：本次抓取产出空参数时不覆盖同机型已有的有效待审核记录
+- 顺带把正常路径与抢救路径的结果收敛逻辑抽为 `buildCollectResult()`，避免两套口径
+- `TASK_TIMEOUT_SECONDS` 300 → 420（[AgentProperties.java](file:///d:/IdeaProject/ai/SpecTrace/backend/src/main/java/com/spectrace/agent/config/AgentProperties.java) 与 [application.yml](file:///d:/IdeaProject/ai/SpecTrace/backend/src/main/resources/application.yml)），储备仍为 60s，闸门在 360s 触发
+
+**验证（第二轮）**：`mvn test` 68 例全绿。**待生产复验**：部署后重跑 iPhone 17 Pro 等曾撞墙机型，确认超时后能走抢救路径而不是整条作废。
 
 ### T97 详情页参数行「N 条待核实」（开发，T83 遗留）✅
 
@@ -1631,7 +1643,7 @@
 | T92 产品图采集命中率观察 | ❌ **未生效**：163 台机型抽样，**0 张来自网络采集**；95% 用 `placeholder.svg`，5% 为手工本地 SVG（`/device-images/*.svg`），无外链图。历史批准均发生在新构建之前 → 需新提交 1 条数据重跑才能判定 T90 是否生效 | 2026-10-29 |
 | T93 AI 预审阈值校准 | ⚠️ **无样本**：待审核队列为 0（60 条已全部处理），`riskLevel` 只在 `status=PENDING_REVIEW` 时计算。需先制造 3~5 条待审核数据再校准 | 2026-10-29 |
 | T94 热门口径稳定性观察 | ⚠️ **样本不足**：`/public/devices/hot` 正常返回 8 条（小米 6 + iPhone 2），但 90 天 PV 仅 2，热度信号无统计意义 | 2026-10-29 |
-| T96 模型挂死快速失败复核 | ✅ **已定位并修复**：24 条失败中 16 条为超时、10 条精确停 300.0xx s；根因是预算储备 25s ≪ 单次模型往返实测 50~162s，闸门从未触发。改为「储备 = 模型超时 + 15s」且模型超时 90→45，`mvn test` 68 例全绿，待部署复验 | 2026-10-29 |
+| T96 模型挂死快速失败复核 | ✅ **已修复（两轮）**：① 储备改「模型超时 + 15s」、模型超时 90→45，生产复跑 2/3 成功；② 超时抢救——用已抓正文二次抽取，失败转待审核留来源，任务上限 300→420s。`mvn test` 68 例全绿，待部署复验 | 2026-10-29 |
 | T98 真机/读屏人工复核 | ⬜ 按 `docs/release-checklist.md` 执行（e2e 模拟视口预检已通过） | |
 
 ### 量化现状（复验后）

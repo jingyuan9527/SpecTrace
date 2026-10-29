@@ -148,6 +148,13 @@ public class AgentCallbackService {
 
         AgentPendingData reused = findReusablePending(task.getId(), modelName, brandName);
         if (reused != null) {
+            // 空结果不得覆盖已有的有效参数：超时抢救失败会留下空参数，若照常覆盖等于把之前抓到的数据抹掉
+            if (params.isEmpty() && hasParams(reused.getParamsJson())) {
+                log.warn("本次抓取未产出参数，保留已有待审核记录 pendingId={} model={}", reused.getId(), modelName);
+                taskLogService.warn(task.getId(),
+                        "本次抓取未产出任何参数，已保留原待审核记录 #" + reused.getId() + "，避免空结果覆盖");
+                return reused;
+            }
             Long previousTaskId = reused.getTaskId();
             if (previousTaskId != null && !previousTaskId.equals(task.getId())) {
                 // 旧任务的结果已被本次抓取覆盖，状态同步置为丢弃，避免任务列表永远停在「待审核」
@@ -178,6 +185,11 @@ public class AgentCallbackService {
         pending.setStatus(PendingStatus.PENDING_REVIEW.name());
         pendingMapper.insert(pending);
         return pending;
+    }
+
+    /** 判断待审核记录是否已存有有效参数（空对象与空串都视为没有）。 */
+    private boolean hasParams(String paramsJson) {
+        return paramsJson != null && !paramsJson.isBlank() && !"{}".equals(paramsJson.trim());
     }
 
     private AgentPendingData findReusablePending(Long taskId, String modelName, String brandName) {

@@ -64,4 +64,20 @@ public final class CrawlSession {
     public static List<String> failedDomains() {
         return List.copyOf(FAILED_DOMAINS);
     }
+
+    /**
+     * 本任务已成功抓取的网页正文（URL → 正文）。
+     *
+     * <p>供超时抢救使用：任务超时那一刻模型尚未产出结果，但正文已经在缓存里，
+     * 重新发一次「只输出 JSON」的短请求即可把已抓内容变成可用参数，不必从头再跑。
+     */
+    public static Map<String, String> fetchedPages() {
+        Map<String, String> pages = new LinkedHashMap<>();
+        TOOL_CACHE.forEach((key, value) -> {
+            if (key.startsWith("u:")) {
+                pages.put(key.substring(2), value);
+            }
+        });
+        return pages;
+    }
 }

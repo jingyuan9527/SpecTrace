@@ -136,7 +136,7 @@ spectrace:
     search-result-limit: ${SEARCH_RESULT_LIMIT:5}
     # 抓取风控：每次请求间隔（秒）；单任务最长耗时与单次模型请求超时
     crawl-interval-seconds: ${CRAWL_INTERVAL_SECONDS:2}
-    task-timeout-seconds: ${TASK_TIMEOUT_SECONDS:300}
+    task-timeout-seconds: ${TASK_TIMEOUT_SECONDS:420}
     model-timeout-seconds: ${MODEL_TIMEOUT_SECONDS:45}
     # 连续失败告警：达到次数写 ERROR 日志（关键字 AGENT_CONSECUTIVE_FAILURE），webhook 可选
     alert-threshold: ${AGENT_ALERT_THRESHOLD:3}
