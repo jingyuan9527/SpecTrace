@@ -163,7 +163,7 @@ claude mcp add --transport http spectrace http://localhost:8080/mcp \
 
 ## 4. 工具清单
 
-共 37 个工具，命名统一为 `spectrace_<资源>_<动作>`。
+共 39 个工具，命名统一为 `spectrace_<资源>_<动作>`。
 
 ### 身份
 
@@ -189,7 +189,9 @@ claude mcp add --transport http spectrace http://localhost:8080/mcp \
 | `spectrace_series_get` | `id` | |
 | `spectrace_series_create` | `brandId`、`name` | 同品牌内名称唯一 |
 | `spectrace_series_update` | `id` | **所属品牌不可修改** |
-| `spectrace_series_delete` | `id` | 系列下仍有在册机型时拒绝 |
+| `spectrace_series_delete` | `id` | 系列下仍有在册机型时拒绝；该系列的订阅抓取配置一并删除 |
+| `spectrace_series_subscription_list` | — | 全部订阅（含指向已删系列的遗留记录，`seriesMissing=true`） |
+| `spectrace_series_subscription_delete` | `seriesId` | 删除该系列的订阅，系列已删时也可用于清理孤儿记录 |
 
 ### 机型
 

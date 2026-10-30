@@ -2,6 +2,7 @@ package com.spectrace.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.spectrace.common.BizException;
+import com.spectrace.dto.SubscriptionOverviewVO;
 import com.spectrace.dto.SubscriptionSaveRequest;
 import com.spectrace.dto.TaskCreateRequest;
 import com.spectrace.entity.AgentSubscription;
@@ -51,6 +52,48 @@ public class AgentSubscriptionService {
     public AgentSubscription get(Long seriesId) {
         return subscriptionMapper.selectOne(Wrappers.<AgentSubscription>lambdaQuery()
                 .eq(AgentSubscription::getSeriesId, seriesId));
+    }
+
+    /**
+     * 全部订阅（含指向已删系列的遗留记录），供后台与 MCP 排查。
+     *
+     * <p>订阅平时只挂在系列详情下访问，系列一删就彻底看不到；这里逐条补上系列与品牌名，
+     * 并标出 {@code seriesMissing}，让孤儿记录一眼可辨。订阅数量在几十条量级，逐条查名足够。</p>
+     */
+    public List<SubscriptionOverviewVO> listOverview() {
+        return subscriptionMapper.selectList(Wrappers.<AgentSubscription>lambdaQuery()
+                        .orderByAsc(AgentSubscription::getSeriesId)).stream()
+                .map(this::toOverview)
+                .toList();
+    }
+
+    /** 删除某个系列的订阅：系列被删/合并或清理孤儿记录时调用，返回删除条数。 */
+    public int deleteBySeries(Long seriesId) {
+        int deleted = subscriptionMapper.delete(Wrappers.<AgentSubscription>lambdaQuery()
+                .eq(AgentSubscription::getSeriesId, seriesId));
+        if (deleted > 0) {
+            log.info("已删除系列订阅: seriesId={} 条数={}", seriesId, deleted);
+        }
+        return deleted;
+    }
+
+    private SubscriptionOverviewVO toOverview(AgentSubscription subscription) {
+        SubscriptionOverviewVO vo = new SubscriptionOverviewVO();
+        vo.setId(subscription.getId());
+        vo.setSeriesId(subscription.getSeriesId());
+        vo.setEnabled(subscription.getEnabled());
+        vo.setIntervalMonths(subscription.getIntervalMonths());
+        vo.setAiModelId(subscription.getAiModelId());
+        vo.setLastRunAt(subscription.getLastRunAt());
+        DeviceSeries series = seriesMapper.selectById(subscription.getSeriesId());
+        vo.setSeriesMissing(series == null);
+        if (series != null) {
+            vo.setSeriesName(series.getName());
+            vo.setBrandId(series.getBrandId());
+            Brand brand = series.getBrandId() == null ? null : brandMapper.selectById(series.getBrandId());
+            vo.setBrandName(brand == null ? null : brand.getName());
+        }
+        return vo;
     }
 
     public AgentSubscription save(Long seriesId, SubscriptionSaveRequest req) {

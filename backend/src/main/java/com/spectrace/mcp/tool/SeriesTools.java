@@ -1,8 +1,10 @@
 package com.spectrace.mcp.tool;
 
 import com.spectrace.common.NotFoundException;
+import com.spectrace.dto.SubscriptionOverviewVO;
 import com.spectrace.entity.DeviceSeries;
 import com.spectrace.mcp.auth.McpScope;
+import com.spectrace.service.AgentSubscriptionService;
 import com.spectrace.service.DeviceSeriesService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -21,6 +23,8 @@ import java.util.Map;
 public class SeriesTools implements McpToolProvider {
 
     private final DeviceSeriesService seriesService;
+
+    private final AgentSubscriptionService subscriptionService;
 
     @Override
     public List<McpTool> tools() {
@@ -93,7 +97,10 @@ public class SeriesTools implements McpToolProvider {
                         }),
 
                 new McpTool("spectrace_series_delete", "删除系列",
-                        "逻辑删除系列。系列下仍有在册机型时会被拒绝，需先把机型改为未归类或迁到其它系列。",
+                        """
+                                逻辑删除系列。系列下仍有在册机型时会被拒绝，需先把机型改为未归类或迁到其它系列。
+                                该系列的订阅抓取配置会一并删除，避免留下指向已删系列的孤儿订阅。
+                                """,
                         McpScope.SERIES_WRITE,
                         McpSchemas.object(McpSchemas.props("id", McpSchemas.integer("系列 id", 1, null)), "id"),
                         (context, args) -> {
@@ -101,6 +108,31 @@ public class SeriesTools implements McpToolProvider {
                             requireSeries(id);
                             seriesService.delete(id);
                             return Map.of("id", id, "deleted", true);
+                        }),
+
+                new McpTool("spectrace_series_subscription_list", "查询系列订阅抓取",
+                        """
+                                列出全部系列订阅配置，含指向已删系列的遗留记录。
+                                seriesMissing=true 表示该订阅指向的系列已不存在：调度会在下个检查日自动停用它，
+                                需要立刻清理可用 spectrace_series_subscription_delete。
+                                """,
+                        McpScope.SERIES_READ,
+                        McpSchemas.object(McpSchemas.props()),
+                        (context, args) -> {
+                            List<SubscriptionOverviewVO> records = subscriptionService.listOverview();
+                            return Map.of("total", records.size(), "records", records);
+                        }),
+
+                new McpTool("spectrace_series_subscription_delete", "删除系列订阅",
+                        """
+                                删除某个系列的订阅抓取配置。系列已被删除时同样可用（传原 seriesId），
+                                用于清理指向已删系列的孤儿订阅。
+                                """,
+                        McpScope.SERIES_WRITE,
+                        McpSchemas.object(McpSchemas.props("seriesId", McpSchemas.integer("系列 id", 1, null)), "seriesId"),
+                        (context, args) -> {
+                            Long seriesId = args.requireLong("seriesId");
+                            return Map.of("seriesId", seriesId, "deleted", subscriptionService.deleteBySeries(seriesId));
                         })
         );
     }

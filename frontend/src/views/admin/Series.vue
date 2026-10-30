@@ -597,7 +597,7 @@ async function openScrapeDialog(row: DeviceSeries, mode: 'missing' | 'stale') {
     <ConfirmDialog
       :open="!!deleteTarget"
       title="删除系列"
-      description="删除后该系列不再出现在世代回顾中。系列下仍有在册机型时会被拒绝，请先合并或迁移。"
+      description="删除后该系列不再出现在世代回顾中，该系列的订阅抓取配置会一并删除。系列下仍有在册机型时会被拒绝，请先合并或迁移。"
       confirm-text="删除"
       destructive
       :loading="deleting"

@@ -11,10 +11,12 @@ import com.spectrace.dto.SeriesMissingDeviceVO;
 import com.spectrace.dto.SeriesSuggestVO;
 import com.spectrace.dto.SeriesVO;
 import com.spectrace.dto.UnassignedDeviceVO;
+import com.spectrace.entity.AgentSubscription;
 import com.spectrace.entity.Brand;
 import com.spectrace.entity.Device;
 import com.spectrace.entity.DeviceParamValue;
 import com.spectrace.entity.DeviceSeries;
+import com.spectrace.mapper.AgentSubscriptionMapper;
 import com.spectrace.mapper.BrandMapper;
 import com.spectrace.mapper.DeviceMapper;
 import com.spectrace.mapper.DeviceParamValueMapper;
@@ -52,6 +54,8 @@ public class DeviceSeriesService {
     private final DeviceMapper deviceMapper;
     private final BrandMapper brandMapper;
     private final DeviceParamValueMapper valueMapper;
+    /** 订阅挂在系列上：系列删/并后订阅必须一起处理，否则留下谁也看不到的孤儿配置。 */
+    private final AgentSubscriptionMapper subscriptionMapper;
     private final AiChatService aiChatService;
     private final ObjectMapper objectMapper;
 
@@ -125,7 +129,10 @@ public class DeviceSeriesService {
             throw new BizException("系列下还有 " + attached + " 台机型，请先合并到其它系列或改为未归类");
         }
         seriesMapper.deleteById(id);
-        log.info("删除系列: id={}", id);
+        // 订阅只挂在系列详情下访问：系列一删这条配置就再也点不到，留着只会在调度里变成孤儿
+        int removedSubscriptions = subscriptionMapper.delete(Wrappers.<AgentSubscription>lambdaQuery()
+                .eq(AgentSubscription::getSeriesId, id));
+        log.info("删除系列: id={}，一并清理订阅 {} 条", id, removedSubscriptions);
     }
 
     /**
@@ -399,9 +406,31 @@ public class DeviceSeriesService {
         int moved = deviceMapper.update(null, Wrappers.<Device>lambdaUpdate()
                 .eq(Device::getSeriesId, sourceId)
                 .set(Device::getSeriesId, targetId));
+        migrateSubscription(sourceId, targetId);
         seriesMapper.deleteById(sourceId);
         log.info("合并系列: {} -> {}，迁移机型 {} 台", source.getName(), target.getName(), moved);
         return moved;
+    }
+
+    /**
+     * 合并后源系列消失，订阅跟着走：目标系列已有订阅时以目标为准
+     * （{@code agent_subscription.series_id} 唯一，一个系列只能留一条），否则把源订阅迁过去。
+     */
+    private void migrateSubscription(Long sourceId, Long targetId) {
+        AgentSubscription source = subscriptionMapper.selectOne(Wrappers.<AgentSubscription>lambdaQuery()
+                .eq(AgentSubscription::getSeriesId, sourceId));
+        if (source == null) {
+            return;
+        }
+        if (subscriptionMapper.selectOne(Wrappers.<AgentSubscription>lambdaQuery()
+                .eq(AgentSubscription::getSeriesId, targetId)) != null) {
+            subscriptionMapper.deleteById(source.getId());
+            log.info("合并系列: 目标系列已有订阅，丢弃源订阅 subscriptionId={} source={}", source.getId(), sourceId);
+            return;
+        }
+        source.setSeriesId(targetId);
+        subscriptionMapper.updateById(source);
+        log.info("合并系列: 订阅已迁移 subscriptionId={} {} -> {}", source.getId(), sourceId, targetId);
     }
 
     /**
