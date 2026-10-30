@@ -3,6 +3,8 @@ package com.spectrace.mcp.tool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.spectrace.common.BizException;
 import com.spectrace.common.NotFoundException;
+import com.spectrace.common.WriteBusyException;
+import com.spectrace.db.SqliteErrors;
 import com.spectrace.mcp.auth.McpAgentPrincipal;
 import com.spectrace.mcp.auth.McpApiKeyFilter;
 import com.spectrace.mcp.auth.McpScope;
@@ -121,6 +123,14 @@ public class McpToolRegistry {
             failed = true;
             errorCode = "NOT_FOUND";
             errorMessage = e.getMessage();
+        } catch (WriteBusyException e) {
+            // 写锁排队超时不是服务故障：调用方退避几十毫秒重试即可成功
+            status = "ERROR";
+            failed = true;
+            errorCode = "RETRY_LATER";
+            errorMessage = e.getMessage();
+            log.warn("MCP 写操作排队未通过: tool={} agent={}", tool.name(),
+                    context == null ? "unknown" : context.principal().agentName(), e);
         } catch (BizException e) {
             status = "ERROR";
             failed = true;
@@ -136,11 +146,20 @@ public class McpToolRegistry {
         } catch (Exception e) {
             status = "ERROR";
             failed = true;
-            errorCode = "INTERNAL_ERROR";
-            errorMessage = "服务内部错误，请稍后重试";
-            log.error("MCP 工具执行失败: tool={} agent={} args={}",
-                    tool.name(), context == null ? "unknown" : context.principal().agentName(),
-                    safeArguments(arguments), e);
+            if (SqliteErrors.isBusy(e) || SqliteErrors.isWriteBusy(e)) {
+                // 写锁冲突属于可重试状态：包装成 RETRY_LATER，别让调用方以为服务坏了
+                errorCode = "RETRY_LATER";
+                errorMessage = "数据库写锁繁忙，请稍后重试";
+                log.warn("MCP 工具遇到 SQLite 写锁冲突: tool={} agent={} cause={}", tool.name(),
+                        context == null ? "unknown" : context.principal().agentName(),
+                        SqliteErrors.describe(e));
+            } else {
+                errorCode = "INTERNAL_ERROR";
+                errorMessage = "服务内部错误，请稍后重试";
+                log.error("MCP 工具执行失败: tool={} agent={} args={}",
+                        tool.name(), context == null ? "unknown" : context.principal().agentName(),
+                        safeArguments(arguments), e);
+            }
         }
 
         long durationMs = (System.nanoTime() - startNanos) / 1_000_000;
@@ -161,7 +180,7 @@ public class McpToolRegistry {
     private boolean expectedFailure(String errorCode) {
         return "INVALID_ARGUMENT".equals(errorCode) || "BUSINESS_ERROR".equals(errorCode)
                 || "NOT_FOUND".equals(errorCode) || "FORBIDDEN".equals(errorCode)
-                || "CONFLICT".equals(errorCode);
+                || "CONFLICT".equals(errorCode) || "RETRY_LATER".equals(errorCode);
     }
 
     private McpToolContext contextOf(McpSyncServerExchange exchange) {

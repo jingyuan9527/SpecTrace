@@ -1,6 +1,8 @@
 package com.spectrace.service;
 
 import com.spectrace.common.BizException;
+import com.spectrace.db.SqliteErrors;
+import com.spectrace.db.SqliteWriteGuard;
 import com.spectrace.dto.BackupFileVO;
 import com.spectrace.dto.BackupOverviewVO;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +41,8 @@ public class BackupService {
 
     private final AlertSender alertSender;
     private final JdbcTemplate jdbcTemplate;
+    /** VACUUM 也会独占写锁，和业务写排同一条队，否则备份期间任何写都会撞 SQLITE_BUSY。 */
+    private final SqliteWriteGuard writeGuard;
 
     @Value("${spectrace.backup.enabled:true}")
     private boolean enabled;
@@ -108,7 +112,15 @@ public class BackupService {
         // VACUUM INTO 不支持占位符，路径需内联并对单引号转义
         String sqlPath = target.toString().replace("'", "''");
         long startedAt = System.currentTimeMillis();
-        jdbcTemplate.execute("VACUUM INTO '" + sqlPath + "'");
+        try {
+            writeGuard.execute(() -> {
+                jdbcTemplate.execute("VACUUM INTO '" + sqlPath + "'");
+                return null;
+            });
+        } catch (Throwable e) {
+            // 排队超时也归到备份失败：调用方（定时任务/后台按钮）只关心「这次没备成」
+            throw new IOException("SQLite 快照生成失败: " + SqliteErrors.describe(e), e);
+        }
         lastBackupDurationMs = System.currentTimeMillis() - startedAt;
         log.info("SQLite 快照已生成: {} ({} bytes, {} ms)", target, Files.size(target), lastBackupDurationMs);
 

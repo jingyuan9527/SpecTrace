@@ -274,6 +274,7 @@ claude mcp add --transport http spectrace http://localhost:8080/mcp \
 | `NOT_FOUND` | 目标记录不存在或已删除 | 核对 id |
 | `BUSINESS_ERROR` | 业务规则拒绝（系列不属于该品牌、系列下仍有在册机型等） | 按 `message` 调整数据 |
 | `CONFLICT` | 唯一约束冲突（同名品牌/系列、重复 paramKey） | 先查询再写入 |
+| `RETRY_LATER` | 数据库写锁排队超时（并发写密集或正在备份） | 退避（建议 200ms–1s）后重试同一调用，不是数据问题 |
 | `INTERNAL_ERROR` | 服务内部异常 | 稍后重试；持续失败查服务端日志 |
 
 HTTP 层只有一种失败：未带 Key 或 Key 无效时返回 `401`（此时还没进入 MCP 协议层）：

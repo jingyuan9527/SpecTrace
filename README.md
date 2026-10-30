@@ -335,6 +335,7 @@ docker run -d --name spectrace-app -p 80:8080 \
 
 - **动态参数**：`brand / param_group / param_def / device / device_param_value` 分离，新增参数只需向 `param_def` 插入记录，无需 DDL 改表；新增品牌/参数不影响业务代码。
 - **存储版本与发布价**：`device_variant` 按机型存多条版本记录（存储容量 / 运行内存 / 发布价 / 币种），详情与对比接口一并返回并计算起售价；采集 Agent 在输出 JSON 中额外给出 `variants` 数组，待审核页可修正，审核通过后写入正式表。查不到价格的版本只保留容量、不猜测数值。
+- **写路径串行化**：SQLite 单写者 + WAL，事务里「先读后写」升级快照时若期间有别的连接提交，会直接抛 `SQLITE_BUSY_SNAPSHOT`，且 `busy_timeout` 对它无效；因此进程内所有写排同一条公平锁队列——`@Transactional` 方法由切面最外层持锁（锁在事务开启前拿到、提交后释放），不带事务的单条写由 MyBatis 拦截器补上，`VACUUM` 备份也进同一队列；读走各自连接不受影响。排队超过 15 秒回 503，MCP 侧映射为 `RETRY_LATER` 供调用方退避重试；库层仍遇到 `SQLITE_BUSY` 时自动重试 2 次（重试在事务外层，失败那次已整体回滚）。
 - **参数全量覆盖**：保存机型参数时以提交的 `paramKey -> value` 为准，未提交或值为空白的参数键会被删除；仅当 `params` 为 null（未提供）时才不改动既有参数。删除的品牌/用户等采用逻辑删除，唯一键（`param_key` / `username`）通过 SQLite 部分唯一索引 `WHERE deleted = 0` 保证软删后仍可重建同名记录。
 - **品牌 Logo 内置静态资源**：品牌 logo 是随 Jar / 镜像发布的 `backend/src/main/resources/static/brands/*.png`（1280px 高清 PNG，取自 Wikimedia Commons 的公有领域 / PD-textlogo 矢量文件），接口返回 `/brands/<名称>.png`；单镜像部署前后端同源无需代理，本地 `vite` 开发已代理 `/brands`，替换 logo 直接覆盖文件或改 `brand.logo` 即可。
 - **对比差异高亮**：后端 `compare` 接口返回每行参数的 `same` 标记，前端据此高亮差异、置灰相同项。
