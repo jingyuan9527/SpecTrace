@@ -39,6 +39,11 @@ import type {
   SocialCopyResult,
   LoginRequest,
   LoginResponse,
+  McpAgent,
+  McpAgentCreateRequest,
+  McpAgentCreated,
+  McpAgentUpdateRequest,
+  McpCallLog,
   ModelCallDimensions,
   ModelCallMetrics,
   OperationLog,
@@ -302,6 +307,15 @@ export const adminApi = {
     request.put<unknown, void>(`/admin/feedback/${id}/status`, null, { params: { status, note } }),
 
   logs: (params: Record<string, unknown>) => request.get<unknown, PageResult<OperationLog>>('/admin/logs', { params }),
+
+  mcpAgents: () => request.get<unknown, McpAgent[]>('/admin/mcp/agents'),
+  createMcpAgent: (data: McpAgentCreateRequest) => request.post<unknown, McpAgentCreated>('/admin/mcp/agents', data),
+  updateMcpAgent: (id: number, data: McpAgentUpdateRequest) =>
+    request.put<unknown, McpAgent>(`/admin/mcp/agents/${id}`, data),
+  rotateMcpAgentKey: (id: number) => request.post<unknown, McpAgentCreated>(`/admin/mcp/agents/${id}/rotate-key`),
+  deleteMcpAgent: (id: number) => request.delete<unknown, void>(`/admin/mcp/agents/${id}`),
+  mcpCallLogs: (params: Record<string, unknown>) =>
+    request.get<unknown, PageResult<McpCallLog>>('/admin/mcp/logs', { params }),
 
   backups: () => request.get<unknown, BackupOverview>('/admin/maintenance/backups'),
   triggerBackup: () => request.post<unknown, BackupFile>('/admin/maintenance/backups'),

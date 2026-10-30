@@ -17,6 +17,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  Plug,
   ScrollText,
   SlidersHorizontal,
   Smartphone,
@@ -70,6 +71,8 @@ const baseMenus = [
   { path: '/admin/feedback', label: '纠错反馈', icon: Flag },
   { path: '/admin/users', label: '账号权限', icon: Users },
   { path: '/admin/logs', label: '操作日志', icon: ScrollText },
+  // ADMIN 只读可见，签发/轮换等写操作在页面内按角色隐藏
+  { path: '/admin/mcp', label: 'MCP 接入', icon: Plug },
   { path: '/admin/maintenance', label: '系统运维', icon: Database },
 ]
 

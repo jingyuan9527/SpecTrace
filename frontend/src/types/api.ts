@@ -1010,3 +1010,78 @@ export interface FeedbackSubmitRequest {
   description?: string
   contact?: string
 }
+
+/** MCP 工具授权范围，与后端 McpScope 一一对应 */
+export type McpScope =
+  | 'device:read'
+  | 'device:write'
+  | 'brand:read'
+  | 'brand:write'
+  | 'series:read'
+  | 'series:write'
+  | 'param:read'
+  | 'param:write'
+  | 'review:read'
+  | 'review:write'
+  | 'feedback:read'
+  | 'feedback:write'
+  | 'stats:read'
+
+/** READ_ONLY / EDITOR / ADMIN；仅决定默认 scope，实际鉴权以 scopes 为准 */
+export type McpAgentRole = 'READ_ONLY' | 'EDITOR' | 'ADMIN'
+
+export interface McpAgent {
+  id: number
+  name: string
+  description?: string | null
+  /** 明文 Key 的前 15 位，用于辨认凭据 */
+  apiKeyPrefix: string
+  role: McpAgentRole
+  scopes: McpScope[]
+  status: number
+  callCount: number
+  lastUsedAt?: string | null
+  createdAt?: string
+}
+
+/** apiKey 只在创建/轮换响应里出现一次 */
+export interface McpAgentCreated {
+  agent: McpAgent
+  apiKey: string
+  warning: string
+}
+
+export interface McpAgentCreateRequest {
+  name: string
+  description?: string
+  role: McpAgentRole
+  scopes?: McpScope[]
+  status?: number
+}
+
+export interface McpAgentUpdateRequest {
+  name?: string
+  description?: string
+  role?: McpAgentRole
+  scopes?: McpScope[]
+  status?: number
+}
+
+/** SUCCESS 成功 / ERROR 业务或参数失败 / DENIED 缺少 scope */
+export type McpCallStatus = 'SUCCESS' | 'ERROR' | 'DENIED'
+
+export interface McpCallLog {
+  id: number
+  agentId?: number | null
+  agentName?: string | null
+  toolName: string
+  /** 已脱敏并截断的入参 JSON */
+  argumentsJson?: string | null
+  status: McpCallStatus
+  errorCode?: string | null
+  errorMessage?: string | null
+  durationMs: number
+  clientName?: string | null
+  sessionId?: string | null
+  createdAt?: string
+}

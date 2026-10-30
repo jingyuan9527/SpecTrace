@@ -58,6 +58,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'feedback', name: 'admin-feedback', component: () => import('@/views/admin/Feedback.vue') },
       { path: 'users', name: 'admin-users', component: () => import('@/views/admin/Users.vue') },
       { path: 'logs', name: 'admin-logs', component: () => import('@/views/admin/Logs.vue') },
+      { path: 'mcp', name: 'admin-mcp', component: () => import('@/views/admin/Mcp.vue') },
       {
         path: 'maintenance',
         name: 'admin-maintenance',

@@ -21,10 +21,16 @@ const props = withDefaults(
     /** 追加到 footer 容器的类名：长表单可用 sticky 让操作按钮常驻可见区 */
     footerClass?: string
     hideClose?: boolean
+    /** 禁止遮罩点击与 Esc 关闭：一次性密钥展示等「误关即丢失」的场景需要 */
+    preventClose?: boolean
   }>(),
-  { hideClose: false },
+  { hideClose: false, preventClose: false },
 )
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
+
+function guardClose(event: Event) {
+  if (props.preventClose) event.preventDefault()
+}
 </script>
 
 <template>
@@ -40,6 +46,9 @@ const emit = defineEmits<{ 'update:open': [value: boolean] }>()
             props.class,
           )
         "
+        @escape-key-down="guardClose"
+        @pointer-down-outside="guardClose"
+        @interact-outside="guardClose"
       >
         <div class="flex flex-col space-y-1.5 pr-8">
           <DialogTitle v-if="props.title" class="text-lg font-semibold leading-none tracking-tight">
