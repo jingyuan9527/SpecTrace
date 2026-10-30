@@ -49,6 +49,15 @@ public class EffectiveConfigLogger {
     @Value("${spectrace.db.path:./data/spectrace.db}")
     private String dbPath;
 
+    @Value("${spectrace.mcp.enabled:true}")
+    private boolean mcpEnabled;
+
+    @Value("${spectrace.mcp.endpoint:/mcp}")
+    private String mcpEndpoint;
+
+    @Value("${spectrace.mcp.bootstrap.agent-name:}")
+    private String mcpBootstrapAgent;
+
     @EventListener(ApplicationReadyEvent.class)
     public void logEffectiveConfig() {
         log.info("""
@@ -58,9 +67,11 @@ public class EffectiveConfigLogger {
                   - 内嵌 Agent: 启用={} 队列={} 自动审核={}
                   - 浏览量落库间隔: {} ms
                   - 备份: 目录={} 保留={} 份
+                  - MCP: 启用={} 端点={} 引导Agent={}
                   - 告警: 待审条数>={} 最老滞留>={}h 磁盘剩余<={}MB""",
                 dbPath, publicQpm, agentEnabled, agentQueue, autoApprove,
                 viewFlushMs, backupDir, backupKeep,
+                mcpEnabled, mcpEndpoint, mcpBootstrapAgent.isBlank() ? "(未配置)" : mcpBootstrapAgent,
                 alertPendingCount, alertPendingOldestHours, alertDiskFreeMb);
     }
 }

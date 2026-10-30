@@ -24,6 +24,7 @@
 
 - 内嵌 AgentScope 采集 Agent：搜索 → 抓取 → LLM 结构化抽取 → **人工审核入库**，与后端同进程、零额外部署
 - 系列发现 → 草稿机型档案 → 批量抓详情的收录闭环；系列订阅按周期自动跟进新机
+- **MCP 服务**：外部 Agent 经 Streamable HTTP 接入，按 `资源:动作` scopes 授权，对机型 / 品牌 / 系列 / 参数 / 待审核 / 纠错做 CRUD，调用与数据变更双份审计（见 [docs/mcp.md](docs/mcp.md)）
 - AI 预审打标：低置信度 / 单位冲突置顶排序，批量通过护栏兜底
 - 字段级溯源与参数陈旧度提示（超 180 天标记「可能过期」）、系列一键重抓
 - 官方产品图采集：审核页预览确认后异步下载本地化，失败只降级绝不阻塞主流程
@@ -31,6 +32,7 @@
 **管理后台**
 
 - 机型 / 品牌 / 系列 / 参数元数据管理，支持按品牌 / 系列 / 上架状态筛选，CSV 批量导入先预览校验再落库
+- MCP 接入管理：Agent 凭据签发 / 轮换 / 吊销、scope 授权、调用日志查询（`/api/admin/mcp/*`，写操作仅 SUPER_ADMIN）
 - 抓取任务：多供应商 AI 连接、模型连通性测试、失败可换模型重试、过程日志实时滚动；待审核任务可一键跳到抓取审核页并直接打开该条结果
 - AI 绘图：绘图供应商接入（OpenAI 兼容 `/images/generations`）、提示词模板增删改与默认切换（内置通用模板可复制后改）、按系列生成社媒海报（**内部工具，不对访客开放**）、绘制历史（成功/失败均可查、可连图片一起清理）
 - 运行监控：采集漏斗与成功率、按模型表现排行、**模型调用统计**（按供应商 / 模型筛选调用趋势、延迟均值与 P50/P95/P99/最大、成功率、失败原因分布，支持自定义时间范围与自动刷新）、搜索需求信号（**空结果率**直接指出该补录什么）、访客流量与对比使用率、数据质量
@@ -102,6 +104,7 @@ SpecTrace/
 ├── backend/         SpringBoot 3.3 + MyBatis-Plus + 内嵌采集 Agent（SQLite 单文件库，src/test 为单测）
 ├── frontend/        Vue3 + TypeScript + TailwindCSS + shadcn-vue + ECharts + html2canvas
 ├── docs/screenshots/        README 界面截图（演示数据）
+├── docs/mcp.md              MCP 服务接入指南（工具清单 / scope / 客户端配置）
 ├── sql/             旧版 MySQL 建表脚本（仅迁移参考，当前应用不再使用）
 ├── .github/workflows/ci.yml               PR 校验：类型检查、构建、单测与 e2e
 ├── .github/workflows/docker-publish.yml   构建并推送单镜像到 GHCR
@@ -185,6 +188,11 @@ npm run dev
 | `SPECTRACE_ALERT_PENDING_COUNT` / `_PENDING_OLDEST_HOURS` / `_DISK_FREE_MB` | `20` / `48` / `1024` | 待审核积压条数、最老滞留小时、磁盘剩余 MB 三条告警阈值，0 关闭对应规则 |
 | `SPECTRACE_RETENTION_TASK_DAYS` / `_PENDING_DAYS` / `_OPERATION_LOG_DAYS` / `_VIEW_DAILY_DAYS` | `30` / `30` / `90` / `90` | 终态抓取任务（含过程日志）、已处理待审核、操作日志、机型浏览量按天聚合的保留天数 |
 | `SPECTRACE_RETENTION_AI_CALL_DAYS` | `30` | 模型调用明细（`ai_call_log`，逐次模型请求）的保留天数 |
+| `SPECTRACE_MCP_ENABLED` | `true` | 是否启用对外 MCP 服务端点（`/mcp`） |
+| `SPECTRACE_MCP_ENDPOINT` | `/mcp` | MCP 端点路径 |
+| `SPECTRACE_MCP_MAX_PAGE_SIZE` / `_LOG_ARG_MAX_LENGTH` | `100` / `2000` | MCP 工具单页上限、调用日志入参截断长度 |
+| `SPECTRACE_MCP_BOOTSTRAP_AGENT` / `_KEY` / `_ROLE` | 空 / 空 / `EDITOR` | 首次启动自动创建的 Agent 与其 `stmcp_` 明文 Key（留空则不创建，改用管理接口签发） |
+| `SPECTRACE_RETENTION_MCP_CALL_DAYS` | `30` | MCP 工具调用日志（`mcp_call_log`）的保留天数 |
 | `SPECTRACE_UPLOAD_MAX_BYTES` | `8388608` | 单张图片硬上限（字节）；前端会先压到 500KB，超限提示裁剪 |
 | `SPECTRACE_AI_INSIGHT_ENABLED` | `true` | 是否开放 AI 摘要类能力（对比差异摘要、世代回顾文案），未配置模型时前端自动隐藏入口 |
 | `SPECTRACE_AI_INSIGHT_CACHE_HOURS` | `24` | 摘要缓存时长（小时），同一组机型与参数值在窗口内复用 |
@@ -194,6 +202,43 @@ npm run dev
 | `SPECTRACE_AI_IMAGE_TIMEOUT_SECONDS` | `120` | 单次绘图请求超时（秒） |
 
 抓取任务支持两种模式：**单机型抓取**（结果写入【待审核数据表】，管理员在后台「抓取审核」中修正并审核通过后迁移到正式机型库）与**系列发现**（输入系列关键词如 `iPhone 17`，Agent 返回该系列机型清单，在任务详情勾选后创建为草稿机型档案——前台不可见；再到「机型管理」对单个或勾选多台机型发起详情抓取（提交前可切换供应商与模型），审核通过后自动上架；机型也支持勾选批量上架 / 下架）。
+
+## MCP 服务（外部 Agent 接入）
+
+内置 **MCP（Model Context Protocol）** 服务，让 Claude Desktop / Cursor / Cherry Studio / Claude Code 等客户端直接读写平台数据，无需另起服务：
+
+- **传输**：Streamable HTTP，端点 `/mcp`（如 `http://localhost:8080/mcp`），随应用启动
+- **认证**：独立 MCP API Key（`stmcp_` 前缀，库中只存 SHA-256），与后台 JWT 隔离；请求头 `X-MCP-Key` 或 `Authorization: Bearer`
+- **授权**：按 Agent 授予 `device:read` / `device:write` / `brand:*` / `series:*` / `param:*` / `review:*` / `feedback:*` / `stats:read`；角色 `READ_ONLY` / `EDITOR` / `ADMIN` 只决定默认 scope
+- **能力**：37 个工具覆盖机型（含参数值、存储版本）、品牌、系列、参数元数据、待审核数据、纠错反馈的增删改查，以及统计与审计查询
+- **审计**：数据变更写 `operation_log`（`adminName = mcp:<agent>`），每次工具调用写 `mcp_call_log`（入参脱敏、状态、错误码、耗时）
+
+签发凭据（超级管理员）：
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"admin123"}' | jq -r '.data.token')
+
+curl -s -X POST http://localhost:8080/api/admin/mcp/agents \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"claude-desktop","role":"READ_ONLY"}'
+# data.apiKey 仅返回这一次，丢失只能轮换
+```
+
+客户端侧只需 URL + 请求头，例如 Cursor `.cursor/mcp.json`：
+
+```json
+{
+  "mcpServers": {
+    "spectrace": {
+      "url": "http://localhost:8080/mcp",
+      "headers": { "X-MCP-Key": "stmcp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }
+    }
+  }
+}
+```
+
+完整工具清单、scope 表、写入语义（`params` 全量覆盖）、错误码与调试命令见 **[docs/mcp.md](docs/mcp.md)**。
 
 ## 生产部署
 
@@ -324,6 +369,7 @@ docker run -d --name spectrace-app -p 80:8080 \
 - **后端会话防线**：JWT 密钥必须经 `SPECTRACE_JWT_SECRET` 注入（未配置拒绝启动）；过滤器每请求回查 `admin_user`——禁用 / 删除的账号 token 立即失效、角色与「待改密」标记以库内最新为准（未改密的 token 只放行 `/api/auth/**`）；登录同账号连续失败 5 次锁定 10 分钟并写入操作日志，可追溯爆破。
 - **公开接口护栏**：`PublicRateLimitFilter` 对 `/api/public/**` 做单 IP 每分钟基础限流（`SPECTRACE_PUBLIC_QPM`，默认 120，feedback / insight 各自更严格的限流叠加生效）；`/devices` 分页 size 收敛上限 100，防止匿名一次拉全库。公开读取统一只出 `status=1` 的机型——列表、详情、对比、联想、热门、趋势、sitemap 同一口径，草稿与下架对外 404 或按不存在处理。
 - **公开读缓存**：品牌、参数元信息、系列列表、机型详情走 Caffeine 进程内缓存（TTL 5 分钟兜底 + 管理端写路径 `@CacheEvict` 主动失效），机型发布年份改为 SQL 聚合，SQLite 读压力与机型库规模解耦。
+- **MCP 服务**：内嵌官方 MCP Java SDK（Streamable HTTP，端点 `/mcp`），与业务 Service 同进程复用事务、缓存失效与审计，不另起服务也不绕过后台业务规则；凭据独立成表 `mcp_agent`（SHA-256 + 前缀定位，明文只在签发/轮换时返回一次），授权按「资源:动作」scope 校验而非后台角色；统一执行壳负责入参校验、错误码映射（`INVALID_ARGUMENT` / `FORBIDDEN` / `NOT_FOUND` / `BUSINESS_ERROR` / `CONFLICT`）与 `mcp_call_log` 落库，数据变更同时写 `operation_log`（`adminName = mcp:<agent>`），两条链路可交叉核对。
 - **模型调用统计**（`ai_call_log`）：采集 Agent 每轮模型请求（`RecordingChatModel` 装饰器，含流式取消）、AI 摘要单轮对话、AI 绘图请求逐次落库——按调用发生时的供应商 / 模型名称快照，连接改名或删除不影响历史口径；延迟从订阅 / 发请求开始计时，覆盖传输异常、HTTP 状态（401/403/429/4xx/5xx）、空返回与返回格式异常，业务层「模型未输出合法 JSON」回写最近一次调用而不是新增一条，保证成功率分母是真实调用次数。后台「运行监控 → 模型调用」按供应商 / 模型与时间范围聚合出趋势分桶（≤3h 按分钟、≤72h 按小时、更长按天）、均值与 P50/P95/P99/最大延迟、成功率和失败原因分布，支持自定义起止时间与 10s/30s/1m/5m 自动刷新（标签页不可见时暂停轮询）。明细默认保留 30 天，由 `SPECTRACE_RETENTION_AI_CALL_DAYS` 调整。
 - **数据保留策略**：终态抓取任务（含过程日志）、已处理待审核、操作日志、机型浏览量按天聚合、模型调用明细按保留天数定时清理（默认每天 04:00，排在 03:30 备份之后），防止 SQLite 无界膨胀拖慢查询与备份；「系统运维」页展示各表行数、保留配置并支持手动清理（仅超级管理员）。
 - **数据健康度看板**：`GET /api/admin/data-health` 汇总全库带参率（含草稿口径）、各启用参数的覆盖机型数排行（升序，覆盖最少的排最前）、缺参机型排行（缺参 = 有值参数数 < 启用参数数；按近 30 天 PV 倒序、无 PV 按发布时间，品牌/系列可筛）与近 30 天审核通过数、待处理反馈数；后台「数据健康度」页对缺参机型支持行级与批量补抓（复用选模型弹窗）。

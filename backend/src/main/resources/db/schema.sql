@@ -349,3 +349,44 @@ CREATE INDEX IF NOT EXISTS idx_ai_image_job_created ON ai_image_job (created_at)
 CREATE INDEX IF NOT EXISTS idx_ai_call_log_created ON ai_call_log (created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_call_log_dim ON ai_call_log (provider_kind, provider_id, model_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_call_log_scene_biz ON ai_call_log (scene, biz_id, id);
+
+-- ===== 对外 MCP 服务 =====
+-- 接入凭据与授权范围：Key 只存哈希与前缀，明文仅在创建/轮换时返回一次
+CREATE TABLE IF NOT EXISTS mcp_agent (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          VARCHAR(64)  NOT NULL,
+    description   VARCHAR(255) DEFAULT NULL,
+    api_key_hash  VARCHAR(64)  NOT NULL,
+    api_key_prefix VARCHAR(24) NOT NULL,
+    role          VARCHAR(24)  NOT NULL DEFAULT 'EDITOR',
+    -- 逗号分隔的 scope 列表，* 表示全部；鉴权只认这一列，role 仅作审计标签
+    scopes        TEXT         NOT NULL,
+    status        INTEGER      NOT NULL DEFAULT 1,
+    call_count    BIGINT       NOT NULL DEFAULT 0,
+    last_used_at  DATETIME     DEFAULT NULL,
+    created_at    DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    deleted       TINYINT      NOT NULL DEFAULT 0
+);
+
+-- 工具调用审计：参数截断落库，成功与失败都记，便于回溯 Agent 到底改了什么
+CREATE TABLE IF NOT EXISTS mcp_call_log (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id      BIGINT       DEFAULT NULL,
+    agent_name    VARCHAR(64)  DEFAULT NULL,
+    tool_name     VARCHAR(64)  NOT NULL,
+    arguments_json TEXT        DEFAULT NULL,
+    status        VARCHAR(16)  NOT NULL,
+    error_code    VARCHAR(32)  DEFAULT NULL,
+    error_message VARCHAR(512) DEFAULT NULL,
+    duration_ms   BIGINT       NOT NULL DEFAULT 0,
+    client_name   VARCHAR(128) DEFAULT NULL,
+    session_id    VARCHAR(64)  DEFAULT NULL,
+    created_at    DATETIME     DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_mcp_agent_name ON mcp_agent (name) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_mcp_agent_prefix ON mcp_agent (api_key_prefix);
+CREATE INDEX IF NOT EXISTS idx_mcp_call_log_agent ON mcp_call_log (agent_id, id);
+CREATE INDEX IF NOT EXISTS idx_mcp_call_log_tool ON mcp_call_log (tool_name, id);
+CREATE INDEX IF NOT EXISTS idx_mcp_call_log_created ON mcp_call_log (created_at);

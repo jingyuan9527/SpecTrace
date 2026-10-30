@@ -33,6 +33,9 @@ public class RetentionOverviewVO {
     /** 模型调用明细的保留天数 */
     private int aiCallDays;
 
+    /** MCP 工具调用日志的保留天数 */
+    private int mcpCallDays;
+
     /** 下次定时清理时间，cron 非法或功能关闭时为 null */
     private LocalDateTime nextRunAt;
 

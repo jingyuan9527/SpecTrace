@@ -32,6 +32,9 @@ public class SecurityConfig {
             "/favicon.ico",
             "/api/auth/login",
             "/api/public/**",
+            // MCP 端点由 McpApiKeyFilter 校验 API Key：Agent 没有后台账号，不能走 JWT 体系
+            "/mcp",
+            "/mcp/**",
             "/uploads/**",
             "/brands/**",
             "/devices/**",

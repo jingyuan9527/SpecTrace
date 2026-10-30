@@ -27,6 +27,12 @@ services:
       SPECTRACE_AGENT_ENABLED: ${SPECTRACE_AGENT_ENABLED:-true}
       # 任务队列：memory（默认，无需外部服务）/ redis（可选，多实例部署）
       SPECTRACE_AGENT_QUEUE: ${SPECTRACE_AGENT_QUEUE:-memory}
+      # ---- MCP 服务（外部 Agent 接入，端点 /mcp；认证走独立 API Key）----
+      SPECTRACE_MCP_ENABLED: ${SPECTRACE_MCP_ENABLED:-true}
+      SPECTRACE_MCP_ENDPOINT: ${SPECTRACE_MCP_ENDPOINT:-/mcp}
+      SPECTRACE_MCP_BOOTSTRAP_AGENT: ${SPECTRACE_MCP_BOOTSTRAP_AGENT:-}
+      SPECTRACE_MCP_BOOTSTRAP_KEY: ${SPECTRACE_MCP_BOOTSTRAP_KEY:-}
+      SPECTRACE_MCP_BOOTSTRAP_ROLE: ${SPECTRACE_MCP_BOOTSTRAP_ROLE:-EDITOR}
       TZ: Asia/Shanghai
     ports:
       # 站点与 API 同源，一个端口即可

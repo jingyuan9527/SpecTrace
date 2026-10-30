@@ -108,6 +108,8 @@ spectrace:
     search-log-days: ${SPECTRACE_RETENTION_SEARCH_LOG_DAYS:90}
     # 模型调用明细保留天数（每轮 Agent 调用一条，默认比任务日志更短）
     ai-call-days: ${SPECTRACE_RETENTION_AI_CALL_DAYS:30}
+    # MCP 工具调用日志保留天数
+    mcp-call-days: ${SPECTRACE_RETENTION_MCP_CALL_DAYS:30}
   # 运行告警（T104）：待审核积压 / 备份失败 / 磁盘水位；webhook 复用 AGENT_ALERT_WEBHOOK，阈值 0 关闭对应规则
   alert:
     cron: ${SPECTRACE_ALERT_CRON:0 0 * * * *}
@@ -143,6 +145,22 @@ spectrace:
     # 连续失败告警：达到次数写 ERROR 日志（关键字 AGENT_CONSECUTIVE_FAILURE），webhook 可选
     alert-threshold: ${AGENT_ALERT_THRESHOLD:3}
     alert-webhook: ${AGENT_ALERT_WEBHOOK:}
+  # ---- 对外 MCP 服务（Streamable HTTP，供 Claude Desktop / Cursor 等 Agent 客户端接入）----
+  mcp:
+    enabled: ${SPECTRACE_MCP_ENABLED:true}
+    # 端点路径，与 server.servlet.context-path 无关，需带前导斜杠
+    endpoint: ${SPECTRACE_MCP_ENDPOINT:/mcp}
+    server-name: ${SPECTRACE_MCP_SERVER_NAME:spectrace}
+    server-version: ${SPECTRACE_MCP_SERVER_VERSION:1.0.0}
+    # 单页返回上限：Agent 一次拉太多行既浪费上下文也拖慢 SQLite
+    max-page-size: ${SPECTRACE_MCP_MAX_PAGE_SIZE:100}
+    # 调用日志里 arguments 的截断长度，避免大 params 把日志表撑爆
+    log-arguments-max-length: ${SPECTRACE_MCP_LOG_ARG_MAX_LENGTH:2000}
+    # 首次启动自动创建的 Agent（配置了 api-key 才创建，留空则只能由后台接口创建）
+    bootstrap:
+      agent-name: ${SPECTRACE_MCP_BOOTSTRAP_AGENT:}
+      api-key: ${SPECTRACE_MCP_BOOTSTRAP_KEY:}
+      role: ${SPECTRACE_MCP_BOOTSTRAP_ROLE:EDITOR}
 
 springdoc:
   swagger-ui:

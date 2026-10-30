@@ -8,12 +8,14 @@ import com.spectrace.entity.AgentPendingData;
 import com.spectrace.entity.AgentTask;
 import com.spectrace.entity.AgentTaskLog;
 import com.spectrace.entity.AiCallLog;
+import com.spectrace.entity.McpCallLog;
 import com.spectrace.entity.OperationLog;
 import com.spectrace.mapper.AgentPendingDataMapper;
 import com.spectrace.mapper.AgentTaskLogMapper;
 import com.spectrace.mapper.AgentTaskMapper;
 import com.spectrace.mapper.AiCallLogMapper;
 import com.spectrace.mapper.DeviceViewDailyMapper;
+import com.spectrace.mapper.McpCallLogMapper;
 import com.spectrace.mapper.MetricDailyMapper;
 import com.spectrace.mapper.SearchLogMapper;
 import com.spectrace.mapper.OperationLogMapper;
@@ -49,6 +51,7 @@ public class DataRetentionService {
     private final SearchLogMapper searchLogMapper;
     private final MetricDailyMapper metricDailyMapper;
     private final AiCallLogMapper aiCallLogMapper;
+    private final McpCallLogMapper mcpCallLogMapper;
 
     @Value("${spectrace.retention.enabled:true}")
     private boolean enabled;
@@ -73,6 +76,9 @@ public class DataRetentionService {
 
     @Value("${spectrace.retention.ai-call-days:30}")
     private int aiCallDays;
+
+    @Value("${spectrace.retention.mcp-call-days:30}")
+    private int mcpCallDays;
 
     /** 默认每天 04:00 执行，排在 03:30 的备份之后：先备份再清理，删除的数据当天快照里仍有。 */
     @Scheduled(cron = "${spectrace.retention.cron:0 0 4 * * *}")
@@ -128,8 +134,13 @@ public class DataRetentionService {
         removed.put("ai_call_log", (long) aiCallLogMapper.delete(Wrappers.<AiCallLog>lambdaQuery()
                 .lt(AiCallLog::getCreatedAt, now.minusDays(aiCallDays))));
 
-        log.info("保留策略清理完成: taskDays={} pendingDays={} operationLogDays={} viewDailyDays={} searchLogDays={} aiCallDays={} removed={}",
-                taskDays, pendingDays, operationLogDays, viewDailyDays, searchLogDays, aiCallDays, removed);
+        // MCP 每个工具调用一行，只增不减会拖慢审计查询与备份
+        removed.put("mcp_call_log", (long) mcpCallLogMapper.delete(Wrappers.<McpCallLog>lambdaQuery()
+                .lt(McpCallLog::getCreatedAt, now.minusDays(mcpCallDays))));
+
+        log.info("保留策略清理完成: taskDays={} pendingDays={} operationLogDays={} viewDailyDays={} searchLogDays={} aiCallDays={} mcpCallDays={} removed={}",
+                taskDays, pendingDays, operationLogDays, viewDailyDays, searchLogDays, aiCallDays,
+                mcpCallDays, removed);
         return removed;
     }
 
@@ -144,6 +155,7 @@ public class DataRetentionService {
         vo.setViewDailyDays(viewDailyDays);
         vo.setSearchLogDays(searchLogDays);
         vo.setAiCallDays(aiCallDays);
+        vo.setMcpCallDays(mcpCallDays);
         vo.setNextRunAt(nextRunAt());
         Map<String, Long> counts = new LinkedHashMap<>();
         counts.put("agent_task", taskMapper.selectCount(null));
@@ -153,6 +165,7 @@ public class DataRetentionService {
         counts.put("device_view_daily", viewMapper.selectCount(null));
         counts.put("search_log", searchLogMapper.selectCount(null));
         counts.put("ai_call_log", aiCallLogMapper.selectCount(null));
+        counts.put("mcp_call_log", mcpCallLogMapper.selectCount(null));
         vo.setCounts(counts);
         return vo;
     }
