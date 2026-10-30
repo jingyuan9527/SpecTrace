@@ -116,7 +116,8 @@ function doLogout() {
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-muted/25">
+  <!-- 骨架固定为一屏：侧栏与顶栏常驻，只有内容区滚动，长页面才不会把导航带走 -->
+  <div class="flex h-dvh overflow-hidden bg-muted/25">
     <aside class="hidden w-60 shrink-0 flex-col border-r bg-background md:flex">
       <div class="flex h-14 items-center gap-2 border-b px-4">
         <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -168,8 +169,8 @@ function doLogout() {
       </div>
     </aside>
 
-    <div class="flex min-w-0 flex-1 flex-col">
-      <header class="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/85 px-4 backdrop-blur">
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <header class="z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background/85 px-4 backdrop-blur">
         <Button variant="ghost" size="icon" class="md:hidden" aria-label="打开菜单" @click="mobileOpen = true">
           <Menu />
         </Button>
@@ -191,7 +192,7 @@ function doLogout() {
         </div>
       </header>
 
-      <main class="flex-1 p-4 sm:p-6">
+      <main class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
         <router-view />
       </main>
     </div>

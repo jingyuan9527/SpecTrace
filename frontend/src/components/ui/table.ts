@@ -4,10 +4,14 @@ import { cn } from '@/lib/utils'
 /** shadcn-vue Table 原语：语义化表格 + 统一边框/密度。 */
 export const Table = defineComponent({
   name: 'Table',
-  props: { class: { type: String, default: '' } },
+  props: {
+    class: { type: String, default: '' },
+    /** 外层滚动容器的类名：需要纵向粘性表头时由外层接管滚动，传 overflow-visible 去掉这层滚动上下文 */
+    wrapperClass: { type: String, default: '' },
+  },
   setup(props, { slots }) {
     return () =>
-      h('div', { class: 'relative w-full overflow-auto' }, [
+      h('div', { class: cn('relative w-full overflow-auto', props.wrapperClass) }, [
         h('table', { class: cn('w-full caption-bottom text-sm', props.class) }, slots.default?.()),
       ])
   },
@@ -15,9 +19,25 @@ export const Table = defineComponent({
 
 export const TableHeader = defineComponent({
   name: 'TableHeader',
-  props: { class: { type: String, default: '' } },
+  props: {
+    class: { type: String, default: '' },
+    /** 粘性表头：需配合带高度约束的滚动容器使用；border-collapse 会吞掉边框，故用内阴影补分隔线 */
+    sticky: { type: Boolean, default: false },
+  },
   setup(props, { slots }) {
-    return () => h('thead', { class: cn('[&_tr]:border-b', props.class) }, slots.default?.())
+    return () =>
+      h(
+        'thead',
+        {
+          class: cn(
+            '[&_tr]:border-b',
+            props.sticky &&
+              '[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-card [&_th]:shadow-[inset_0_-1px_0_hsl(var(--border))]',
+            props.class,
+          ),
+        },
+        slots.default?.(),
+      )
   },
 })
 
@@ -63,7 +83,7 @@ export const TableHead = defineComponent({
         {
           scope: 'col',
           class: cn(
-            'h-10 px-3 text-left align-middle text-xs font-medium uppercase tracking-wide text-muted-foreground [&:has([role=checkbox])]:pr-0',
+            'h-10 whitespace-nowrap px-3 text-left align-middle text-xs font-medium uppercase tracking-wide text-muted-foreground [&:has([role=checkbox])]:pr-0',
             props.class,
           ),
         },

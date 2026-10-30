@@ -145,6 +145,7 @@ npm run dev
 - 访问 http://localhost:5173 ，已配置 `/api`、`/uploads`、`/brands`、`/device-images` 代理到后端 8080（机型图必须走独立前缀，与 SPA 的 `/devices` 路由同名会被代理吞掉）
 - 前端使用 history 路由（无 `#`）：`/` 首页、`/devices` 机型库、`/compare` 对比、`/trends` 系列趋势（跨代趋势 + 同代横比双模式；旧 `/history`、`/evolution` 链接自动重定向）
 - 管理后台：`/admin/login`
+- 后台布局：`AdminLayout` 把侧栏与顶栏固定为一屏、只让内容区滚动，长页面不会把导航带走；列表页统一用 `TableToolbar`（吸顶筛选/批量条）+ 列表卡片自身滚动，长表格配 `Table` 的 `wrapper-class` 与 `TableHeader sticky` 让表头常驻
 - E2E（无需后端与数据库，接口由 `e2e/mock-api.ts` 拦截）：`npx playwright install chromium` 后执行 `npm run test:e2e`；失败会保留截图、trace 与视频到 `test-results/`
 
 ## 采集 Agent（内嵌）

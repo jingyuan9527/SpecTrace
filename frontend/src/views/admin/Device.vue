@@ -48,6 +48,7 @@ import {
 } from '@/components/ui'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import TableToolbar from '@/components/TableToolbar.vue'
 import DeviceAvatar from '@/components/DeviceAvatar.vue'
 import { compressImage, formatBytes } from '@/lib/image'
 
@@ -574,8 +575,8 @@ function rowMessages(row: any) {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <PageHeader title="机型管理" description="维护机型基础信息与参数值，支持按品牌和关键词筛选">
+  <div class="flex flex-col gap-3 lg:h-full lg:min-h-0">
+    <PageHeader class="shrink-0" title="机型管理" description="维护机型基础信息与参数值，支持按品牌和关键词筛选">
       <template #actions>
         <Button size="sm" variant="outline" @click="openImport">
           <FileUp />
@@ -588,59 +589,68 @@ function rowMessages(row: any) {
       </template>
     </PageHeader>
 
-    <Card>
-      <CardContent class="flex flex-col gap-2 p-4 lg:flex-row lg:items-center">
-        <div class="relative w-full lg:w-60">
-          <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input v-model="query.keyword" class="pl-9" placeholder="机型名称" @keyup.enter="search" />
-        </div>
-        <Select v-model="query.brandId" :options="brandOptions" placeholder="全部品牌" class="w-full lg:w-44" clearable />
-        <Select
-          v-model="query.seriesId"
-          :options="seriesFilterOptions"
-          placeholder="全部系列"
-          class="w-full lg:w-44"
-          :disabled="!query.brandId"
-        />
-        <Select
-          v-model="query.status"
-          :options="statusFilterOptions"
-          class="w-full lg:w-32"
-          @update:model-value="search"
-        />
-        <Button variant="outline" @click="search">查询</Button>
-        <template v-if="selectedIds.length">
-          <Button variant="outline" size="sm" @click="openScrape(selectedRows)">
-            <Bot />
-            抓取（{{ selectedIds.length }}）
-          </Button>
-          <Button variant="outline" size="sm" @click="openAssign">
-            <Layers />
-            加入系列
-          </Button>
-          <Button variant="outline" size="sm" :disabled="statusUpdating" @click="batchUpdateStatus(1)">
-            <Loader2 v-if="statusUpdating" class="animate-spin" />
-            <ArrowUpToLine v-else />
-            上架
-          </Button>
-          <Button variant="outline" size="sm" :disabled="statusUpdating" @click="batchUpdateStatus(0)">
-            <Loader2 v-if="statusUpdating" class="animate-spin" />
-            <ArrowDownToLine v-else />
-            下架
-          </Button>
-        </template>
-        <div class="ml-auto text-xs text-muted-foreground">共 {{ total }} 台机型</div>
-      </CardContent>
-    </Card>
+    <!-- 筛选与批量操作常驻顶部：机型列表较长时不必滚回页头改条件 -->
+    <TableToolbar class="shrink-0">
+      <div class="relative w-full sm:w-52">
+        <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input v-model="query.keyword" class="pl-9" placeholder="机型名称" @keyup.enter="search" />
+      </div>
+      <Select
+        v-model="query.brandId"
+        :options="brandOptions"
+        placeholder="全部品牌"
+        class="w-[calc(50%-0.25rem)] sm:w-40"
+        clearable
+      />
+      <Select
+        v-model="query.seriesId"
+        :options="seriesFilterOptions"
+        placeholder="全部系列"
+        class="w-[calc(50%-0.25rem)] sm:w-40"
+        :disabled="!query.brandId"
+      />
+      <Select
+        v-model="query.status"
+        :options="statusFilterOptions"
+        class="w-[calc(50%-0.25rem)] sm:w-32"
+        @update:model-value="search"
+      />
+      <Button variant="outline" size="sm" @click="search">查询</Button>
+      <template v-if="selectedIds.length">
+        <Button variant="outline" size="sm" @click="openScrape(selectedRows)">
+          <Bot />
+          抓取（{{ selectedIds.length }}）
+        </Button>
+        <Button variant="outline" size="sm" @click="openAssign">
+          <Layers />
+          加入系列
+        </Button>
+        <Button variant="outline" size="sm" :disabled="statusUpdating" @click="batchUpdateStatus(1)">
+          <Loader2 v-if="statusUpdating" class="animate-spin" />
+          <ArrowUpToLine v-else />
+          上架
+        </Button>
+        <Button variant="outline" size="sm" :disabled="statusUpdating" @click="batchUpdateStatus(0)">
+          <Loader2 v-if="statusUpdating" class="animate-spin" />
+          <ArrowDownToLine v-else />
+          下架
+        </Button>
+      </template>
+      <template #right>
+        <span class="text-xs text-muted-foreground">共 {{ total }} 台机型</span>
+      </template>
+    </TableToolbar>
 
-    <Card>
-      <CardContent class="p-0">
+    <!-- 大屏上列表自己滚，翻页与筛选始终留在视口内 -->
+    <!-- 视口过矮时保底高度，避免列表被压到只剩一行 -->
+    <Card class="flex min-h-0 flex-col lg:min-h-[20rem] lg:flex-1">
+      <CardContent class="min-h-0 flex-1 p-0 lg:overflow-hidden">
         <div v-if="loading" class="space-y-2 p-4">
           <Skeleton v-for="i in 6" :key="i" class="h-11" />
         </div>
 
-        <Table v-else-if="list.length">
-          <TableHeader>
+        <Table v-else-if="list.length" wrapper-class="lg:h-full">
+          <TableHeader sticky>
             <TableRow class="hover:bg-transparent">
               <TableHead class="w-10">
                 <Checkbox :model-value="allPageSelected" aria-label="全选本页" @update:model-value="togglePage" />
@@ -676,10 +686,10 @@ function rowMessages(row: any) {
                   img-class="h-9 max-w-16 object-contain"
                 />
               </TableCell>
-              <TableCell class="font-medium">{{ row.name }}</TableCell>
-              <TableCell class="text-muted-foreground">{{ brandName(row.brandId) }}</TableCell>
-              <TableCell class="text-muted-foreground">{{ seriesName(row.seriesId) }}</TableCell>
-              <TableCell class="text-muted-foreground">{{ row.releaseDate || '—' }}</TableCell>
+              <TableCell class="whitespace-nowrap font-medium">{{ row.name }}</TableCell>
+              <TableCell class="whitespace-nowrap text-muted-foreground">{{ brandName(row.brandId) }}</TableCell>
+              <TableCell class="whitespace-nowrap text-muted-foreground">{{ seriesName(row.seriesId) }}</TableCell>
+              <TableCell class="whitespace-nowrap text-muted-foreground">{{ row.releaseDate || '—' }}</TableCell>
               <TableCell>
                 <div class="flex flex-wrap items-center gap-1">
                   <Badge :variant="row.status === 1 ? 'success' : 'secondary'">{{ row.status === 1 ? '上架' : '下架' }}</Badge>
@@ -727,7 +737,13 @@ function rowMessages(row: any) {
       </CardContent>
     </Card>
 
-    <Pagination v-if="total > query.size" v-model:page="query.current" :page-size="query.size" :total="total" />
+    <Pagination
+      v-if="total > query.size"
+      v-model:page="query.current"
+      class="shrink-0"
+      :page-size="query.size"
+      :total="total"
+    />
 
     <Dialog v-model:open="dialog" :title="form.id ? '编辑机型' : '新增机型'" class="max-w-2xl">
       <div class="space-y-5">

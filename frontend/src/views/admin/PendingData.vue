@@ -41,6 +41,7 @@ import {
 } from '@/components/ui'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import TableToolbar from '@/components/TableToolbar.vue'
 
 const brands = ref<any[]>([])
 const defs = ref<any[]>([])
@@ -347,15 +348,21 @@ function removeVariant(index: number) {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <PageHeader title="抓取审核" description="Agent 抓取结果必须人工核对后才能进入正式机型库" />
+  <div class="flex flex-col gap-3 lg:h-full lg:min-h-0">
+    <PageHeader class="shrink-0" title="抓取审核" description="Agent 抓取结果必须人工核对后才能进入正式机型库" />
 
-    <div class="flex flex-wrap items-center gap-2">
-      <Select v-model="query.status" :options="statusOptions" class="w-40" @update:model-value="search" />
+    <!-- 筛选与批量动作同条吸顶：勾选后批量入口不会被长列表顶出视口 -->
+    <TableToolbar class="shrink-0">
+      <Select
+        v-model="query.status"
+        :options="statusOptions"
+        class="w-[calc(50%-0.25rem)] sm:w-36"
+        @update:model-value="search"
+      />
       <Input
         v-model="query.keyword"
         placeholder="机型名 / 品牌名筛选"
-        class="w-52"
+        class="w-full sm:w-52"
         @keyup.enter="search"
       />
       <Button variant="outline" size="sm" @click="search">查询</Button>
@@ -363,36 +370,35 @@ function removeVariant(index: number) {
         <RefreshCw />
         刷新
       </Button>
-      <span class="ml-auto text-xs text-muted-foreground">共 {{ total }} 条记录</span>
-    </div>
+      <template #right>
+        <span class="text-xs text-muted-foreground">共 {{ total }} 条记录</span>
+      </template>
+      <div v-if="selectedIds.length" class="flex w-full flex-wrap items-center gap-2 border-t pt-2 text-sm">
+        <span class="font-medium">已选 {{ selectedIds.length }} 条</span>
+        <Button size="sm" :disabled="batchProcessing" @click="requestBatchApprove">批量通过</Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          class="text-destructive"
+          :disabled="batchProcessing"
+          @click="batchAction = 'discard'"
+        >
+          批量丢弃
+        </Button>
+        <Button size="sm" variant="ghost" @click="selectedIds = []">取消选择</Button>
+        <span class="ml-auto text-xs text-muted-foreground">批量通过会直接使用抓取值入库，不经过人工修正</span>
+      </div>
+    </TableToolbar>
 
-    <div
-      v-if="selectedIds.length"
-      class="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm"
-    >
-      <span class="font-medium">已选 {{ selectedIds.length }} 条</span>
-      <Button size="sm" :disabled="batchProcessing" @click="requestBatchApprove">批量通过</Button>
-      <Button
-        size="sm"
-        variant="ghost"
-        class="text-destructive"
-        :disabled="batchProcessing"
-        @click="batchAction = 'discard'"
-      >
-        批量丢弃
-      </Button>
-      <Button size="sm" variant="ghost" @click="selectedIds = []">取消选择</Button>
-      <span class="ml-auto text-xs text-muted-foreground">批量通过会直接使用抓取值入库，不经过人工修正</span>
-    </div>
-
-    <Card>
-      <CardContent class="p-0">
+    <!-- 视口过矮时保底高度，避免列表被压到只剩一行 -->
+    <Card class="flex min-h-0 flex-col lg:min-h-[20rem] lg:flex-1">
+      <CardContent class="min-h-0 flex-1 p-0 lg:overflow-hidden">
         <div v-if="loading" class="space-y-2 p-4">
           <Skeleton v-for="i in 6" :key="i" class="h-11" />
         </div>
 
-        <Table v-else-if="list.length">
-          <TableHeader>
+        <Table v-else-if="list.length" wrapper-class="lg:h-full">
+          <TableHeader sticky>
             <TableRow class="hover:bg-transparent">
               <TableHead class="w-10">
                 <Checkbox
@@ -423,8 +429,8 @@ function removeVariant(index: number) {
                 />
               </TableCell>
               <TableCell class="text-muted-foreground">{{ row.id }}</TableCell>
-              <TableCell class="font-medium">{{ row.modelName }}</TableCell>
-              <TableCell class="text-muted-foreground">{{ row.brandName || '—' }}</TableCell>
+              <TableCell class="whitespace-nowrap font-medium">{{ row.modelName }}</TableCell>
+              <TableCell class="whitespace-nowrap text-muted-foreground">{{ row.brandName || '—' }}</TableCell>
               <TableCell class="max-w-64 text-xs">
                 <a
                   v-if="row.sourceUrl"
@@ -476,7 +482,13 @@ function removeVariant(index: number) {
       </CardContent>
     </Card>
 
-    <Pagination v-if="total > query.size" v-model:page="query.current" :page-size="query.size" :total="total" />
+    <Pagination
+      v-if="total > query.size"
+      v-model:page="query.current"
+      class="shrink-0"
+      :page-size="query.size"
+      :total="total"
+    />
 
     <Dialog
       v-model:open="dialog"

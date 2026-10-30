@@ -46,6 +46,7 @@ import {
 } from '@/components/ui'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import TableToolbar from '@/components/TableToolbar.vue'
 
 
 
@@ -422,11 +423,11 @@ function modelLabel(id: number | null | undefined) {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <PageHeader title="抓取任务" description="提交机型名称，由内嵌 AgentScope Agent 检索并抽取结构化参数，结果进入待审核" />
+  <div class="flex flex-col gap-3 lg:h-full lg:min-h-0">
+    <PageHeader class="shrink-0" title="抓取任务" description="提交机型名称，由内嵌 AgentScope Agent 检索并抽取结构化参数，结果进入待审核" />
 
-    <Card>
-      <CardHeader class="pb-3">
+    <Card class="shrink-0">
+      <CardHeader class="pb-2 pt-4">
         <CardTitle class="flex flex-wrap items-center gap-2">
           <Bot class="h-4 w-4 text-primary" />
           新建抓取任务
@@ -461,23 +462,27 @@ function modelLabel(id: number | null | undefined) {
       </CardContent>
     </Card>
 
-    <div class="flex flex-wrap items-center gap-2">
-      <Select v-model="query.status" :options="statusOptions" class="w-40" @update:model-value="search" />
+    <!-- 状态筛选与刷新吸顶：任务列表滚动时仍能随时改条件、看进度 -->
+    <TableToolbar class="shrink-0">
+      <Select v-model="query.status" :options="statusOptions" class="w-36" @update:model-value="search" />
       <Button variant="outline" size="sm" @click="load">
         <RefreshCw />
         刷新
       </Button>
-      <span class="ml-auto text-xs text-muted-foreground">共 {{ total }} 条任务</span>
-    </div>
+      <template #right>
+        <span class="text-xs text-muted-foreground">共 {{ total }} 条任务</span>
+      </template>
+    </TableToolbar>
 
-    <Card>
-      <CardContent class="p-0">
+    <!-- 视口过矮时保底高度，避免列表被压到只剩一行 -->
+    <Card class="flex min-h-0 flex-col lg:min-h-[20rem] lg:flex-1">
+      <CardContent class="min-h-0 flex-1 p-0 lg:overflow-hidden">
         <div v-if="loading" class="space-y-2 p-4">
           <Skeleton v-for="i in 6" :key="i" class="h-11" />
         </div>
 
-        <Table v-else-if="list.length">
-          <TableHeader>
+        <Table v-else-if="list.length" wrapper-class="lg:h-full">
+          <TableHeader sticky>
             <TableRow class="hover:bg-transparent">
               <TableHead class="w-20">任务</TableHead>
               <TableHead>机型 / 系列</TableHead>
@@ -575,7 +580,13 @@ function modelLabel(id: number | null | undefined) {
       </CardContent>
     </Card>
 
-    <Pagination v-if="total > query.size" v-model:page="query.current" :page-size="query.size" :total="total" />
+    <Pagination
+      v-if="total > query.size"
+      v-model:page="query.current"
+      class="shrink-0"
+      :page-size="query.size"
+      :total="total"
+    />
 
     <Sheet
       v-model:open="detailOpen"
