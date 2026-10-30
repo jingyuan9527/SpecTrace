@@ -198,7 +198,7 @@ claude mcp add --transport http spectrace http://localhost:8080/mcp \
 | `spectrace_device_list` | — | `current` / `size` / `brandId` / `seriesId`（0 = 未归类）/ `year` / `keyword` / `status` |
 | `spectrace_device_get` | `id` | 返回机型、品牌、系列、参数、溯源、存储版本、同系列机型 |
 | `spectrace_device_create` | `name`、`brandId` | 可选 `seriesId` / `releaseDate` / `thumbnail` / `description` / `status` / `params` / `variants` |
-| `spectrace_device_update` | `id` | 同上可选字段；未传字段保持不变 |
+| `spectrace_device_update` | `id` | 同上可选字段；未传字段保持不变。参数支持 `params`（全量覆盖）/ `paramsPatch`（只改动传入的键）二选一，`dryRun=true` 只预览变更；回执额外带 `paramsChange` |
 | `spectrace_device_delete` | `id` | 逻辑删除 + 清理参数与版本 |
 | `spectrace_device_batch_update_status` | `ids`、`status` | 批量上下架，不触碰参数 |
 
@@ -288,12 +288,14 @@ HTTP 层只有一种失败：未带 Key 或 Key 无效时返回 `401`（此时�
 ## 6. 写入语义（Agent 必须知道）
 
 1. **params 是全量覆盖**：`spectrace_device_update` 传入的 `paramKey` 集合就是最终参数集合，未提交或值为空白的键会被删除。不传 `params` 才表示「不改动」；传 `{}` 表示清空全部参数。
-2. **variants 同理**：不传不动，传 `[]` 清空。
-3. **paramKey 必须先查**：`params` 里不存在的 `paramKey` 会被静默忽略，先用 `spectrace_param_def_list` 确认。
-4. **status**：`device.status=1` 上架（对外可见），`0` 下架（对外 404）。更新时不传则保持原值。
-5. **seriesId=0** 表示取消归类（机型保留，只是不进世代回顾）。
-6. **品牌与系列**：系列必须属于机型所选品牌，跨品牌会直接拒绝；系列所属品牌不可修改。
-7. **删除是逻辑删除**：数据仍在库里，唯一索引带 `WHERE deleted = 0`，删除后可以重建同名记录。
+2. **补参用 `paramsPatch`**：只改动传入的键，其余旧值原样保留；`"paramKey": ""` 表示删除该键。它与 `params` 互斥。
+3. **先看回执再批量**：更新（含 `dryRun=true` 的预览）都会返回 `paramsChange.added / updated / removed / ignored`；`removed` 非空说明本次删了参数；`ignored` 是 `param_def` 里不存在的键。
+4. **variants 同理**：不传不动，传 `[]` 清空。
+5. **paramKey 必须先查**：`params` 里不存在的 `paramKey` 会被静默忽略（回执的 `ignored` 会列出来），先用 `spectrace_param_def_list` 确认。
+6. **status**：`device.status=1` 上架（对外可见），`0` 下架（对外 404）。更新时不传则保持原值。
+7. **seriesId=0** 表示取消归类（机型保留，只是不进世代回顾）。
+8. **品牌与系列**：系列必须属于机型所选品牌，跨品牌会直接拒绝；系列所属品牌不可修改。
+9. **删除是逻辑删除**：数据仍在库里，唯一索引带 `WHERE deleted = 0`，删除后可以重建同名记录。
 
 ---
 

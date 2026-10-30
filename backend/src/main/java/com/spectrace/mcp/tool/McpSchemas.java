@@ -52,6 +52,10 @@ public final class McpSchemas {
         return props("type", "number", "description", description);
     }
 
+    public static Map<String, Object> bool(String description) {
+        return props("type", "boolean", "description", description);
+    }
+
     public static Map<String, Object> enumString(String description, String... values) {
         Map<String, Object> schema = string(description);
         schema.put("enum", List.of(values));

@@ -44,6 +44,28 @@ public final class McpArgs {
         return text.isEmpty() ? null : text;
     }
 
+    /** 布尔开关：兼容 true/false 与 "true"/"false"/1/0，缺省取 defaultValue。 */
+    public Boolean optBoolean(String field, Boolean defaultValue) {
+        Object value = raw.get(field);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty()) {
+            return defaultValue;
+        }
+        if ("true".equalsIgnoreCase(text) || "1".equals(text)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(text) || "0".equals(text)) {
+            return false;
+        }
+        throw new McpArgumentException(field, "参数 " + field + " 必须是布尔值，实际值：" + text);
+    }
+
     public Long requireLong(String field) {
         Long value = optLong(field);
         if (value == null) {
